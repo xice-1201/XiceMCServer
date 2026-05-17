@@ -24,6 +24,14 @@ https://xicemc.site/
 https://www.xicemc.site/
 ```
 
+备案完成前可临时使用 HTTP IP 入口：
+
+```text
+http://150.158.93.80/
+```
+
+该入口由 Nginx 的默认 HTTP server 转发到 Web 后端，仅用于域名备案完成前的小范围测试。
+
 DNS 解析：
 
 1. `xicemc.site` A 记录指向 `150.158.93.80`。
