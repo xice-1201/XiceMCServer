@@ -34,6 +34,8 @@ rcon.properties
 secrets/
 
 # Plugin generated data that should be backed up, not versioned
+target/
+plugins/*/target/
 server/plugins/*/data/
 server/plugins/*/database/
 server/plugins/*/logs/

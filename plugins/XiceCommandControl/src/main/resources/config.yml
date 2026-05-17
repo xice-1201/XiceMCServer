@@ -1,0 +1,17 @@
+# 默认允许所有玩家使用的受控指令。
+default-allowed-commands:
+  - survival
+
+# 玩家专属受控指令。
+# 键可以使用玩家名，也可以使用玩家 UUID。
+players:
+  ExamplePlayer:
+    commands:
+      - creative
+
+messages:
+  player-only: '&c该指令只能由玩家在游戏内使用。'
+  no-permission: '&c你没有使用该指令的权限。'
+  survival-enabled: '&a已切换为生存模式。'
+  creative-enabled: '&a已切换为创造模式。'
+  unknown-command: '&c未知受控指令。'

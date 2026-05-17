@@ -1,0 +1,13 @@
+name: XiceCommandControl
+version: 0.0.1
+main: com.xice.xicemc.commandcontrol.XiceCommandControlPlugin
+api-version: '1.21'
+author: Xice
+description: Config driven command access control for XiceMCServer.
+commands:
+  survival:
+    description: Switch yourself to survival mode.
+    usage: /survival
+  creative:
+    description: Switch yourself to creative mode.
+    usage: /creative
