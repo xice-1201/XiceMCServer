@@ -989,6 +989,12 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       gap: 18px;
       align-items: start;
     }}
+    .auth-title {{
+      margin: 0 0 18px;
+      text-align: center;
+      font-size: 30px;
+      line-height: 1.18;
+    }}
     .auth-docs-link {{
       justify-content: center;
       margin-top: 18px;
@@ -1496,6 +1502,7 @@ def auth_page(login_message="", register_message="", status=HTTPStatus.OK):
     safe_login_message = f'<p class="message">{esc(login_message)}</p>' if login_message else ""
     safe_register_message = f'<p class="register-message">{esc(register_message)}</p>' if register_message else ""
     body = f"""
+<h1 class="auth-title">XiceMCServer玩家平台</h1>
 <div class="auth-grid">
 <section class="login-card">
   <h1>XiceMCServer 登录</h1>
@@ -1531,7 +1538,7 @@ def auth_page(login_message="", register_message="", status=HTTPStatus.OK):
   <a class="button secondary" href="/docs">查看服务器文档</a>
 </div>
 """
-    return page("XiceMCServer 登录与注册", body, status)
+    return page("XiceMCServer玩家平台", body, status)
 
 
 def home_page(user, message="", status=HTTPStatus.OK):
