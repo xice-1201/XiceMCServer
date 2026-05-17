@@ -1026,6 +1026,24 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       flex-wrap: wrap;
       margin: 0 0 18px;
     }}
+    dialog {{
+      width: min(92vw, 520px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0;
+      background: #ffffff;
+      color: var(--text);
+    }}
+    dialog::backdrop {{ background: rgba(20, 32, 51, 0.32); }}
+    .dialog-body {{ padding: 22px; }}
+    .dialog-body h2 {{ margin-bottom: 10px; }}
+    .dialog-actions {{
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }}
     .audit-grid {{
       display: grid;
@@ -1182,14 +1200,16 @@ def auth_page(login_message="", register_message="", status=HTTPStatus.OK):
     return page("XiceMCServer 登录与注册", body, status)
 
 
-def home_page(user):
+def home_page(user, message="", status=HTTPStatus.OK):
     stats = load_player_stats(user)
     profile = player_profile(user)
     role = user.get("role", PLAYER_ROLE)
     role_class = role_css_class(role)
     skin_url = f"https://minotar.net/armor/body/{user['name']}/128.png"
+    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
     body = f"""
 <h1>首页</h1>
+{safe_message}
 <div class="identity-card-wrap">
 <section class="identity-card">
   <div class="identity-visual">
@@ -1220,11 +1240,38 @@ def home_page(user):
 </section>
 </div>
 <div class="identity-actions">
-  <a class="button secondary" href="/profile">编辑个人简介</a>
+  <button class="secondary" type="button" id="open-profile-dialog">编辑个人简介</button>
   <a class="button secondary" href="/password">修改密码</a>
 </div>
+<dialog id="profile-dialog">
+  <div class="dialog-body">
+    <h2>编辑个人简介</h2>
+    <form method="post" action="/profile">
+      <label for="profile_bio">个人简介</label>
+      <textarea id="profile_bio" name="profile_bio" maxlength="{PROFILE_BIO_MAX_LENGTH}">{esc(profile["profile_bio"])}</textarea>
+      <p class="field-hint">最多 {PROFILE_BIO_MAX_LENGTH} 个字符。留空保存时会恢复默认简介。</p>
+      <div class="dialog-actions">
+        <button class="secondary" type="button" id="close-profile-dialog">取消</button>
+        <button type="submit">保存简介</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+<script>
+  const profileDialog = document.getElementById("profile-dialog");
+  const openProfileDialog = document.getElementById("open-profile-dialog");
+  const closeProfileDialog = document.getElementById("close-profile-dialog");
+  openProfileDialog.addEventListener("click", () => {{
+    if (typeof profileDialog.showModal === "function") {{
+      profileDialog.showModal();
+    }} else {{
+      profileDialog.setAttribute("open", "");
+    }}
+  }});
+  closeProfileDialog.addEventListener("click", () => profileDialog.close());
+</script>
 """
-    return page("首页", body, user=user, active="home")
+    return page("首页", body, status, user=user, active="home")
 
 
 def role_css_class(role):
@@ -1233,27 +1280,6 @@ def role_css_class(role):
     if role == ADMIN_ROLE:
         return "admin"
     return "player"
-
-
-def profile_page(user, message="", status=HTTPStatus.OK):
-    profile = player_profile(user)
-    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
-    body = f"""
-<h1>编辑个人简介</h1>
-<section class="panel">
-  {safe_message}
-  <form method="post" action="/profile">
-    <label for="profile_bio">个人简介</label>
-    <textarea id="profile_bio" name="profile_bio" maxlength="{PROFILE_BIO_MAX_LENGTH}">{esc(profile["profile_bio"])}</textarea>
-    <p class="field-hint">最多 {PROFILE_BIO_MAX_LENGTH} 个字符。留空保存时会恢复默认简介。</p>
-    <div class="actions">
-      <button type="submit">保存简介</button>
-      <a class="button secondary" href="/home">返回首页</a>
-    </div>
-  </form>
-</section>
-"""
-    return page("编辑个人简介", body, status, user=user, active="home")
 
 
 def password_page(user, message="", status=HTTPStatus.OK):
@@ -2086,7 +2112,7 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 self.send_redirect("/")
                 return
-            self.respond(*profile_page(user))
+            self.send_redirect("/home")
             return
         if parsed.path == "/report":
             if not user:
@@ -2430,13 +2456,13 @@ class Handler(BaseHTTPRequestHandler):
             params = self.read_form(max_length=4096)
             profile_bio = first(params, "profile_bio")
             if not update_profile_bio(user["uuid"], profile_bio):
-                self.respond(*profile_page(user, "简介更新失败。", HTTPStatus.INTERNAL_SERVER_ERROR))
+                self.respond(*home_page(user, "简介更新失败。", HTTPStatus.INTERNAL_SERVER_ERROR))
                 return
         except Exception as exc:
-            self.respond(*profile_page(user, f"简介更新失败：{exc}", HTTPStatus.BAD_REQUEST))
+            self.respond(*home_page(user, f"简介更新失败：{exc}", HTTPStatus.BAD_REQUEST))
             return
 
-        self.respond(*profile_page(user, "简介已更新。"))
+        self.respond(*home_page(user, "简介已更新。"))
 
     def send_redirect(self, location, cookie=None):
         headers = [("Location", location)]
