@@ -127,6 +127,15 @@ HTTPS 证书续期策略：
 3. 备份不包含 PostgreSQL 审计数据库，因此无法通过该备份恢复 Web 审计日志。若未来要恢复审计数据，需要额外增加数据库导出备份。
 4. 备份不包含 Git 仓库、Paper 核心 jar 和可重新下载的依赖，因此恢复后仍应保留 `/opt/xicemc/repo` 并运行部署脚本校准服务端核心和插件 jar。
 
+整包恢复脚本：
+
+```bash
+sudo /opt/xicemc/repo/scripts/restore-backup.sh --dry-run /opt/xicemc/backups/xicemc-backup-YYYYMMDD-HHMMSS-wN.tar.gz
+sudo /opt/xicemc/repo/scripts/restore-backup.sh /opt/xicemc/backups/xicemc-backup-YYYYMMDD-HHMMSS-wN.tar.gz
+```
+
+脚本会停止 `xicemc.service`，将当前运行目录移动到 `/opt/xicemc/runtime.before-restore-时间戳`，再解压指定备份、修正所有者并重新开服。
+
 维护任务带有失败保护：只要任务已经停服，即使备份、清理或更新步骤失败，也会尽量重新启动 `xicemc.service`，避免服务器长时间保持关闭状态。
 
 常用检查命令：

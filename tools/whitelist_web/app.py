@@ -29,6 +29,9 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,16}$")
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 PASSWORD_RE = re.compile(r"^[A-Za-z0-9_]{6,64}$")
 DEFAULT_PASSWORD_HASH = hashlib.md5("123456".encode("utf-8")).hexdigest()
+PLAYER_ROLE = "玩家"
+ADMIN_ROLE = "管理员"
+OWNER_ROLE = "服主"
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_ATTEMPTS = 10
 SESSION_SECONDS = 7 * 24 * 60 * 60
@@ -249,7 +252,22 @@ def parse_session(cookie_header):
     entry = whitelist_entry_by_uuid(payload.get("uuid", "")) or whitelist_entry(payload.get("name", ""))
     if not entry or canonical_uuid(entry.get("uuid")) != canonical_uuid(payload.get("uuid")):
         return None
-    return {"uuid": canonical_uuid(entry["uuid"]), "name": entry["name"]}
+    return player_session(entry)
+
+
+def player_session(entry):
+    session = {"uuid": canonical_uuid(entry["uuid"]), "name": entry["name"], "role": PLAYER_ROLE}
+    try:
+        player = web_player(entry)
+        if player and player.get("role"):
+            session["role"] = player["role"]
+    except Exception as exc:
+        print(f"failed to load web player role: {exc}")
+    return session
+
+
+def can_handle_reports(user):
+    return user and user.get("role") in {ADMIN_ROLE, OWNER_ROLE}
 
 
 def db_connect():
@@ -276,17 +294,23 @@ def init_web_tables():
               player_name TEXT NOT NULL,
               registered_at BIGINT NOT NULL,
               updated_at BIGINT NOT NULL,
-              password_hash TEXT NOT NULL DEFAULT 'e10adc3949ba59abbe56e057f20f883e'
+              password_hash TEXT NOT NULL DEFAULT 'e10adc3949ba59abbe56e057f20f883e',
+              role TEXT NOT NULL DEFAULT '玩家'
             )
             """
         )
         cur.execute("ALTER TABLE web_players ADD COLUMN IF NOT EXISTS password_hash TEXT")
+        cur.execute("ALTER TABLE web_players ADD COLUMN IF NOT EXISTS role TEXT")
         cur.execute(
             "UPDATE web_players SET password_hash = %s WHERE password_hash IS NULL OR password_hash = ''",
             (DEFAULT_PASSWORD_HASH,),
         )
+        cur.execute("UPDATE web_players SET role = %s WHERE role IS NULL OR role = ''", (PLAYER_ROLE,))
+        cur.execute("UPDATE web_players SET role = %s WHERE lower(player_name) = 'exampleplayer'", (OWNER_ROLE,))
         cur.execute(f"ALTER TABLE web_players ALTER COLUMN password_hash SET DEFAULT '{DEFAULT_PASSWORD_HASH}'")
         cur.execute("ALTER TABLE web_players ALTER COLUMN password_hash SET NOT NULL")
+        cur.execute(f"ALTER TABLE web_players ALTER COLUMN role SET DEFAULT '{PLAYER_ROLE}'")
+        cur.execute("ALTER TABLE web_players ALTER COLUMN role SET NOT NULL")
 
 
 def ensure_web_player(entry):
@@ -295,13 +319,14 @@ def ensure_web_player(entry):
         with db_connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO web_players (player_uuid, player_name, registered_at, updated_at, password_hash)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO web_players (player_uuid, player_name, registered_at, updated_at, password_hash, role)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (player_uuid)
                 DO UPDATE SET player_name = EXCLUDED.player_name, updated_at = EXCLUDED.updated_at
                 """,
-                (entry["uuid"], entry["name"], now, now, DEFAULT_PASSWORD_HASH),
+                (entry["uuid"], entry["name"], now, now, DEFAULT_PASSWORD_HASH, PLAYER_ROLE),
             )
+            cur.execute("UPDATE web_players SET role = %s WHERE lower(player_name) = 'exampleplayer'", (OWNER_ROLE,))
     except Exception as exc:
         print(f"failed to ensure web player: {exc}")
 
@@ -310,7 +335,7 @@ def web_player(entry):
     ensure_web_player(entry)
     with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            "SELECT player_uuid, player_name, password_hash FROM web_players WHERE player_uuid = %s",
+            "SELECT player_uuid, player_name, password_hash, role FROM web_players WHERE player_uuid = %s",
             (canonical_uuid(entry["uuid"]),),
         )
         return cur.fetchone()
@@ -414,15 +439,20 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     nav = ""
     shell_class = "login-shell" if user is None else "app-shell"
     if user:
+        report_admin_link = (
+            f'<a class="{ "active" if active == "report-admin" else "" }" href="/reports">举报受理</a>'
+            if can_handle_reports(user) else ""
+        )
         nav = f"""
 <aside class="sidebar">
   <div class="brand">XiceMCServer</div>
-  <div class="user">{esc(user["name"])}</div>
+  <div class="user">{esc(user["name"])} · {esc(user.get("role", PLAYER_ROLE))}</div>
   <nav>
     <a class="{ 'active' if active == 'home' else '' }" href="/home">首页</a>
     <a class="{ 'active' if active == 'status' else '' }" href="/status">服务器状态</a>
     <a class="{ 'active' if active == 'audit' else '' }" href="/audit">操作查询</a>
     <a class="{ 'active' if active == 'report' else '' }" href="/report">举报</a>
+    {report_admin_link}
   </nav>
   <form method="post" action="/logout"><button class="secondary" type="submit">退出登录</button></form>
 </aside>
@@ -661,6 +691,7 @@ def home_page(user):
     </div>
     <div class="grid">
       <div class="stat"><div class="label">玩家 ID</div><div class="value">{esc(user["name"])}</div></div>
+      <div class="stat"><div class="label">身份</div><div class="value">{esc(user.get("role", PLAYER_ROLE))}</div></div>
       <div class="stat"><div class="label">用户 UUID</div><div class="value">{esc(user["uuid"])}</div></div>
       <div class="stat"><div class="label">注册时间</div><div class="value">{esc(stats["registered_at"])}</div></div>
       <div class="stat"><div class="label">累计游玩时间</div><div class="value">{esc(stats["play_time"])}</div></div>
@@ -703,6 +734,15 @@ def report_page(user):
 </section>
 """
     return page("举报", body, user=user, active="report")
+
+
+def report_admin_page(user):
+    body = """
+<h1>举报受理</h1>
+<section class="panel">
+</section>
+"""
+    return page("举报受理", body, user=user, active="report-admin")
 
 
 def status_page(user):
@@ -1261,6 +1301,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_redirect("/")
                 return
             self.respond(*report_page(user))
+            return
+        if parsed.path == "/reports":
+            if not user:
+                self.send_redirect("/")
+                return
+            if not can_handle_reports(user):
+                self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
+                return
+            self.respond(*report_admin_page(user))
             return
         if parsed.path == "/status":
             if not user:
