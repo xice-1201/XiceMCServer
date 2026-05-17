@@ -864,26 +864,106 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       padding: 20px;
       margin-bottom: 18px;
     }}
-    .profile-summary {{
+    .identity-card {{
       display: grid;
-      grid-template-columns: minmax(132px, 180px) 1fr;
-      gap: 18px;
+      grid-template-columns: minmax(170px, 240px) 1fr;
+      gap: 24px;
       align-items: stretch;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 22px;
+      margin-bottom: 18px;
     }}
-    .skin-card {{
+    .identity-visual {{
+      display: grid;
+      grid-template-rows: 1fr auto;
+      gap: 14px;
+      min-height: 300px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f6f9fc;
+      padding: 18px;
+      overflow: hidden;
+    }}
+    .skin-frame {{
       display: grid;
       place-items: center;
       min-height: 220px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #f8fafc;
-      overflow: hidden;
     }}
     .player-skin {{
-      width: min(72%, 128px);
-      max-height: 210px;
+      width: min(76%, 150px);
+      max-height: 240px;
       object-fit: contain;
       image-rendering: pixelated;
+    }}
+    .identity-role {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: fit-content;
+      max-width: 100%;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eafaf2;
+      color: #176f48;
+      font-weight: 700;
+      font-size: 13px;
+    }}
+    .identity-main {{
+      min-width: 0;
+      display: grid;
+      align-content: start;
+      gap: 18px;
+    }}
+    .identity-kicker {{
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }}
+    .identity-title {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }}
+    .identity-title h2 {{
+      margin: 0;
+      font-size: 32px;
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+    }}
+    .identity-uuid {{
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }}
+    .identity-stats {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .identity-stat {{
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+      min-width: 0;
+    }}
+    .identity-stat .label {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .identity-stat .value {{
+      margin-top: 7px;
+      font-size: 16px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }}
+    .identity-actions {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 4px;
     }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }}
     .audit-grid {{
@@ -970,8 +1050,10 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       .app-shell {{ grid-template-columns: 1fr; }}
       .sidebar {{ border-right: 0; border-bottom: 1px solid var(--line); }}
       main {{ padding: 18px; }}
-      .profile-summary {{ grid-template-columns: 1fr; }}
-      .skin-card {{ min-height: 190px; }}
+      .identity-card {{ grid-template-columns: 1fr; padding: 16px; }}
+      .identity-visual {{ min-height: 240px; }}
+      .identity-stats {{ grid-template-columns: 1fr; }}
+      .identity-title h2 {{ font-size: 26px; }}
     }}
   </style>
 </head>
@@ -1043,22 +1125,31 @@ def home_page(user):
     skin_url = f"https://minotar.net/armor/body/{user['name']}/128.png"
     body = f"""
 <h1>首页</h1>
-<section class="panel">
-  <h2>个人信息</h2>
-  <div class="profile-summary">
-    <div class="skin-card">
+<section class="identity-card">
+  <div class="identity-visual">
+    <div class="skin-frame">
       <img class="player-skin" src="{esc(skin_url)}" alt="{esc(user["name"])} 的 Minecraft 皮肤" loading="lazy">
     </div>
-    <div class="grid">
-      <div class="stat"><div class="label">玩家 ID</div><div class="value">{esc(user["name"])}</div></div>
-      <div class="stat"><div class="label">身份</div><div class="value">{esc(user.get("role", PLAYER_ROLE))}</div></div>
-      <div class="stat"><div class="label">用户 UUID</div><div class="value">{esc(user["uuid"])}</div></div>
-      <div class="stat"><div class="label">注册时间</div><div class="value">{esc(stats["registered_at"])}</div></div>
-      <div class="stat"><div class="label">累计游玩时间</div><div class="value">{esc(stats["play_time"])}</div></div>
-      <div class="stat"><div class="label">上次登出地点</div><div class="value">{esc(stats["last_logout"])}</div></div>
+    <span class="identity-role">{esc(user.get("role", PLAYER_ROLE))}</span>
+  </div>
+  <div class="identity-main">
+    <div>
+      <div class="identity-kicker">Minecraft Java 玩家身份卡</div>
+      <div class="identity-title">
+        <h2>{esc(user["name"])}</h2>
+      </div>
+      <div class="identity-uuid mono">{esc(user["uuid"])}</div>
+    </div>
+    <div class="identity-stats">
+      <div class="identity-stat"><div class="label">注册时间</div><div class="value">{esc(stats["registered_at"])}</div></div>
+      <div class="identity-stat"><div class="label">累计游玩时间</div><div class="value">{esc(stats["play_time"])}</div></div>
+      <div class="identity-stat"><div class="label">上次登出地点</div><div class="value">{esc(stats["last_logout"])}</div></div>
+      <div class="identity-stat"><div class="label">Web 身份</div><div class="value">{esc(user.get("role", PLAYER_ROLE))}</div></div>
+    </div>
+    <div class="identity-actions">
+      <a class="button secondary" href="/password">修改密码</a>
     </div>
   </div>
-  <div class="actions"><a class="button secondary" href="/password">修改密码</a></div>
 </section>
 """
     return page("首页", body, user=user, active="home")
