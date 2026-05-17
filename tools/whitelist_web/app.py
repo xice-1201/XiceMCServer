@@ -386,9 +386,9 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
   <div class="user">{esc(user["name"])}</div>
   <nav>
     <a class="{ 'active' if active == 'home' else '' }" href="/home">首页</a>
+    <a class="{ 'active' if active == 'status' else '' }" href="/status">服务器状态</a>
     <a class="{ 'active' if active == 'audit' else '' }" href="/audit">操作查询</a>
     <a class="{ 'active' if active == 'report' else '' }" href="/report">举报</a>
-    <a class="{ 'active' if active == 'status' else '' }" href="/status">服务器状态</a>
   </nav>
   <form method="post" action="/logout"><button class="secondary" type="submit">退出登录</button></form>
 </aside>

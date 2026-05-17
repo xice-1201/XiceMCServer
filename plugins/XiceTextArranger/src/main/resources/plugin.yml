@@ -1,6 +1,15 @@
 name: XiceTextArranger
-version: 0.0.5
+version: 0.0.6
 main: com.xice.xicemc.textarranger.XiceTextArrangerPlugin
 api-version: '1.21'
 author: Xice
 description: Arrange selected vanilla server messages for XiceMCServer.
+commands:
+  xicebroadcast:
+    description: Broadcast configured XiceMCServer system messages.
+    usage: /xicebroadcast <消息配置名> [占位符=值...]
+    permission: xicetextarranger.broadcast
+permissions:
+  xicetextarranger.broadcast:
+    description: Allows broadcasting configured XiceTextArranger messages.
+    default: op

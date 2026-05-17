@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -29,6 +31,39 @@ public final class XiceTextArrangerPlugin extends JavaPlugin implements Listener
         saveDefaultConfig();
         getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("XiceTextArranger enabled.");
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!command.getName().equalsIgnoreCase("xicebroadcast")) {
+            return false;
+        }
+        if (!sender.hasPermission("xicetextarranger.broadcast")) {
+            sender.sendMessage(color("&c你没有权限执行该命令。"));
+            return true;
+        }
+        if (args.length < 1) {
+            sender.sendMessage(color("&c用法：/xicebroadcast <消息配置名> [占位符=值...]"));
+            return true;
+        }
+
+        String key = args[0].toLowerCase(Locale.ROOT);
+        String basePath = "broadcasts." + key;
+        if (!getConfig().getBoolean(basePath + ".enabled", true)) {
+            sender.sendMessage(color("&7该广播已禁用：" + key));
+            return true;
+        }
+
+        Map<String, String> placeholders = parsePlaceholders(args);
+        String message = configuredMessage(basePath + ".message", "", "", placeholders);
+        if (message.isBlank()) {
+            sender.sendMessage(color("&c广播内容为空：" + key));
+            return true;
+        }
+
+        getServer().broadcastMessage(message);
+        sender.sendMessage(color("&7已发送广播：" + key));
+        return true;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -138,6 +173,23 @@ public final class XiceTextArrangerPlugin extends JavaPlugin implements Listener
             value = value.replace("{" + entry.getKey() + "}", entry.getValue());
         }
         return color(value);
+    }
+
+    private Map<String, String> parsePlaceholders(String[] args) {
+        Map<String, String> placeholders = new HashMap<>();
+        for (int index = 1; index < args.length; index++) {
+            String argument = args[index];
+            int separator = argument.indexOf('=');
+            if (separator <= 0) {
+                continue;
+            }
+            String key = argument.substring(0, separator);
+            String value = argument.substring(separator + 1);
+            if (!key.isBlank()) {
+                placeholders.put(key, value);
+            }
+        }
+        return placeholders;
     }
 
     private String whitelistDeniedMessage(String playerName, String displayName, UUID playerUuid) {

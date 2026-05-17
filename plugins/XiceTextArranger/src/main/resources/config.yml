@@ -43,3 +43,12 @@ join:
 quit:
   mode: keep
   message: '&7{player} 离开了服务器。'
+
+# 系统广播消息。
+# 可由控制台或 RCON 执行：xicebroadcast restart-warning time=10分钟
+broadcasts:
+  restart-warning:
+    enabled: true
+    message:
+      - '&6[系统] &f服务器将在 &e{time} &f后进行每日备份与更新。'
+      - '&7请尽快移动到安全位置，并停止重要操作。'

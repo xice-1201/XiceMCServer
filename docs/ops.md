@@ -73,17 +73,19 @@
 
 ## 每日自动备份与更新
 
-服务器使用 `xicemc-maintenance.timer` 在每天 `16:00` 触发每日维护任务。
+服务器使用 `xicemc-maintenance.timer` 在每天 `15:50` 触发每日维护任务。
+脚本会先等待并广播 `10` 分钟倒计时提醒，实际停服备份与更新仍在每天 `16:00` 左右开始。
 
 每日维护流程：
 
-1. 关闭 `xicemc.service`。
-2. 执行 `scripts/renew-certificates.sh`，当 HTTPS 证书有效期不足 `7` 天时自动续期。
-3. 在停服状态下执行 `scripts/backup.sh`，备份运行目录中的世界、玩家数据、白名单、封禁列表、服务端配置和插件配置。
-4. 执行 `scripts/prune-backups.sh` 清理过期备份。
-5. 执行 `scripts/prune-audit-log.sh` 清理超过 `3` 天的审计日志。
-6. 执行 `scripts/deploy.sh` 从 GitHub 拉取最新内容，并部署配置、Paper 核心和自制插件。
-7. 重新启动 `xicemc.service`。
+1. 通过 RCON 调用 `XiceTextArranger` 的 `xicebroadcast` 命令，分别在维护前 `10` 分钟、`5` 分钟、`1` 分钟、`10` 秒和 `3` 秒向在线玩家广播重启提醒。
+2. 关闭 `xicemc.service`。
+3. 执行 `scripts/renew-certificates.sh`，当 HTTPS 证书有效期不足 `7` 天时自动续期。
+4. 在停服状态下执行 `scripts/backup.sh`，备份运行目录中的世界、玩家数据、白名单、封禁列表、服务端配置和插件配置。
+5. 执行 `scripts/prune-backups.sh` 清理过期备份。
+6. 执行 `scripts/prune-audit-log.sh` 清理超过 `3` 天的审计日志。
+7. 执行 `scripts/deploy.sh` 从 GitHub 拉取最新内容，并部署配置、Paper 核心和自制插件。
+8. 重新启动 `xicemc.service`。
 
 备份保留策略：
 
@@ -108,6 +110,22 @@ HTTPS 证书续期策略：
 ```text
 /opt/xicemc/backups
 ```
+
+当前备份文件结构：
+
+1. 备份文件名格式为 `xicemc-backup-YYYYMMDD-HHMMSS-wN.tar.gz`，其中 `wN` 是生成当天的星期编号。
+2. 备份内容以运行目录 `/opt/xicemc/runtime` 为根目录打包，包内路径均为相对路径。
+3. 已包含 `main`、`main_nether`、`main_the_end` 三个世界目录。
+4. 已包含 `server.properties`、`bukkit.yml`、`spigot.yml`、`commands.yml`、`permissions.yml`、`config/`、`plugins/*/config.yml`、`whitelist.json`、`ops.json`、封禁列表、玩家缓存和玩家数据。
+5. 已排除 `cache`、`libraries`、`versions`、`logs`、`crash-reports`、`paper.jar` 和 `plugins/spark`。
+6. 当前备份仍会包含 `plugins/.paper-remapped` 这类 Paper 可再生成缓存。该目录不影响整包恢复，但后续可以考虑从备份中排除以减少体积。
+
+备份恢复可行性：
+
+1. 可以完成停服后的整包恢复：停止 `xicemc.service`，将当前运行目录移走或另存，再把目标备份解压回 `/opt/xicemc/runtime`，修正目录所有者为 `minecraft:minecraft`，最后启动服务。
+2. 可以做谨慎的局部恢复，例如只恢复 `whitelist.json`、某个插件配置或某个世界目录；恢复世界目录时必须停服，避免 `session.lock` 和区块文件状态不一致。
+3. 备份不包含 PostgreSQL 审计数据库，因此无法通过该备份恢复 Web 审计日志。若未来要恢复审计数据，需要额外增加数据库导出备份。
+4. 备份不包含 Git 仓库、Paper 核心 jar 和可重新下载的依赖，因此恢复后仍应保留 `/opt/xicemc/repo` 并运行部署脚本校准服务端核心和插件 jar。
 
 维护任务带有失败保护：只要任务已经停服，即使备份、清理或更新步骤失败，也会尽量重新启动 `xicemc.service`，避免服务器长时间保持关闭状态。
 

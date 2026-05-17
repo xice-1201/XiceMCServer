@@ -9,6 +9,7 @@
 3. 在服务端可捕获认证失败拒绝消息时，重写正版验证失败提示。
 4. 管理玩家加入服务器消息。
 5. 管理玩家离开服务器消息。
+6. 提供控制台广播命令，用于每日维护前的系统提醒。
 
 ## 白名单拒绝提示
 
@@ -70,3 +71,26 @@ auth-denied:
 2. `{displayName}`：玩家显示名。
 3. `{verificationCode}`：白名单注册验证码。
 4. `{verificationExpiresMinutes}`：验证码剩余有效分钟数。
+
+## 系统广播
+
+插件提供 `xicebroadcast` 命令，用于从控制台或 RCON 发送配置化系统消息：
+
+```text
+xicebroadcast restart-warning time=10分钟
+```
+
+当前每日维护脚本会在停服前通过该命令发送 `10` 分钟、`5` 分钟、`1` 分钟、`10` 秒和 `3` 秒提醒。
+
+默认配置：
+
+```yaml
+broadcasts:
+  restart-warning:
+    enabled: true
+    message:
+      - '&6[系统] &f服务器将在 &e{time} &f后进行每日备份与更新。'
+      - '&7请尽快移动到安全位置，并停止重要操作。'
+```
+
+命令权限为 `xicetextarranger.broadcast`，默认只允许 OP 或控制台执行。每日维护通过 RCON 以控制台身份调用。
