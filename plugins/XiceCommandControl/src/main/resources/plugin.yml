@@ -1,5 +1,5 @@
 name: XiceCommandControl
-version: 0.0.1
+version: 0.0.2
 main: com.xice.xicemc.commandcontrol.XiceCommandControlPlugin
 api-version: '1.21'
 author: Xice
@@ -11,3 +11,6 @@ commands:
   creative:
     description: Switch yourself to creative mode.
     usage: /creative
+  xcc:
+    description: Manage XiceCommandControl.
+    usage: /xcc <reload|list> [player]

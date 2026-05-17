@@ -61,6 +61,12 @@ if compgen -G "${REPO_DIR}/plugins/*/pom.xml" > /dev/null; then
       exit 1
     fi
     install -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0644 "${jar_path}" "${RUNTIME_DIR}/plugins/${plugin_name}.jar"
+    if [[ -f "${plugin_dir}/src/main/resources/config.yml" ]]; then
+      install -d -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0755 "${RUNTIME_DIR}/plugins/${plugin_name}"
+      install -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0644 \
+        "${plugin_dir}/src/main/resources/config.yml" \
+        "${RUNTIME_DIR}/plugins/${plugin_name}/config.yml"
+    fi
   done
 fi
 

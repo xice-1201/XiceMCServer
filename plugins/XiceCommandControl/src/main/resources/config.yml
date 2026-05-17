@@ -3,11 +3,14 @@ default-allowed-commands:
   - survival
 
 # 玩家专属受控指令。
-# 键可以使用玩家名，也可以使用玩家 UUID。
+# 键必须使用玩家 UUID，name 仅用于显示和查询。
 players:
-  ExamplePlayer:
+  00000000-0000-0000-0000-000000000000:
+    name: ExamplePlayer
     commands:
       - creative
+      - xcc.reload
+      - xcc.list
 
 messages:
   player-only: '&c该指令只能由玩家在游戏内使用。'
@@ -15,3 +18,10 @@ messages:
   survival-enabled: '&a已切换为生存模式。'
   creative-enabled: '&a已切换为创造模式。'
   unknown-command: '&c未知受控指令。'
+  xcc-usage: '&e用法：/xcc reload 或 /xcc list [玩家名或UUID]'
+  reload-complete: '&aXiceCommandControl 配置已重新加载。'
+  list-empty: '&e当前没有配置任何玩家专属指令。'
+  list-header: '&e已配置玩家权限：'
+  list-line: '&f{player} &7({uuid})&f: &a{commands}'
+  list-not-found: '&c未找到玩家权限配置：{query}'
+  list-no-commands: '无'
