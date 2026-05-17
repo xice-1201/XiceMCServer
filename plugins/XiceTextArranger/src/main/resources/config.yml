@@ -1,0 +1,21 @@
+# 白名单拒绝提示。
+# 玩家尚未进入服务器时会看到该消息。
+whitelist-denied:
+  enabled: true
+  message:
+    - '&c你暂未加入 XiceMCServer 白名单。'
+    - '&f请使用浏览器访问：'
+    - '&bhttp://150.158.93.80/'
+    - '&7填写 Minecraft ID 和邀请码后，再重新连接服务器。'
+
+# 玩家加入消息。
+# mode 可选：keep、delete、rewrite、add。
+join:
+  mode: keep
+  message: '&7{player} 加入了服务器。'
+
+# 玩家退出消息。
+# mode 可选：keep、delete、rewrite、add。
+quit:
+  mode: keep
+  message: '&7{player} 离开了服务器。'

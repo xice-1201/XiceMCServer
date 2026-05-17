@@ -1,0 +1,6 @@
+name: XiceTextArranger
+version: 0.0.3
+main: com.xice.xicemc.textarranger.XiceTextArrangerPlugin
+api-version: '1.21'
+author: Xice
+description: Arrange selected vanilla server messages for XiceMCServer.
