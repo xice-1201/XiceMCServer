@@ -336,6 +336,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       grid-template-columns: repeat(3, 1fr);
       gap: 8px;
     }}
+    .is-hidden {{ display: none; }}
     .stat {{
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -496,7 +497,7 @@ def load_player_stats(user):
 def audit_page(user, params):
     rows, next_cursor, message = query_audit(params)
     query = {key: params.get(key, [""])[0] for key in params}
-    target_options_html = target_options(query.get("target_type", ""))
+    container_options_html = container_options(query.get("target_type", ""))
     body = f"""
 <h1>操作查询</h1>
 <section class="panel">
@@ -509,8 +510,8 @@ def audit_page(user, params):
           {option("", "请选择", query.get("action"))}
           {option("BLOCK_PLACE", "放置方块", query.get("action"))}
           {option("BLOCK_BREAK", "破坏方块", query.get("action"))}
-          {option("CONTAINER_ADD", "存入容器", query.get("action"))}
-          {option("CONTAINER_REMOVE", "取出容器", query.get("action"))}
+          {option("CONTAINER_ADD", "存入物品", query.get("action"))}
+          {option("CONTAINER_REMOVE", "取出物品", query.get("action"))}
           {option("PLAYER_JOIN", "玩家进入", query.get("action"))}
           {option("PLAYER_QUIT", "玩家退出", query.get("action"))}
         </select>
@@ -519,13 +520,17 @@ def audit_page(user, params):
         <label for="player">操作来源：玩家名或 UUID</label>
         <input id="player" name="player" value="{esc(query.get("player", ""))}" placeholder="例如 ExamplePlayer">
       </div>
-      <div>
-        <label for="target_type">作用目标：方块/容器类型</label>
-        <select id="target_type" name="target_type">
-          {target_options_html}
+      <div id="block-target-field">
+        <label for="block_target_type">方块类型</label>
+        <input id="block_target_type" name="target_type" value="{esc(query.get("target_type", ""))}" placeholder="例如 OBSIDIAN">
+      </div>
+      <div id="container-target-field">
+        <label for="container_target_type">容器类型</label>
+        <select id="container_target_type" name="target_type">
+          {container_options_html}
         </select>
       </div>
-      <div>
+      <div id="item-type-field">
         <label for="item_type">物品类型</label>
         <input id="item_type" name="item_type" value="{esc(query.get("item_type", ""))}" placeholder="例如 DIAMOND">
       </div>
@@ -567,6 +572,32 @@ def audit_page(user, params):
 <section class="panel">
   {render_audit_results(rows, next_cursor, query, message)}
 </section>
+<script>
+  const actionSelect = document.getElementById("action");
+  const blockTargetField = document.getElementById("block-target-field");
+  const blockTargetInput = document.getElementById("block_target_type");
+  const containerTargetField = document.getElementById("container-target-field");
+  const containerTargetSelect = document.getElementById("container_target_type");
+  const itemTypeField = document.getElementById("item-type-field");
+  const itemTypeInput = document.getElementById("item_type");
+
+  function setFieldVisible(field, control, visible) {{
+    field.classList.toggle("is-hidden", !visible);
+    control.disabled = !visible;
+  }}
+
+  function refreshAuditFields() {{
+    const action = actionSelect.value;
+    const blockAction = action === "BLOCK_PLACE" || action === "BLOCK_BREAK";
+    const containerAction = action === "CONTAINER_ADD" || action === "CONTAINER_REMOVE";
+    setFieldVisible(blockTargetField, blockTargetInput, blockAction);
+    setFieldVisible(containerTargetField, containerTargetSelect, containerAction);
+    setFieldVisible(itemTypeField, itemTypeInput, containerAction);
+  }}
+
+  actionSelect.addEventListener("change", refreshAuditFields);
+  refreshAuditFields();
+</script>
 """
     return page("操作查询", body, user=user, active="audit")
 
@@ -576,10 +607,9 @@ def option(value, label, selected):
     return f'<option value="{esc(value)}"{attr}>{esc(label)}</option>'
 
 
-def target_options(selected):
+def container_options(selected):
     values = {
         "",
-        "PLAYER",
         "CHEST",
         "BARREL",
         "SHULKER_BOX",
@@ -587,15 +617,8 @@ def target_options(selected):
         "BLAST_FURNACE",
         "SMOKER",
         "HOPPER",
-        "STONE",
-        "DIRT",
-        "GRASS_BLOCK",
-        "OAK_LOG",
-        "COBBLESTONE",
-        "DIAMOND_ORE",
-        "DEEPSLATE_DIAMOND_ORE",
-        "IRON_ORE",
-        "DEEPSLATE_IRON_ORE",
+        "DROPPER",
+        "DISPENSER",
     }
     try:
         with db_connect() as conn, conn.cursor() as cur:
@@ -603,7 +626,9 @@ def target_options(selected):
                 """
                 SELECT DISTINCT target_type
                 FROM audit_log
-                WHERE target_type IS NOT NULL AND target_type <> ''
+                WHERE action IN ('CONTAINER_ADD', 'CONTAINER_REMOVE')
+                  AND target_type IS NOT NULL
+                  AND target_type <> ''
                 ORDER BY target_type
                 LIMIT 300
                 """
@@ -646,7 +671,7 @@ def render_audit_results(rows, next_cursor, query, message):
     return f"""
 <div class="table-wrap">
 <table>
-  <thead><tr><th>时间</th><th>操作</th><th>来源</th><th>位置</th><th>目标</th><th>物品</th><th>数量/秒数</th></tr></thead>
+  <thead><tr><th>时间</th><th>操作</th><th>来源</th><th>位置</th><th>对象类型</th><th>物品</th><th>数量/秒数</th></tr></thead>
   <tbody>{''.join(table_rows)}</tbody>
 </table>
 </div>
@@ -702,13 +727,16 @@ def build_audit_filters(params):
             where.append("player_name = %s")
         values.append(player)
 
+    block_actions = {"BLOCK_PLACE", "BLOCK_BREAK"}
+    container_actions = {"CONTAINER_ADD", "CONTAINER_REMOVE"}
+
     target_type = first(params, "target_type").upper()
-    if target_type:
+    if target_type and (not action or action in block_actions or action in container_actions):
         where.append("target_type = %s")
         values.append(target_type)
 
     item_type = first(params, "item_type").upper()
-    if item_type:
+    if item_type and (not action or action in container_actions):
         where.append("item_type = %s")
         values.append(item_type)
 
