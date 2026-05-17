@@ -2,7 +2,7 @@
 # Copy this file to server.properties on the server host before first launch.
 
 # Identity
-motd=XiceMCServer 0.0.1 - Vanilla Survival Test
+motd=XiceMCServer | Minecraft Java 1.21.11
 server-name=XiceMCServer
 
 # Access control

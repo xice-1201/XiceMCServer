@@ -2,10 +2,12 @@
 
 Web 页面用于承载白名单注册、玩家登录、个人信息展示和审计查询。
 
+当前服务器游戏版本：`Minecraft Java 版 1.21.11`。
+
 ## 页面结构
 
-1. `/`：登录页。玩家使用 Minecraft Java 版 ID 和 Web 密码登录，且该 ID 必须已经在白名单内。
-2. `/register`：白名单注册页。玩家填写 Minecraft ID 和 5 分钟内有效的验证码后，Web 服务写入服务器 `whitelist.json`，再通过本机 RCON 执行 `whitelist reload` 使白名单立即生效。
+1. `/`：登录页。页面会提示当前服务器游戏版本。玩家使用 Minecraft Java 版 ID 和 Web 密码登录，且该 ID 必须已经在白名单内。
+2. `/register`：白名单注册页。页面会提示玩家使用 `Minecraft Java 版 1.21.11` 连接服务器获取验证码。玩家填写 Minecraft ID 和 5 分钟内有效的验证码后，Web 服务写入服务器 `whitelist.json`，再通过本机 RCON 执行 `whitelist reload` 使白名单立即生效。
 3. `/home`：登录后的首页，展示玩家皮肤、UUID、注册时间、累计游玩时间和上次登出地点，并提供修改密码入口。
 4. `/password`：修改密码页。玩家输入原密码和两次新密码后更新 Web 登录密码。
 5. `/audit`：操作查询页，用于查询 `XiceAuditLog` 写入 PostgreSQL 的审计记录。

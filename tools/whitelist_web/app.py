@@ -32,6 +32,7 @@ DEFAULT_PASSWORD_HASH = hashlib.md5("123456".encode("utf-8")).hexdigest()
 PLAYER_ROLE = "玩家"
 ADMIN_ROLE = "管理员"
 OWNER_ROLE = "服主"
+MINECRAFT_VERSION = "1.21.11"
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_ATTEMPTS = 10
 SESSION_SECONDS = 7 * 24 * 60 * 60
@@ -969,7 +970,7 @@ def login_page(message="", status=HTTPStatus.OK):
     body = f"""
 <section class="login-card">
   <h1>XiceMCServer 登录</h1>
-  <p class="help-text">已有白名单的玩家可直接登录。未加入白名单时，请先在 Minecraft 中连接服务器，按拒绝提示获取白名单验证码。</p>
+  <p class="help-text">服务器版本：Minecraft Java 版 {MINECRAFT_VERSION}。已有白名单的玩家可直接登录。未加入白名单时，请先在 Minecraft 中连接服务器，按拒绝提示获取白名单验证码。</p>
   {safe_message}
   <form method="post" action="/login">
     <label for="username">Minecraft Java 版 ID</label>
@@ -991,7 +992,7 @@ def register_page(message="", status=HTTPStatus.OK):
     body = f"""
 <section class="login-card">
   <h1>注册白名单</h1>
-  <p class="help-text">未注册白名单时，直接在 Minecraft 中连接服务器即可获取白名单验证码。白名单验证码在 5 分钟内有效。</p>
+  <p class="help-text">请使用 Minecraft Java 版 {MINECRAFT_VERSION} 连接服务器获取白名单验证码。白名单验证码在 5 分钟内有效。</p>
   {safe_message}
   <form method="post" action="/register">
     <label for="username">Minecraft Java 版 ID</label>

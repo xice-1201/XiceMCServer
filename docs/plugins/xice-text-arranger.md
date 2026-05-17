@@ -21,6 +21,7 @@ whitelist-denied:
   enabled: true
   message:
     - '&c你暂未加入 XiceMCServer 白名单。'
+    - '&f服务器版本：&eMinecraft Java 版 1.21.11'
     - '&f你的注册验证码：&e{verificationCode}'
     - '&7验证码将在 {verificationExpiresMinutes} 分钟后失效。'
     - '&f请使用浏览器访问：'
