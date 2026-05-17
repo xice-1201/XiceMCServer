@@ -1,0 +1,11 @@
+[Unit]
+Description=XiceMCServer Daily Backup and Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/xicemc/repo
+ExecStart=/opt/xicemc/repo/scripts/daily-maintenance.sh

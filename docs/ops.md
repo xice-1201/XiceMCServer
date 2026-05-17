@@ -70,3 +70,37 @@
 7. 检查控制台日志、端口状态和基础功能。
 
 服务端核心、Java 版本和重要插件升级应单独测试，不应和大量玩法配置变更混在同一次部署中。
+
+## 每日自动备份与更新
+
+服务器使用 `xicemc-maintenance.timer` 在每天 `00:00` 触发每日维护任务。
+
+每日维护流程：
+
+1. 关闭 `xicemc.service`。
+2. 在停服状态下执行 `scripts/backup.sh`，备份运行目录中的世界、玩家数据、白名单、封禁列表、服务端配置和插件配置。
+3. 执行 `scripts/prune-backups.sh` 清理过期备份。
+4. 执行 `scripts/deploy.sh` 从 GitHub 拉取最新内容，并部署配置、Paper 核心和自制插件。
+5. 重新启动 `xicemc.service`。
+
+备份保留策略：
+
+1. 普通每日备份保留 `3` 天。
+2. 星期一生成的备份额外保留至第 `3` 周。
+3. 星期一备份进入第 `4` 周后删除。
+
+备份文件位于：
+
+```text
+/opt/xicemc/backups
+```
+
+维护任务带有失败保护：只要任务已经停服，即使备份、清理或更新步骤失败，也会尽量重新启动 `xicemc.service`，避免服务器长时间保持关闭状态。
+
+常用检查命令：
+
+```bash
+systemctl status xicemc-maintenance.timer
+systemctl list-timers xicemc-maintenance.timer
+journalctl -u xicemc-maintenance.service -n 200 --no-pager
+```

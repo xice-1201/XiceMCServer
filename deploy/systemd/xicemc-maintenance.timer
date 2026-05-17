@@ -1,0 +1,10 @@
+[Unit]
+Description=Run XiceMCServer daily backup and update at midnight
+
+[Timer]
+OnCalendar=*-*-* 00:00:00
+Persistent=true
+Unit=xicemc-maintenance.service
+
+[Install]
+WantedBy=timers.target

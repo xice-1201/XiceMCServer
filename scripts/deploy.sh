@@ -1,4 +1,60 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "TODO: implement deployment workflow"
+REPO_DIR="${XICEMC_REPO_DIR:-/opt/xicemc/repo}"
+RUNTIME_DIR="${XICEMC_RUNTIME_DIR:-/opt/xicemc/runtime}"
+SERVER_USER="${XICEMC_SERVER_USER:-minecraft}"
+
+run_as_server_user() {
+  if [[ "$(id -un)" == "${SERVER_USER}" ]]; then
+    "$@"
+  else
+    runuser -u "${SERVER_USER}" -- "$@"
+  fi
+}
+
+if [[ ! -d "${REPO_DIR}/.git" ]]; then
+  echo "Repository directory is not a Git checkout: ${REPO_DIR}" >&2
+  exit 1
+fi
+
+echo "Updating repository from GitHub..."
+run_as_server_user git -C "${REPO_DIR}" fetch origin main
+run_as_server_user git -C "${REPO_DIR}" pull --ff-only origin main
+
+echo "Applying server.properties template..."
+python3 "${REPO_DIR}/scripts/lib/apply-server-properties.py" \
+  "${REPO_DIR}/server/config/server.properties.template" \
+  "${RUNTIME_DIR}/server.properties"
+
+echo "Applying Paper configuration overrides..."
+python3 "${REPO_DIR}/scripts/lib/apply-paper-overrides.py" \
+  "${REPO_DIR}/server/config" \
+  "${RUNTIME_DIR}/config"
+
+echo "Ensuring Paper core is present..."
+"${REPO_DIR}/scripts/download-paper.sh"
+
+if compgen -G "${REPO_DIR}/plugins/*/pom.xml" > /dev/null; then
+  if ! command -v mvn > /dev/null 2>&1; then
+    echo "Maven is required to build server plugins, but mvn was not found." >&2
+    exit 1
+  fi
+
+  mkdir -p "${RUNTIME_DIR}/plugins"
+  for pom in "${REPO_DIR}"/plugins/*/pom.xml; do
+    plugin_dir="$(dirname "${pom}")"
+    plugin_name="$(basename "${plugin_dir}")"
+    echo "Building plugin: ${plugin_name}"
+    run_as_server_user mvn -q -f "${pom}" package
+    jar_path="$(find "${plugin_dir}/target" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
+    if [[ -z "${jar_path}" ]]; then
+      echo "No plugin jar found for ${plugin_name}" >&2
+      exit 1
+    fi
+    install -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0644 "${jar_path}" "${RUNTIME_DIR}/plugins/${plugin_name}.jar"
+  done
+fi
+
+chown -R "${SERVER_USER}:${SERVER_USER}" "${RUNTIME_DIR}"
+echo "Deployment completed."
