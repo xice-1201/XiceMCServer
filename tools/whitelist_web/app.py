@@ -33,6 +33,8 @@ PLAYER_ROLE = "玩家"
 ADMIN_ROLE = "管理员"
 OWNER_ROLE = "服主"
 MINECRAFT_VERSION = "1.21.11"
+DEFAULT_PROFILE_BIO = "一名普通的Minecraft玩家"
+PROFILE_BIO_MAX_LENGTH = 120
 AUDIT_ACTION_LABELS = {
     "BLOCK_PLACE": "放置方块",
     "BLOCK_BREAK": "破坏方块",
@@ -309,22 +311,30 @@ def init_web_tables():
               registered_at BIGINT NOT NULL,
               updated_at BIGINT NOT NULL,
               password_hash TEXT NOT NULL DEFAULT 'e10adc3949ba59abbe56e057f20f883e',
-              role TEXT NOT NULL DEFAULT '玩家'
+              role TEXT NOT NULL DEFAULT '玩家',
+              profile_bio TEXT NOT NULL DEFAULT '一名普通的Minecraft玩家'
             )
             """
         )
         cur.execute("ALTER TABLE web_players ADD COLUMN IF NOT EXISTS password_hash TEXT")
         cur.execute("ALTER TABLE web_players ADD COLUMN IF NOT EXISTS role TEXT")
+        cur.execute("ALTER TABLE web_players ADD COLUMN IF NOT EXISTS profile_bio TEXT")
         cur.execute(
             "UPDATE web_players SET password_hash = %s WHERE password_hash IS NULL OR password_hash = ''",
             (DEFAULT_PASSWORD_HASH,),
         )
         cur.execute("UPDATE web_players SET role = %s WHERE role IS NULL OR role = ''", (PLAYER_ROLE,))
+        cur.execute(
+            "UPDATE web_players SET profile_bio = %s WHERE profile_bio IS NULL OR profile_bio = ''",
+            (DEFAULT_PROFILE_BIO,),
+        )
         cur.execute("UPDATE web_players SET role = %s WHERE lower(player_name) = 'exampleplayer'", (OWNER_ROLE,))
         cur.execute(f"ALTER TABLE web_players ALTER COLUMN password_hash SET DEFAULT '{DEFAULT_PASSWORD_HASH}'")
         cur.execute("ALTER TABLE web_players ALTER COLUMN password_hash SET NOT NULL")
         cur.execute(f"ALTER TABLE web_players ALTER COLUMN role SET DEFAULT '{PLAYER_ROLE}'")
         cur.execute("ALTER TABLE web_players ALTER COLUMN role SET NOT NULL")
+        cur.execute("ALTER TABLE web_players ALTER COLUMN profile_bio SET DEFAULT %s", (DEFAULT_PROFILE_BIO,))
+        cur.execute("ALTER TABLE web_players ALTER COLUMN profile_bio SET NOT NULL")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS web_reports (
@@ -367,12 +377,12 @@ def ensure_web_player(entry):
         with db_connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO web_players (player_uuid, player_name, registered_at, updated_at, password_hash, role)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO web_players (player_uuid, player_name, registered_at, updated_at, password_hash, role, profile_bio)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (player_uuid)
                 DO UPDATE SET player_name = EXCLUDED.player_name, updated_at = EXCLUDED.updated_at
                 """,
-                (entry["uuid"], entry["name"], now, now, DEFAULT_PASSWORD_HASH, PLAYER_ROLE),
+                (entry["uuid"], entry["name"], now, now, DEFAULT_PASSWORD_HASH, PLAYER_ROLE, DEFAULT_PROFILE_BIO),
             )
             cur.execute("UPDATE web_players SET role = %s WHERE lower(player_name) = 'exampleplayer'", (OWNER_ROLE,))
     except Exception as exc:
@@ -383,7 +393,7 @@ def web_player(entry):
     ensure_web_player(entry)
     with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            "SELECT player_uuid, player_name, password_hash, role FROM web_players WHERE player_uuid = %s",
+            "SELECT player_uuid, player_name, password_hash, role, profile_bio FROM web_players WHERE player_uuid = %s",
             (canonical_uuid(entry["uuid"]),),
         )
         return cur.fetchone()
@@ -395,6 +405,32 @@ def update_player_password(player_uuid, new_password):
         cur.execute(
             "UPDATE web_players SET password_hash = %s, updated_at = %s WHERE player_uuid = %s",
             (password_hash(new_password), now, canonical_uuid(player_uuid)),
+        )
+        return cur.rowcount == 1
+
+
+def player_profile(user):
+    result = {"profile_bio": DEFAULT_PROFILE_BIO}
+    try:
+        with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT profile_bio FROM web_players WHERE player_uuid = %s", (canonical_uuid(user["uuid"]),))
+            row = cur.fetchone()
+            if row and row["profile_bio"]:
+                result["profile_bio"] = row["profile_bio"]
+    except Exception as exc:
+        print(f"failed to load player profile: {exc}")
+    return result
+
+
+def update_profile_bio(player_uuid, profile_bio):
+    value = profile_bio.strip() or DEFAULT_PROFILE_BIO
+    if len(value) > PROFILE_BIO_MAX_LENGTH:
+        raise ValueError(f"个人简介不能超过 {PROFILE_BIO_MAX_LENGTH} 个字符。")
+    now = int(time.time() * 1000)
+    with db_connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE web_players SET profile_bio = %s, updated_at = %s WHERE player_uuid = %s",
+            (value, now, canonical_uuid(player_uuid)),
         )
         return cur.rowcount == 1
 
@@ -869,11 +905,14 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       grid-template-columns: minmax(170px, 240px) 1fr;
       gap: 24px;
       align-items: stretch;
+      width: min(100%, 860px);
+      aspect-ratio: 1.586;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #ffffff;
       padding: 22px;
       margin-bottom: 18px;
+      overflow: hidden;
     }}
     .identity-visual {{
       display: grid;
@@ -910,6 +949,9 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       font-weight: 700;
       font-size: 13px;
     }}
+    .identity-role.owner {{ background: #fff4d6; color: #a15c00; }}
+    .identity-role.admin {{ background: #eafaf2; color: #176f48; }}
+    .identity-role.player {{ background: #eaf3ff; color: #1d5fa7; }}
     .identity-main {{
       min-width: 0;
       display: grid;
@@ -944,6 +986,25 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }}
+    .identity-bio {{
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+      min-width: 0;
+    }}
+    .identity-bio .label {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .identity-bio .value {{
+      margin-top: 7px;
+      font-size: 16px;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }}
     .identity-stat {{
       border-top: 1px solid var(--line);
       padding-top: 12px;
@@ -963,7 +1024,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
-      margin-top: 4px;
+      margin: 0 0 18px;
     }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }}
     .audit-grid {{
@@ -1050,9 +1111,10 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       .app-shell {{ grid-template-columns: 1fr; }}
       .sidebar {{ border-right: 0; border-bottom: 1px solid var(--line); }}
       main {{ padding: 18px; }}
-      .identity-card {{ grid-template-columns: 1fr; padding: 16px; }}
-      .identity-visual {{ min-height: 240px; }}
-      .identity-stats {{ grid-template-columns: 1fr; }}
+      .identity-card {{ min-width: 680px; padding: 16px; gap: 16px; }}
+      .identity-card-wrap {{ overflow-x: auto; padding-bottom: 4px; }}
+      .identity-visual {{ min-height: 0; }}
+      .skin-frame {{ min-height: 170px; }}
       .identity-title h2 {{ font-size: 26px; }}
     }}
   </style>
@@ -1122,37 +1184,76 @@ def auth_page(login_message="", register_message="", status=HTTPStatus.OK):
 
 def home_page(user):
     stats = load_player_stats(user)
+    profile = player_profile(user)
+    role = user.get("role", PLAYER_ROLE)
+    role_class = role_css_class(role)
     skin_url = f"https://minotar.net/armor/body/{user['name']}/128.png"
     body = f"""
 <h1>首页</h1>
+<div class="identity-card-wrap">
 <section class="identity-card">
   <div class="identity-visual">
     <div class="skin-frame">
       <img class="player-skin" src="{esc(skin_url)}" alt="{esc(user["name"])} 的 Minecraft 皮肤" loading="lazy">
     </div>
-    <span class="identity-role">{esc(user.get("role", PLAYER_ROLE))}</span>
+    <span class="identity-role {esc(role_class)}">{esc(role)}</span>
   </div>
   <div class="identity-main">
     <div>
-      <div class="identity-kicker">Minecraft Java 玩家身份卡</div>
+      <div class="identity-kicker">XiceMCServer 玩家 ID 卡</div>
       <div class="identity-title">
         <h2>{esc(user["name"])}</h2>
       </div>
       <div class="identity-uuid mono">{esc(user["uuid"])}</div>
     </div>
+    <div class="identity-bio">
+      <div class="label">个人简介</div>
+      <div class="value">{esc(profile["profile_bio"])}</div>
+    </div>
     <div class="identity-stats">
       <div class="identity-stat"><div class="label">注册时间</div><div class="value">{esc(stats["registered_at"])}</div></div>
       <div class="identity-stat"><div class="label">累计游玩时间</div><div class="value">{esc(stats["play_time"])}</div></div>
       <div class="identity-stat"><div class="label">上次登出地点</div><div class="value">{esc(stats["last_logout"])}</div></div>
-      <div class="identity-stat"><div class="label">Web 身份</div><div class="value">{esc(user.get("role", PLAYER_ROLE))}</div></div>
-    </div>
-    <div class="identity-actions">
-      <a class="button secondary" href="/password">修改密码</a>
+      <div class="identity-stat"><div class="label">Web 身份</div><div class="value">{esc(role)}</div></div>
     </div>
   </div>
 </section>
+</div>
+<div class="identity-actions">
+  <a class="button secondary" href="/profile">编辑个人简介</a>
+  <a class="button secondary" href="/password">修改密码</a>
+</div>
 """
     return page("首页", body, user=user, active="home")
+
+
+def role_css_class(role):
+    if role == OWNER_ROLE:
+        return "owner"
+    if role == ADMIN_ROLE:
+        return "admin"
+    return "player"
+
+
+def profile_page(user, message="", status=HTTPStatus.OK):
+    profile = player_profile(user)
+    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
+    body = f"""
+<h1>编辑个人简介</h1>
+<section class="panel">
+  {safe_message}
+  <form method="post" action="/profile">
+    <label for="profile_bio">个人简介</label>
+    <textarea id="profile_bio" name="profile_bio" maxlength="{PROFILE_BIO_MAX_LENGTH}">{esc(profile["profile_bio"])}</textarea>
+    <p class="field-hint">最多 {PROFILE_BIO_MAX_LENGTH} 个字符。留空保存时会恢复默认简介。</p>
+    <div class="actions">
+      <button type="submit">保存简介</button>
+      <a class="button secondary" href="/home">返回首页</a>
+    </div>
+  </form>
+</section>
+"""
+    return page("编辑个人简介", body, status, user=user, active="home")
 
 
 def password_page(user, message="", status=HTTPStatus.OK):
@@ -1981,6 +2082,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.respond(*password_page(user))
             return
+        if parsed.path == "/profile":
+            if not user:
+                self.send_redirect("/")
+                return
+            self.respond(*profile_page(user))
+            return
         if parsed.path == "/report":
             if not user:
                 self.send_redirect("/")
@@ -2060,6 +2167,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/password":
             self.handle_password_change()
+            return
+        if parsed.path == "/profile":
+            self.handle_profile_update()
             return
         self.respond(*page("未找到", "<h1>未找到</h1>", HTTPStatus.NOT_FOUND))
 
@@ -2310,6 +2420,23 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self.respond(*password_page(user, "密码已更新。"))
+
+    def handle_profile_update(self):
+        user = parse_session(self.headers.get("Cookie"))
+        if not user:
+            self.send_redirect("/")
+            return
+        try:
+            params = self.read_form(max_length=4096)
+            profile_bio = first(params, "profile_bio")
+            if not update_profile_bio(user["uuid"], profile_bio):
+                self.respond(*profile_page(user, "简介更新失败。", HTTPStatus.INTERNAL_SERVER_ERROR))
+                return
+        except Exception as exc:
+            self.respond(*profile_page(user, f"简介更新失败：{exc}", HTTPStatus.BAD_REQUEST))
+            return
+
+        self.respond(*profile_page(user, "简介已更新。"))
 
     def send_redirect(self, location, cookie=None):
         headers = [("Location", location)]
