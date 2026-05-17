@@ -673,54 +673,55 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         int maxSize = Math.max(Math.max(claim.sizeX(), claim.sizeY()), claim.sizeZ());
         int edgeStep = Math.max(Math.max(1, getConfig().getInt("visualization.edge-step", 1)), maxSize / 128);
         int gridStep = Math.max(1, maxSize / 16);
-        drawEdges(player, claim, edgeStep, edgeDust);
-        drawFaceGrid(player, claim, gridStep, faceDust);
+        ClaimBounds bounds = ClaimBounds.from(claim);
+        drawEdges(player, bounds, edgeStep, edgeDust);
+        drawFaceGrid(player, bounds, gridStep, faceDust);
     }
 
-    private void drawEdges(Player player, ClaimRegion claim, int step, Particle.DustOptions dust) {
-        for (int x = claim.minX; x <= claim.maxX; x += step) {
-            spawnDust(player, x, claim.minY, claim.minZ, dust);
-            spawnDust(player, x, claim.minY, claim.maxZ, dust);
-            spawnDust(player, x, claim.maxY, claim.minZ, dust);
-            spawnDust(player, x, claim.maxY, claim.maxZ, dust);
+    private void drawEdges(Player player, ClaimBounds bounds, int step, Particle.DustOptions dust) {
+        for (int x = bounds.minX; x <= bounds.maxX; x += step) {
+            spawnDust(player, x, bounds.minY, bounds.minZ, dust);
+            spawnDust(player, x, bounds.minY, bounds.maxZ, dust);
+            spawnDust(player, x, bounds.maxY, bounds.minZ, dust);
+            spawnDust(player, x, bounds.maxY, bounds.maxZ, dust);
         }
-        for (int y = claim.minY; y <= claim.maxY; y += step) {
-            spawnDust(player, claim.minX, y, claim.minZ, dust);
-            spawnDust(player, claim.minX, y, claim.maxZ, dust);
-            spawnDust(player, claim.maxX, y, claim.minZ, dust);
-            spawnDust(player, claim.maxX, y, claim.maxZ, dust);
+        for (int y = bounds.minY; y <= bounds.maxY; y += step) {
+            spawnDust(player, bounds.minX, y, bounds.minZ, dust);
+            spawnDust(player, bounds.minX, y, bounds.maxZ, dust);
+            spawnDust(player, bounds.maxX, y, bounds.minZ, dust);
+            spawnDust(player, bounds.maxX, y, bounds.maxZ, dust);
         }
-        for (int z = claim.minZ; z <= claim.maxZ; z += step) {
-            spawnDust(player, claim.minX, claim.minY, z, dust);
-            spawnDust(player, claim.minX, claim.maxY, z, dust);
-            spawnDust(player, claim.maxX, claim.minY, z, dust);
-            spawnDust(player, claim.maxX, claim.maxY, z, dust);
+        for (int z = bounds.minZ; z <= bounds.maxZ; z += step) {
+            spawnDust(player, bounds.minX, bounds.minY, z, dust);
+            spawnDust(player, bounds.minX, bounds.maxY, z, dust);
+            spawnDust(player, bounds.maxX, bounds.minY, z, dust);
+            spawnDust(player, bounds.maxX, bounds.maxY, z, dust);
         }
     }
 
-    private void drawFaceGrid(Player player, ClaimRegion claim, int step, Particle.DustOptions dust) {
-        for (int x = claim.minX; x <= claim.maxX; x += step) {
-            for (int y = claim.minY; y <= claim.maxY; y += step) {
-                spawnDust(player, x, y, claim.minZ, dust);
-                spawnDust(player, x, y, claim.maxZ, dust);
+    private void drawFaceGrid(Player player, ClaimBounds bounds, int step, Particle.DustOptions dust) {
+        for (int x = bounds.minX; x <= bounds.maxX; x += step) {
+            for (int y = bounds.minY; y <= bounds.maxY; y += step) {
+                spawnDust(player, x, y, bounds.minZ, dust);
+                spawnDust(player, x, y, bounds.maxZ, dust);
             }
         }
-        for (int z = claim.minZ; z <= claim.maxZ; z += step) {
-            for (int y = claim.minY; y <= claim.maxY; y += step) {
-                spawnDust(player, claim.minX, y, z, dust);
-                spawnDust(player, claim.maxX, y, z, dust);
+        for (int z = bounds.minZ; z <= bounds.maxZ; z += step) {
+            for (int y = bounds.minY; y <= bounds.maxY; y += step) {
+                spawnDust(player, bounds.minX, y, z, dust);
+                spawnDust(player, bounds.maxX, y, z, dust);
             }
         }
-        for (int x = claim.minX; x <= claim.maxX; x += step) {
-            for (int z = claim.minZ; z <= claim.maxZ; z += step) {
-                spawnDust(player, x, claim.minY, z, dust);
-                spawnDust(player, x, claim.maxY, z, dust);
+        for (int x = bounds.minX; x <= bounds.maxX; x += step) {
+            for (int z = bounds.minZ; z <= bounds.maxZ; z += step) {
+                spawnDust(player, x, bounds.minY, z, dust);
+                spawnDust(player, x, bounds.maxY, z, dust);
             }
         }
     }
 
     private void spawnDust(Player player, int x, int y, int z, Particle.DustOptions dust) {
-        player.spawnParticle(Particle.DUST, x + 0.5D, y + 0.5D, z + 0.5D, 1, 0D, 0D, 0D, 0D, dust);
+        player.spawnParticle(Particle.DUST, x, y, z, 1, 0D, 0D, 0D, 0D, dust);
     }
 
     private void sendUsage(CommandSender sender) {
@@ -806,6 +807,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     location.getBlockX(),
                     location.getBlockY(),
                     location.getBlockZ());
+        }
+    }
+
+    private record ClaimBounds(int minX, int maxX, int minY, int maxY, int minZ, int maxZ) {
+        private static ClaimBounds from(ClaimRegion claim) {
+            return new ClaimBounds(
+                    claim.minX,
+                    claim.maxX + 1,
+                    claim.minY,
+                    claim.maxY + 1,
+                    claim.minZ,
+                    claim.maxZ + 1);
         }
     }
 
