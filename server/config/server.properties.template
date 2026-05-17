@@ -42,8 +42,8 @@ sync-chunk-writes=true
 max-tick-time=60000
 
 # Administration
-enable-rcon=false
-rcon.password=
+enable-rcon=true
+rcon.password=CHANGE_ME_IN_RUNTIME
 rcon.port=25575
 enable-query=false
 
