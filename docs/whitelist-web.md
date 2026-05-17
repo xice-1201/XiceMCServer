@@ -24,27 +24,27 @@ Web 图标来自仓库内 `server/assets/xicemc-logo.png`，浏览器会通过 `
 
 ## 域名与反向代理
 
-当前 Web 入口域名：
+备案完成后的 Web 入口域名：
 
 ```text
 https://xicemc.site/
 https://www.xicemc.site/
 ```
 
-备案完成前可临时使用 HTTP IP 入口：
+当前备案完成前临时使用 HTTP IP 入口：
 
 ```text
 http://150.158.93.80/
 ```
 
-该入口由 Nginx 的默认 HTTP server 转发到 Web 后端，仅用于域名备案完成前的小范围测试。
+该入口由 Nginx 的默认 HTTP server 转发到 Web 后端，仅用于域名备案完成前的小范围测试。HTTPS 域名入口和 `443` 监听可在备案完成后再补齐。
 
 DNS 解析：
 
 1. `xicemc.site` A 记录指向 `150.158.93.80`。
 2. `www.xicemc.site` A 记录指向 `150.158.93.80`。
 
-服务器侧由 Nginx 监听 `80/443`，再反向代理到本机 Web 服务：
+当前服务器侧由 Nginx 监听 `80`，再反向代理到本机 Web 服务；备案完成后再启用 `443`：
 
 ```text
 127.0.0.1:8080

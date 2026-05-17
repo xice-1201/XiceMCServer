@@ -1,8 +1,15 @@
 limits:
-  max-claims-per-player: 5
-  max-area-blocks: 40000
+  max-claims-per-player: 3
+  min-size: 3
+  max-horizontal-size: 128
+  world-border: 50000
   world-min-y: -64
   world-max-y: 320
+
+visualization:
+  pulses: 10
+  interval-ticks: 10
+  edge-step: 1
 
 protection:
   block-break: true
@@ -20,31 +27,41 @@ messages:
   player-only: '&c该指令只能由玩家执行。'
   no-permission: '&c你没有管理该领地的权限。'
   usage:
-    - '&e/claim pos1 &7设置第一个角点'
-    - '&e/claim pos2 &7设置第二个角点'
-    - '&e/claim create <名称> &7创建从基岩到天顶的矩形领地'
-    - '&e/claim info &7查看当前位置领地'
-    - '&e/claim list &7查看自己的领地'
+    - '&e/claim pos1 [X Y Z] &7设置第一个角点'
+    - '&e/claim pos2 [X Y Z] &7设置第二个角点'
+    - '&e/claim create <名称> &7创建立方体领地'
+    - '&e/claim info [名称] &7查看当前位置或指定领地'
+    - '&e/claim list [玩家ID] &7查看自己或指定玩家的领地'
     - '&e/claim trust <玩家> &7授权当前位置领地'
     - '&e/claim untrust <玩家> &7移除当前位置领地授权'
     - '&e/claim delete <名称> &7删除自己的领地'
-  pos1-set: '&a已设置第一个角点：{world} {x}, {z}'
-  pos2-set: '&a已设置第二个角点：{world} {x}, {z}'
+  invalid-position: '&c坐标格式错误，请使用 /claim pos1 [X Y Z] 或 /claim pos2 [X Y Z]。'
+  pos1-set: '&a已设置第一个角点：{world} {x}, {y}, {z}'
+  pos2-set: '&a已设置第二个角点：{world} {x}, {y}, {z}'
+  selection-size: '&7当前框选大小：&e{sizeX} x {sizeY} x {sizeZ}&7，体积 &e{volume}&7。'
+  selection-valid: '&a当前框选合规，可以创建领地。'
+  selection-invalid: '&c当前框选不合规：{reason}'
   selection-missing: '&c请先使用 /claim pos1 和 /claim pos2 选择两个角点。'
   selection-world-mismatch: '&c两个角点必须在同一个世界。'
   invalid-name: '&c领地名称只能包含英文、数字、下划线和短横线，长度 1-24。'
-  area-too-large: '&c领地面积过大：{area}，当前上限为 {limit}。'
+  duplicate-name: '&c已存在名为 {claim} 的领地。'
+  invalid-selection: '&c无法创建领地：{reason}'
+  invalid-size-small: '长宽高均不得小于 {min} 格，当前为 {sizeX} x {sizeY} x {sizeZ}'
+  invalid-size-large: '长宽不得大于 {max} 格，当前长宽为 {sizeX} x {sizeZ}'
+  out-of-world-boundary: '领地不得超出世界边界：X/Z 范围 -{border} 到 {border}，Y 范围 {minY} 到 {maxY}'
+  overlap-reason: '与已有领地 {claim} 重合'
   too-many-claims: '&c你的领地数量已达到上限：{limit}。'
-  overlap: '&c该区域与已有领地 {claim} 重叠。'
-  created: '&a已创建领地 {claim}，面积 {area}。'
+  created: '&a已创建领地 {claim}，大小 {sizeX} x {sizeY} x {sizeZ}，体积 {volume}。'
   not-in-claim: '&c你当前不在任何领地内。'
-  claim-info: '&a领地 {claim} &7| 所有者：{owner} | 成员：{members}'
-  claim-list-empty: '&7你还没有领地。'
-  claim-list-line: '&a{claim} &7| {world} {minX},{minZ} 到 {maxX},{maxZ} | 成员：{members}'
+  claim-info: '&a领地 {claim} &7| 所有者：{owner} | 世界：{world} | 坐标：{minX},{minY},{minZ} 到 {maxX},{maxY},{maxZ} | 大小：{sizeX} x {sizeY} x {sizeZ} | 成员：{members}'
+  claim-list-header: '&a{player} 的领地列表（{count} 个）：'
+  claim-list-empty-for: '&7没有找到 {player} 的领地。'
+  claim-list-line: '&a{claim} &7| {world} {minX},{minY},{minZ} 到 {maxX},{maxY},{maxZ} | 大小：{sizeX} x {sizeY} x {sizeZ} | 成员：{members}'
   player-not-found: '&c没有找到玩家：{player}'
   trusted: '&a已将 {player} 加入领地 {claim}。'
   untrusted: '&a已将 {player} 移出领地 {claim}。'
   deleted: '&a已删除领地 {claim}。'
-  claim-not-found: '&c没有找到你的领地：{claim}'
+  claim-not-found: '&c没有找到领地：{claim}'
+  claim-not-found-owned: '&c没有找到你的领地：{claim}'
   protected: '&c这里属于 {claim}，你没有操作权限。'
   reload-complete: '&aXiceClaim 配置和领地数据已重新加载。'

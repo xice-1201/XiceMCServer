@@ -14,9 +14,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.bukkit.Bukkit;
+import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.Particle;
+import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -47,6 +51,7 @@ import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 
 public final class XiceClaimPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final Pattern CLAIM_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,24}$");
@@ -91,11 +96,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
 
         switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "pos1" -> setPosition(player, true);
-            case "pos2" -> setPosition(player, false);
+            case "pos1" -> setPosition(player, args, true);
+            case "pos2" -> setPosition(player, args, false);
             case "create" -> createClaim(player, args);
-            case "info" -> showClaimInfo(player);
-            case "list" -> listClaims(player);
+            case "info" -> showClaimInfo(player, args);
+            case "list" -> listClaims(player, args);
             case "trust" -> trustPlayer(player, args, true);
             case "untrust" -> trustPlayer(player, args, false);
             case "delete", "remove" -> deleteClaim(player, args);
@@ -104,21 +109,76 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return true;
     }
 
-    private void setPosition(Player player, boolean first) {
-        Location location = player.getLocation();
+    private void setPosition(Player player, String[] args, boolean first) {
+        ClaimPoint point = parsePoint(player, args);
+        if (point == null) {
+            send(player, message("invalid-position"));
+            return;
+        }
         Selection selection = selections.computeIfAbsent(player.getUniqueId(), ignored -> new Selection());
         if (first) {
-            selection.pos1 = ClaimPoint.from(location);
-            send(player, message("pos1-set"), "world", location.getWorld().getName(), "x", location.getBlockX(), "z", location.getBlockZ());
+            selection.pos1 = point;
+            send(player, message("pos1-set"), "world", point.world, "x", point.x, "y", point.y, "z", point.z);
         } else {
-            selection.pos2 = ClaimPoint.from(location);
-            send(player, message("pos2-set"), "world", location.getWorld().getName(), "x", location.getBlockX(), "z", location.getBlockZ());
+            selection.pos2 = point;
+            send(player, message("pos2-set"), "world", point.world, "x", point.x, "y", point.y, "z", point.z);
         }
+        showSelectionStatus(player, selection);
+    }
+
+    private ClaimPoint parsePoint(Player player, String[] args) {
+        Location location = player.getLocation();
+        String world = Objects.requireNonNull(location.getWorld()).getName();
+        if (args.length == 1) {
+            return ClaimPoint.from(location);
+        }
+        if (args.length != 4) {
+            return null;
+        }
+        try {
+            return new ClaimPoint(world, Integer.parseInt(args[1]), Integer.parseInt(args[2]), Integer.parseInt(args[3]));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private void showSelectionStatus(Player player, Selection selection) {
+        if (selection.pos1 == null || selection.pos2 == null) {
+            return;
+        }
+        if (!selection.pos1.world.equals(selection.pos2.world)) {
+            send(player, message("selection-world-mismatch"));
+            return;
+        }
+        ClaimRegion preview = ClaimRegion.fromSelection(
+                "__preview__",
+                "__preview__",
+                player.getUniqueId(),
+                player.getName(),
+                selection.pos1,
+                selection.pos2);
+        send(player, message("selection-size"),
+                "sizeX", preview.sizeX(),
+                "sizeY", preview.sizeY(),
+                "sizeZ", preview.sizeZ(),
+                "volume", preview.volume());
+        List<String> errors = validateClaimShape(preview);
+        if (errors.isEmpty()) {
+            send(player, message("selection-valid"));
+        } else {
+            send(player, message("selection-invalid"), "reason", String.join("；", errors));
+        }
+        showClaimParticles(player, preview);
     }
 
     private void createClaim(Player player, String[] args) {
         if (args.length < 2 || !CLAIM_NAME_PATTERN.matcher(args[1]).matches()) {
             send(player, message("invalid-name"));
+            return;
+        }
+        String claimName = args[1];
+        if (claimByName(claimName) != null) {
+            send(player, message("duplicate-name"), "claim", claimName);
             return;
         }
         Selection selection = selections.get(player.getUniqueId());
@@ -130,7 +190,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(player, message("selection-world-mismatch"));
             return;
         }
-        int maxClaims = getConfig().getInt("limits.max-claims-per-player", 5);
+        int maxClaims = getConfig().getInt("limits.max-claims-per-player", 3);
         long ownedCount = claims.values().stream().filter(claim -> claim.ownerUuid.equals(player.getUniqueId())).count();
         if (!player.hasPermission("xiceclaim.admin") && ownedCount >= maxClaims) {
             send(player, message("too-many-claims"), "limit", maxClaims);
@@ -139,57 +199,91 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
         ClaimRegion claim = ClaimRegion.fromSelection(
                 UUID.randomUUID().toString(),
-                args[1],
+                claimName,
                 player.getUniqueId(),
                 player.getName(),
                 selection.pos1,
-                selection.pos2,
-                getConfig().getInt("limits.world-min-y", -64),
-                getConfig().getInt("limits.world-max-y", 320));
-        int areaLimit = getConfig().getInt("limits.max-area-blocks", 40_000);
-        if (!player.hasPermission("xiceclaim.admin") && claim.area() > areaLimit) {
-            send(player, message("area-too-large"), "area", claim.area(), "limit", areaLimit);
-            return;
-        }
-        ClaimRegion overlapping = firstOverlappingClaim(claim);
-        if (overlapping != null) {
-            send(player, message("overlap"), "claim", overlapping.name);
+                selection.pos2);
+        List<String> errors = validateClaimShape(claim);
+        if (!errors.isEmpty()) {
+            send(player, message("invalid-selection"), "reason", String.join("；", errors));
             return;
         }
 
         claims.put(claim.id, claim);
         saveClaims();
-        send(player, message("created"), "claim", claim.name, "area", claim.area());
+        send(player, message("created"),
+                "claim", claim.name,
+                "sizeX", claim.sizeX(),
+                "sizeY", claim.sizeY(),
+                "sizeZ", claim.sizeZ(),
+                "volume", claim.volume());
+        showClaimParticles(player, claim);
     }
 
-    private void showClaimInfo(Player player) {
-        ClaimRegion claim = claimAt(player.getLocation());
-        if (claim == null) {
-            send(player, message("not-in-claim"));
-            return;
+    private void showClaimInfo(Player player, String[] args) {
+        ClaimRegion claim;
+        if (args.length >= 2) {
+            claim = claimByName(args[1]);
+            if (claim == null) {
+                send(player, message("claim-not-found"), "claim", args[1]);
+                return;
+            }
+        } else {
+            claim = claimAt(player.getLocation());
+            if (claim == null) {
+                send(player, message("not-in-claim"));
+                return;
+            }
         }
-        send(player, message("claim-info"), "claim", claim.name, "owner", claim.ownerName, "members", claim.memberNamesText());
+        send(player, message("claim-info"),
+                "claim", claim.name,
+                "owner", claim.ownerName,
+                "world", claim.world,
+                "minX", claim.minX,
+                "minY", claim.minY,
+                "minZ", claim.minZ,
+                "maxX", claim.maxX,
+                "maxY", claim.maxY,
+                "maxZ", claim.maxZ,
+                "sizeX", claim.sizeX(),
+                "sizeY", claim.sizeY(),
+                "sizeZ", claim.sizeZ(),
+                "volume", claim.volume(),
+                "members", claim.memberNamesText());
+        showClaimParticles(player, claim);
     }
 
-    private void listClaims(Player player) {
-        List<ClaimRegion> owned = claims.values().stream()
-                .filter(claim -> claim.ownerUuid.equals(player.getUniqueId()) || player.hasPermission("xiceclaim.admin"))
+    private void listClaims(Player player, String[] args) {
+        String query = args.length >= 2 ? args[1] : player.getName();
+        List<ClaimRegion> result = claims.values().stream()
+                .filter(claim -> matchesOwner(claim, query))
                 .sorted(Comparator.comparing(claim -> claim.name.toLowerCase(Locale.ROOT)))
                 .toList();
-        if (owned.isEmpty()) {
-            send(player, message("claim-list-empty"));
+        if (result.isEmpty()) {
+            send(player, message("claim-list-empty-for"), "player", query);
             return;
         }
-        for (ClaimRegion claim : owned) {
+        send(player, message("claim-list-header"), "player", query, "count", result.size());
+        for (ClaimRegion claim : result) {
             send(player, message("claim-list-line"),
                     "claim", claim.name,
                     "world", claim.world,
                     "minX", claim.minX,
+                    "minY", claim.minY,
                     "minZ", claim.minZ,
                     "maxX", claim.maxX,
+                    "maxY", claim.maxY,
                     "maxZ", claim.maxZ,
+                    "sizeX", claim.sizeX(),
+                    "sizeY", claim.sizeY(),
+                    "sizeZ", claim.sizeZ(),
                     "members", claim.memberNamesText());
         }
+    }
+
+    private boolean matchesOwner(ClaimRegion claim, String query) {
+        return claim.ownerName.equalsIgnoreCase(query) || claim.ownerUuid.toString().equalsIgnoreCase(query);
     }
 
     private void trustPlayer(Player player, String[] args, boolean trust) {
@@ -231,7 +325,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         ClaimRegion claim = claimByOwnerAndName(player, args[1]);
         if (claim == null) {
-            send(player, message("claim-not-found"), "claim", args[1]);
+            send(player, message("claim-not-found-owned"), "claim", args[1]);
             return;
         }
         claims.remove(claim.id);
@@ -369,28 +463,38 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPistonExtend(BlockPistonExtendEvent event) {
-        if (getConfig().getBoolean("protection.piston", true) && pistonTouchesClaim(event.getBlock(), event.getBlocks())) {
+        if (getConfig().getBoolean("protection.piston", true)
+                && pistonCrossesClaimBoundary(event.getBlock(), event.getBlocks(), event.getDirection())) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPistonRetract(BlockPistonRetractEvent event) {
-        if (getConfig().getBoolean("protection.piston", true) && pistonTouchesClaim(event.getBlock(), event.getBlocks())) {
+        if (getConfig().getBoolean("protection.piston", true)
+                && pistonCrossesClaimBoundary(event.getBlock(), event.getBlocks(), event.getDirection())) {
             event.setCancelled(true);
         }
     }
 
-    private boolean pistonTouchesClaim(Block piston, List<Block> movedBlocks) {
-        if (claimAt(piston.getLocation()) != null) {
+    private boolean pistonCrossesClaimBoundary(Block piston, List<Block> movedBlocks, BlockFace direction) {
+        if (claimBoundaryChanges(piston.getLocation(), piston.getRelative(direction).getLocation())) {
             return true;
         }
         for (Block block : movedBlocks) {
-            if (claimAt(block.getLocation()) != null) {
+            if (claimBoundaryChanges(block.getLocation(), block.getRelative(direction).getLocation())) {
                 return true;
             }
         }
         return false;
+    }
+
+    private boolean claimBoundaryChanges(Location from, Location to) {
+        ClaimRegion fromClaim = claimAt(from);
+        ClaimRegion toClaim = claimAt(to);
+        String fromId = fromClaim == null ? "" : fromClaim.id;
+        String toId = toClaim == null ? "" : toClaim.id;
+        return !fromId.equals(toId);
     }
 
     private void protect(Player player, Block block, org.bukkit.event.Cancellable event) {
@@ -423,9 +527,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return null;
     }
 
+    private ClaimRegion claimByName(String name) {
+        for (ClaimRegion claim : claims.values()) {
+            if (claim.name.equalsIgnoreCase(name)) {
+                return claim;
+            }
+        }
+        return null;
+    }
+
     private ClaimRegion claimByOwnerAndName(Player player, String name) {
         for (ClaimRegion claim : claims.values()) {
-            if (claim.name.equalsIgnoreCase(name) && (claim.ownerUuid.equals(player.getUniqueId()) || player.hasPermission("xiceclaim.admin"))) {
+            if (claim.name.equalsIgnoreCase(name) && claim.ownerUuid.equals(player.getUniqueId())) {
                 return claim;
             }
         }
@@ -434,7 +547,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private ClaimRegion firstOverlappingClaim(ClaimRegion candidate) {
         for (ClaimRegion claim : claims.values()) {
-            if (claim.overlaps(candidate)) {
+            if (!claim.id.equals(candidate.id) && claim.overlaps(candidate)) {
                 return claim;
             }
         }
@@ -443,6 +556,40 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private boolean canManage(Player player, ClaimRegion claim) {
         return claim.ownerUuid.equals(player.getUniqueId()) || player.hasPermission("xiceclaim.admin");
+    }
+
+    private List<String> validateClaimShape(ClaimRegion claim) {
+        List<String> errors = new ArrayList<>();
+        int minSize = getConfig().getInt("limits.min-size", 3);
+        int maxHorizontal = getConfig().getInt("limits.max-horizontal-size", 128);
+        int border = getConfig().getInt("limits.world-border", 50_000);
+        int minY = getConfig().getInt("limits.world-min-y", -64);
+        int maxY = getConfig().getInt("limits.world-max-y", 320);
+        if (claim.sizeX() < minSize || claim.sizeY() < minSize || claim.sizeZ() < minSize) {
+            errors.add(messageText("invalid-size-small")
+                    .replace("{min}", String.valueOf(minSize))
+                    .replace("{sizeX}", String.valueOf(claim.sizeX()))
+                    .replace("{sizeY}", String.valueOf(claim.sizeY()))
+                    .replace("{sizeZ}", String.valueOf(claim.sizeZ())));
+        }
+        if (claim.sizeX() > maxHorizontal || claim.sizeZ() > maxHorizontal) {
+            errors.add(messageText("invalid-size-large")
+                    .replace("{max}", String.valueOf(maxHorizontal))
+                    .replace("{sizeX}", String.valueOf(claim.sizeX()))
+                    .replace("{sizeZ}", String.valueOf(claim.sizeZ())));
+        }
+        if (claim.minX < -border || claim.maxX > border || claim.minZ < -border || claim.maxZ > border
+                || claim.minY < minY || claim.maxY > maxY) {
+            errors.add(messageText("out-of-world-boundary")
+                    .replace("{border}", String.valueOf(border))
+                    .replace("{minY}", String.valueOf(minY))
+                    .replace("{maxY}", String.valueOf(maxY)));
+        }
+        ClaimRegion overlapping = firstOverlappingClaim(claim);
+        if (overlapping != null) {
+            errors.add(messageText("overlap-reason").replace("{claim}", overlapping.name));
+        }
+        return errors;
     }
 
     private void loadClaims() {
@@ -487,6 +634,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             claimsConfig.set(path + ".created-at", claim.createdAt);
             List<String> members = claim.members.stream().map(UUID::toString).sorted().toList();
             claimsConfig.set(path + ".members", members);
+            claimsConfig.set(path + ".member-names", null);
             for (Map.Entry<UUID, String> entry : claim.memberNames.entrySet()) {
                 claimsConfig.set(path + ".member-names." + entry.getKey(), entry.getValue());
             }
@@ -498,6 +646,83 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
     }
 
+    private void showClaimParticles(Player player, ClaimRegion claim) {
+        World world = Bukkit.getWorld(claim.world);
+        if (world == null || !world.equals(player.getWorld())) {
+            return;
+        }
+        int pulses = Math.max(1, getConfig().getInt("visualization.pulses", 10));
+        int intervalTicks = Math.max(1, getConfig().getInt("visualization.interval-ticks", 10));
+        new BukkitRunnable() {
+            private int remaining = pulses;
+
+            @Override
+            public void run() {
+                if (remaining-- <= 0 || !player.isOnline()) {
+                    cancel();
+                    return;
+                }
+                drawClaimParticles(player, claim);
+            }
+        }.runTaskTimer(this, 0L, intervalTicks);
+    }
+
+    private void drawClaimParticles(Player player, ClaimRegion claim) {
+        Particle.DustOptions edgeDust = new Particle.DustOptions(Color.LIME, 1.2F);
+        Particle.DustOptions faceDust = new Particle.DustOptions(Color.RED, 0.8F);
+        int maxSize = Math.max(Math.max(claim.sizeX(), claim.sizeY()), claim.sizeZ());
+        int edgeStep = Math.max(Math.max(1, getConfig().getInt("visualization.edge-step", 1)), maxSize / 128);
+        int gridStep = Math.max(1, maxSize / 16);
+        drawEdges(player, claim, edgeStep, edgeDust);
+        drawFaceGrid(player, claim, gridStep, faceDust);
+    }
+
+    private void drawEdges(Player player, ClaimRegion claim, int step, Particle.DustOptions dust) {
+        for (int x = claim.minX; x <= claim.maxX; x += step) {
+            spawnDust(player, x, claim.minY, claim.minZ, dust);
+            spawnDust(player, x, claim.minY, claim.maxZ, dust);
+            spawnDust(player, x, claim.maxY, claim.minZ, dust);
+            spawnDust(player, x, claim.maxY, claim.maxZ, dust);
+        }
+        for (int y = claim.minY; y <= claim.maxY; y += step) {
+            spawnDust(player, claim.minX, y, claim.minZ, dust);
+            spawnDust(player, claim.minX, y, claim.maxZ, dust);
+            spawnDust(player, claim.maxX, y, claim.minZ, dust);
+            spawnDust(player, claim.maxX, y, claim.maxZ, dust);
+        }
+        for (int z = claim.minZ; z <= claim.maxZ; z += step) {
+            spawnDust(player, claim.minX, claim.minY, z, dust);
+            spawnDust(player, claim.minX, claim.maxY, z, dust);
+            spawnDust(player, claim.maxX, claim.minY, z, dust);
+            spawnDust(player, claim.maxX, claim.maxY, z, dust);
+        }
+    }
+
+    private void drawFaceGrid(Player player, ClaimRegion claim, int step, Particle.DustOptions dust) {
+        for (int x = claim.minX; x <= claim.maxX; x += step) {
+            for (int y = claim.minY; y <= claim.maxY; y += step) {
+                spawnDust(player, x, y, claim.minZ, dust);
+                spawnDust(player, x, y, claim.maxZ, dust);
+            }
+        }
+        for (int z = claim.minZ; z <= claim.maxZ; z += step) {
+            for (int y = claim.minY; y <= claim.maxY; y += step) {
+                spawnDust(player, claim.minX, y, z, dust);
+                spawnDust(player, claim.maxX, y, z, dust);
+            }
+        }
+        for (int x = claim.minX; x <= claim.maxX; x += step) {
+            for (int z = claim.minZ; z <= claim.maxZ; z += step) {
+                spawnDust(player, x, claim.minY, z, dust);
+                spawnDust(player, x, claim.maxY, z, dust);
+            }
+        }
+    }
+
+    private void spawnDust(Player player, int x, int y, int z, Particle.DustOptions dust) {
+        player.spawnParticle(Particle.DUST, x + 0.5D, y + 0.5D, z + 0.5D, 1, 0D, 0D, 0D, 0D, dust);
+    }
+
     private void sendUsage(CommandSender sender) {
         for (String line : getConfig().getStringList("messages.usage")) {
             send(sender, line);
@@ -506,6 +731,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private String message(String key) {
         return getConfig().getString("messages." + key, "");
+    }
+
+    private String messageText(String key) {
+        return color(getConfig().getString("messages." + key, key));
     }
 
     private void send(CommandSender sender, String text, Object... replacements) {
@@ -531,8 +760,25 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (args.length == 2 && sender instanceof Player player && ("delete".equalsIgnoreCase(args[0]) || "remove".equalsIgnoreCase(args[0]))) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
             return claims.values().stream()
-                    .filter(claim -> claim.ownerUuid.equals(player.getUniqueId()) || player.hasPermission("xiceclaim.admin"))
+                    .filter(claim -> claim.ownerUuid.equals(player.getUniqueId()))
                     .map(claim -> claim.name)
+                    .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix))
+                    .sorted()
+                    .toList();
+        }
+        if (args.length == 2 && "info".equalsIgnoreCase(args[0])) {
+            String prefix = args[1].toLowerCase(Locale.ROOT);
+            return claims.values().stream()
+                    .map(claim -> claim.name)
+                    .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix))
+                    .sorted()
+                    .toList();
+        }
+        if (args.length == 2 && "list".equalsIgnoreCase(args[0])) {
+            String prefix = args[1].toLowerCase(Locale.ROOT);
+            return claims.values().stream()
+                    .map(claim -> claim.ownerName)
+                    .distinct()
                     .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix))
                     .sorted()
                     .toList();
@@ -553,9 +799,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private ClaimPoint pos2;
     }
 
-    private record ClaimPoint(String world, int x, int z) {
+    private record ClaimPoint(String world, int x, int y, int z) {
         private static ClaimPoint from(Location location) {
-            return new ClaimPoint(Objects.requireNonNull(location.getWorld()).getName(), location.getBlockX(), location.getBlockZ());
+            return new ClaimPoint(
+                    Objects.requireNonNull(location.getWorld()).getName(),
+                    location.getBlockX(),
+                    location.getBlockY(),
+                    location.getBlockZ());
         }
     }
 
@@ -613,9 +863,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 UUID ownerUuid,
                 String ownerName,
                 ClaimPoint pos1,
-                ClaimPoint pos2,
-                int minY,
-                int maxY
+                ClaimPoint pos2
         ) {
             return new ClaimRegion(
                     id,
@@ -625,8 +873,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     pos1.world,
                     Math.min(pos1.x, pos2.x),
                     Math.max(pos1.x, pos2.x),
-                    minY,
-                    maxY,
+                    Math.min(pos1.y, pos2.y),
+                    Math.max(pos1.y, pos2.y),
                     Math.min(pos1.z, pos2.z),
                     Math.max(pos1.z, pos2.z),
                     System.currentTimeMillis(),
@@ -690,8 +938,20 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     || player.hasPermission("xiceclaim.admin");
         }
 
-        private int area() {
-            return (maxX - minX + 1) * (maxZ - minZ + 1);
+        private int sizeX() {
+            return maxX - minX + 1;
+        }
+
+        private int sizeY() {
+            return maxY - minY + 1;
+        }
+
+        private int sizeZ() {
+            return maxZ - minZ + 1;
+        }
+
+        private long volume() {
+            return (long) sizeX() * sizeY() * sizeZ();
         }
 
         private String memberNamesText() {

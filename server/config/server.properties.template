@@ -17,6 +17,7 @@ level-seed=20021201
 level-type=minecraft:normal
 generate-structures=true
 allow-nether=true
+max-world-size=50000
 
 # Gameplay
 gamemode=survival
