@@ -24,6 +24,8 @@
 2. RCON。
 3. Web 后端的本机端口 `8080`。
 
+当前使用 `xicemc-rcon-firewall.service` 在本机 iptables 中限制 RCON：只允许 `127.0.0.1` 和 `::1` 访问 `25575/tcp`，拒绝其他来源。
+
 ## 私密文件权限
 
 服务器私密配置目录：

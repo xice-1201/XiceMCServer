@@ -1,0 +1,15 @@
+[Unit]
+Description=Restrict XiceMCServer RCON to localhost
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/bin/bash -c '/usr/sbin/iptables -C INPUT -p tcp --dport 25575 ! -s 127.0.0.1 -j DROP 2>/dev/null || /usr/sbin/iptables -I INPUT -p tcp --dport 25575 ! -s 127.0.0.1 -j DROP'
+ExecStart=/bin/bash -c '/usr/sbin/ip6tables -C INPUT -p tcp --dport 25575 ! -s ::1 -j DROP 2>/dev/null || /usr/sbin/ip6tables -I INPUT -p tcp --dport 25575 ! -s ::1 -j DROP'
+ExecStop=/bin/bash -c '/usr/sbin/iptables -D INPUT -p tcp --dport 25575 ! -s 127.0.0.1 -j DROP 2>/dev/null || true'
+ExecStop=/bin/bash -c '/usr/sbin/ip6tables -D INPUT -p tcp --dport 25575 ! -s ::1 -j DROP 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
