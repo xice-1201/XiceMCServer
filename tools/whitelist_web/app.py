@@ -464,6 +464,27 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       padding: 20px;
       margin-bottom: 18px;
     }}
+    .profile-summary {{
+      display: grid;
+      grid-template-columns: minmax(132px, 180px) 1fr;
+      gap: 18px;
+      align-items: stretch;
+    }}
+    .skin-card {{
+      display: grid;
+      place-items: center;
+      min-height: 220px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8fafc;
+      overflow: hidden;
+    }}
+    .player-skin {{
+      width: min(72%, 128px);
+      max-height: 210px;
+      object-fit: contain;
+      image-rendering: pixelated;
+    }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }}
     .audit-grid {{
       display: grid;
@@ -522,6 +543,8 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       .app-shell {{ grid-template-columns: 1fr; }}
       .sidebar {{ border-right: 0; border-bottom: 1px solid var(--line); }}
       main {{ padding: 18px; }}
+      .profile-summary {{ grid-template-columns: 1fr; }}
+      .skin-card {{ min-height: 190px; }}
     }}
   </style>
 </head>
@@ -583,16 +606,22 @@ def register_page(message="", status=HTTPStatus.OK):
 
 def home_page(user):
     stats = load_player_stats(user)
+    skin_url = f"https://crafatar.com/renders/body/{canonical_uuid(user['uuid'])}?overlay&scale=8"
     body = f"""
 <h1>首页</h1>
 <section class="panel">
   <h2>个人信息</h2>
-  <div class="grid">
-    <div class="stat"><div class="label">玩家 ID</div><div class="value">{esc(user["name"])}</div></div>
-    <div class="stat"><div class="label">用户 UUID</div><div class="value">{esc(user["uuid"])}</div></div>
-    <div class="stat"><div class="label">注册时间</div><div class="value">{esc(stats["registered_at"])}</div></div>
-    <div class="stat"><div class="label">累计游玩时间</div><div class="value">{esc(stats["play_time"])}</div></div>
-    <div class="stat"><div class="label">上次登出地点</div><div class="value">{esc(stats["last_logout"])}</div></div>
+  <div class="profile-summary">
+    <div class="skin-card">
+      <img class="player-skin" src="{esc(skin_url)}" alt="{esc(user["name"])} 的 Minecraft 皮肤" loading="lazy">
+    </div>
+    <div class="grid">
+      <div class="stat"><div class="label">玩家 ID</div><div class="value">{esc(user["name"])}</div></div>
+      <div class="stat"><div class="label">用户 UUID</div><div class="value">{esc(user["uuid"])}</div></div>
+      <div class="stat"><div class="label">注册时间</div><div class="value">{esc(stats["registered_at"])}</div></div>
+      <div class="stat"><div class="label">累计游玩时间</div><div class="value">{esc(stats["play_time"])}</div></div>
+      <div class="stat"><div class="label">上次登出地点</div><div class="value">{esc(stats["last_logout"])}</div></div>
+    </div>
   </div>
 </section>
 """
