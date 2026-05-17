@@ -85,6 +85,9 @@ AUDIT_RETENTION_DAYS = int(env("XICE_AUDIT_RETENTION_DAYS", "3"))
 SERVER_SERVICE_NAME = env("XICEMC_SERVICE_NAME", "xicemc.service")
 SERVER_LOG_PATH = env("XICEMC_SERVER_LOG_PATH", os.path.join(RUNTIME_DIR, "logs", "latest.log"))
 BLACKLIST_PATH = env("XICEMC_BLACKLIST_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceTextArranger", "blacklist.tsv"))
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+WEB_ICON_PATH = env("XICEMC_WEB_ICON_PATH", os.path.join(REPO_ROOT, "server", "assets", "xicemc-logo.png"))
+WEB_FAVICON_PATH = env("XICEMC_WEB_FAVICON_PATH", os.path.join(REPO_ROOT, "server", "assets", "favicon.ico"))
 SERVER_DOCS_HOME_PATH = env("XICEMC_DOCS_HOME_PATH", os.path.join(RUNTIME_DIR, "web", "server-docs.md"))
 SERVER_DOCS_MAX_LENGTH = int(env("XICEMC_DOCS_MAX_LENGTH", "100000"))
 DEFAULT_SERVER_DOCS_MARKDOWN = f"""# 欢迎来到 XiceMCServer
@@ -948,6 +951,8 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escaped_title}</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="shortcut icon" href="/favicon.ico">
   <style>
     :root {{
       color-scheme: light;
@@ -3238,6 +3243,13 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         user = parse_session(self.headers.get("Cookie"))
 
+        if parsed.path == "/favicon.png":
+            self.respond_file(WEB_ICON_PATH, "image/png")
+            return
+        if parsed.path == "/favicon.ico":
+            self.respond_file(WEB_FAVICON_PATH, "image/x-icon")
+            return
+
         if parsed.path == "/":
             if user:
                 self.send_redirect("/home")
@@ -3689,6 +3701,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(encoded)
+
+    def respond_file(self, path, content_type):
+        try:
+            with open(path, "rb") as file:
+                content = file.read()
+        except FileNotFoundError:
+            self.respond(*page("未找到", "<h1>未找到</h1>", HTTPStatus.NOT_FOUND))
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.end_headers()
+        self.wfile.write(content)
 
 
 def main():

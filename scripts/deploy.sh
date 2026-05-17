@@ -39,6 +39,13 @@ python3 "${REPO_DIR}/scripts/lib/apply-paper-overrides.py" \
 echo "Ensuring Paper core is present..."
 XICEMC_RUNTIME_DIR="${RUNTIME_DIR}" "${REPO_DIR}/scripts/download-paper.sh"
 
+if [[ -f "${REPO_DIR}/server/assets/server-icon.png" ]]; then
+  echo "Installing server icon..."
+  install -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0644 \
+    "${REPO_DIR}/server/assets/server-icon.png" \
+    "${RUNTIME_DIR}/server-icon.png"
+fi
+
 if compgen -G "${REPO_DIR}/plugins/*/pom.xml" > /dev/null; then
   if ! command -v mvn > /dev/null 2>&1; then
     echo "Maven is required to build server plugins, but mvn was not found." >&2
