@@ -10,12 +10,15 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -66,6 +69,28 @@ public final class XiceAuditLogPlugin extends JavaPlugin implements Listener {
             return;
         }
         recordBlock(event.getPlayer(), "BLOCK_PLACE", event.getBlockPlaced());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent event) {
+        if (!getConfig().getBoolean("logging.explosion-block-break", true)) {
+            return;
+        }
+        ExplosionSource source = resolveExplosionSource(event.getEntity());
+        for (Block block : event.blockList()) {
+            recordExplosionBlock(source, block);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent event) {
+        if (!getConfig().getBoolean("logging.explosion-block-break", true)) {
+            return;
+        }
+        ExplosionSource source = ExplosionSource.forBlock(event.getBlock());
+        for (Block block : event.blockList()) {
+            recordExplosionBlock(source, block);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -121,6 +146,27 @@ public final class XiceAuditLogPlugin extends JavaPlugin implements Listener {
                 null,
                 0,
                 null));
+    }
+
+    private void recordExplosionBlock(ExplosionSource source, Block block) {
+        Location location = block.getLocation();
+        enqueue(new AuditRecord(
+                System.currentTimeMillis(),
+                "BLOCK_BREAK",
+                source.actorUuid(),
+                source.actorName(),
+                location.getWorld().getName(),
+                location.getBlockX(),
+                location.getBlockY(),
+                location.getBlockZ(),
+                block.getType().name(),
+                null,
+                0,
+                source.details()));
+    }
+
+    private ExplosionSource resolveExplosionSource(Entity entity) {
+        return ExplosionSource.forEntity(entity);
     }
 
     private void scheduleContainerDiff(Player player, Inventory inventory) {
@@ -261,5 +307,41 @@ public final class XiceAuditLogPlugin extends JavaPlugin implements Listener {
                 + location.getBlockY()
                 + ":"
                 + location.getBlockZ();
+    }
+
+    private record ExplosionSource(String actorUuid, String actorName, String details) {
+        private static ExplosionSource forEntity(Entity entity) {
+            return new ExplosionSource(
+                    "entity:" + entity.getUniqueId(),
+                    entity.getType().name(),
+                    "cause=explosion;source_type="
+                            + entity.getType().name()
+                            + ";source_uuid="
+                            + entity.getUniqueId());
+        }
+
+        private static ExplosionSource forBlock(Block block) {
+            Location location = block.getLocation();
+            return new ExplosionSource(
+                    "block:"
+                            + location.getWorld().getName()
+                            + ":"
+                            + location.getBlockX()
+                            + ":"
+                            + location.getBlockY()
+                            + ":"
+                            + location.getBlockZ(),
+                    "BLOCK_EXPLOSION",
+                    "cause=explosion;source_type="
+                            + block.getType().name()
+                            + ";source_location="
+                            + location.getWorld().getName()
+                            + ","
+                            + location.getBlockX()
+                            + ","
+                            + location.getBlockY()
+                            + ","
+                            + location.getBlockZ());
+        }
     }
 }

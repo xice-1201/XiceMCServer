@@ -10,8 +10,9 @@
 4. 容器取出：`CONTAINER_REMOVE`。
 5. 玩家进入：`PLAYER_JOIN`。
 6. 玩家退出：`PLAYER_QUIT`，`item_amount` 记录本次在线秒数。
+7. 爆炸破坏方块：仍记录为 `BLOCK_BREAK`，操作来源记录为直接破坏者，例如 `TNT` 或 `CREEPER`，`details` 记录 `cause=explosion` 和爆炸来源。
 
-当前版本不单独处理爆炸事件，也不记录漏斗等非玩家自动搬运。
+当前版本不记录漏斗等非玩家自动搬运。
 
 ## 存储后端
 

@@ -12,5 +12,6 @@ storage:
 logging:
   block-break: true
   block-place: true
+  explosion-block-break: true
   container-transfer: true
   player-session: true
