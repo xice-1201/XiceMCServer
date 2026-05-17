@@ -788,6 +788,9 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             result = RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD).run(f"whitelist add {username}")
+            entry = whitelist_entry(username)
+            if entry:
+                ensure_web_player(entry)
         except Exception as exc:
             self.respond(*register_page(f"白名单服务暂时不可用：{exc}", HTTPStatus.INTERNAL_SERVER_ERROR))
             return
