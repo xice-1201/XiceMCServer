@@ -85,6 +85,28 @@ AUDIT_RETENTION_DAYS = int(env("XICE_AUDIT_RETENTION_DAYS", "3"))
 SERVER_SERVICE_NAME = env("XICEMC_SERVICE_NAME", "xicemc.service")
 SERVER_LOG_PATH = env("XICEMC_SERVER_LOG_PATH", os.path.join(RUNTIME_DIR, "logs", "latest.log"))
 BLACKLIST_PATH = env("XICEMC_BLACKLIST_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceTextArranger", "blacklist.tsv"))
+SERVER_DOCS_HOME_PATH = env("XICEMC_DOCS_HOME_PATH", os.path.join(RUNTIME_DIR, "web", "server-docs.md"))
+SERVER_DOCS_MAX_LENGTH = int(env("XICEMC_DOCS_MAX_LENGTH", "100000"))
+DEFAULT_SERVER_DOCS_MARKDOWN = f"""# XiceMCServer 服务器文档
+
+## 基础信息
+
+- 游戏版本：Minecraft Java 版 {MINECRAFT_VERSION}
+- 服务器定位：原版生存与建筑优先的朋友服
+- 主要世界：main、main_nether、main_the_end
+
+## 基本准则
+
+未经允许偷东西、炸图、恶意破坏会被封禁。
+
+## 常用入口
+
+- [服务器状态](/status)
+- [玩家列表](/players)
+- [黑名单列表](/blacklist)
+- [举报](/report)
+"""
+DOCS_LOCK = threading.Lock()
 
 
 class RconClient:
@@ -288,6 +310,10 @@ def can_manage_players(user):
 
 def can_change_player_roles(user):
     return user and user.get("role") == OWNER_ROLE
+
+
+def can_edit_server_docs(user):
+    return can_handle_reports(user)
 
 
 def db_connect():
@@ -1136,6 +1162,79 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       margin-top: 16px;
     }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }}
+    .page-heading {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }}
+    .page-heading h1 {{ margin: 0; }}
+    .markdown-body {{
+      line-height: 1.72;
+      overflow-wrap: anywhere;
+    }}
+    .markdown-body h1,
+    .markdown-body h2,
+    .markdown-body h3 {{
+      margin: 18px 0 10px;
+      line-height: 1.28;
+    }}
+    .markdown-body h1:first-child,
+    .markdown-body h2:first-child,
+    .markdown-body h3:first-child {{ margin-top: 0; }}
+    .markdown-body p {{ margin: 0 0 12px; color: var(--text); }}
+    .markdown-body ul,
+    .markdown-body ol {{ margin: 0 0 14px 22px; padding: 0; }}
+    .markdown-body li {{ margin: 4px 0; }}
+    .markdown-body code {{
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      background: #edf2f7;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }}
+    .markdown-body pre {{
+      margin: 0 0 14px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #f4f7fb;
+      overflow-x: auto;
+    }}
+    .markdown-body pre code {{ padding: 0; background: transparent; }}
+    .markdown-body blockquote {{
+      margin: 0 0 14px;
+      padding: 8px 12px;
+      border-left: 4px solid var(--line);
+      background: #f8fafc;
+      color: var(--muted);
+    }}
+    .markdown-body hr {{
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 18px 0;
+    }}
+    .markdown-edit-grid {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }}
+    .markdown-editor {{
+      min-height: 66vh;
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      line-height: 1.55;
+      resize: vertical;
+    }}
+    .markdown-preview {{
+      min-height: 66vh;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #ffffff;
+      overflow: auto;
+    }}
     .audit-grid {{
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1338,6 +1437,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       .identity-visual {{ min-height: 0; }}
       .skin-frame {{ min-height: 170px; }}
       .identity-title h2 {{ font-size: 26px; }}
+      .markdown-edit-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -1795,37 +1895,301 @@ def render_metric_card(label, metric):
 """
 
 
-def server_docs_page(user):
+def server_docs_page(user, message=""):
+    markdown = read_server_docs_markdown()
+    edit_button = '<a class="button secondary" href="/docs/edit">编辑</a>' if can_edit_server_docs(user) else ""
+    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
     body = f"""
-<h1>服务器文档</h1>
+<div class="page-heading">
+  <h1>服务器文档</h1>
+  {edit_button}
+</div>
+{safe_message}
 <section class="panel">
-  <h2>服务器文档首页</h2>
-  <div class="grid">
-    <div class="stat">
-      <div class="label">游戏版本</div>
-      <div class="value">Minecraft Java 版 {esc(MINECRAFT_VERSION)}</div>
-    </div>
-    <div class="stat">
-      <div class="label">服务器定位</div>
-      <div class="value">原版生存与建筑优先的朋友服</div>
-    </div>
-    <div class="stat">
-      <div class="label">基本准则</div>
-      <div class="value">未经允许偷东西、炸图、恶意破坏会被封禁。</div>
-    </div>
-  </div>
-</section>
-<section class="panel">
-  <h2>常用入口</h2>
-  <div class="actions">
-    <a class="button secondary" href="/status">服务器状态</a>
-    <a class="button secondary" href="/players">玩家列表</a>
-    <a class="button secondary" href="/blacklist">黑名单列表</a>
-    <a class="button secondary" href="/report">举报</a>
-  </div>
+  <div class="markdown-body">{markdown_to_html(markdown)}</div>
 </section>
 """
     return page("服务器文档", body, user=user, active="docs")
+
+
+def server_docs_edit_page(user, message="", status=HTTPStatus.OK):
+    markdown = read_server_docs_markdown()
+    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
+    body = f"""
+<div class="page-heading">
+  <h1>编辑服务器文档</h1>
+  <a class="button secondary" href="/docs">退出编辑</a>
+</div>
+{safe_message}
+<form method="post" action="/docs/edit">
+  <div class="markdown-edit-grid">
+    <section class="panel">
+      <h2>原始 Markdown</h2>
+      <textarea id="docs-markdown" class="markdown-editor" name="markdown" maxlength="{SERVER_DOCS_MAX_LENGTH}">{esc(markdown)}</textarea>
+    </section>
+    <section class="panel">
+      <h2>渲染效果</h2>
+      <div id="docs-preview" class="markdown-body markdown-preview">{markdown_to_html(markdown)}</div>
+    </section>
+  </div>
+  <div class="actions">
+    <button type="submit">保存文档</button>
+    <a class="button secondary" href="/docs">取消</a>
+  </div>
+</form>
+<script>
+  const docsMarkdown = document.getElementById("docs-markdown");
+  const docsPreview = document.getElementById("docs-preview");
+  function escapeHtml(value) {{
+    return value.replace(/[&<>"']/g, (char) => ({{
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#x27;"
+    }}[char]));
+  }}
+  function renderInlineMarkdown(value) {{
+    let html = escapeHtml(value);
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(/\\*\\*([^*]+)\\*\\*/g, "<strong>$1</strong>");
+    html = html.replace(/\\*([^*]+)\\*/g, "<em>$1</em>");
+    html = html.replace(/\\[([^\\]]+)\\]\\(([^)\\s]+)\\)/g, (match, label, url) => {{
+      if (!/^(https?:\\/\\/|\\/)/.test(url)) {{
+        return label;
+      }}
+      return '<a href="' + escapeHtml(url) + '">' + label + '</a>';
+    }});
+    return html;
+  }}
+  function renderMarkdown(value) {{
+    const lines = value.replace(/\\r\\n/g, "\\n").split("\\n");
+    const html = [];
+    let paragraph = [];
+    let listType = null;
+    let inCode = false;
+    let codeLines = [];
+    function flushParagraph() {{
+      if (paragraph.length) {{
+        html.push("<p>" + renderInlineMarkdown(paragraph.join(" ")) + "</p>");
+        paragraph = [];
+      }}
+    }}
+    function closeList() {{
+      if (listType) {{
+        html.push("</" + listType + ">");
+        listType = null;
+      }}
+    }}
+    for (const line of lines) {{
+      if (line.trim().startsWith("```")) {{
+        if (inCode) {{
+          html.push("<pre><code>" + escapeHtml(codeLines.join("\\n")) + "</code></pre>");
+          codeLines = [];
+          inCode = false;
+        }} else {{
+          flushParagraph();
+          closeList();
+          inCode = true;
+        }}
+        continue;
+      }}
+      if (inCode) {{
+        codeLines.push(line);
+        continue;
+      }}
+      const trimmed = line.trim();
+      if (!trimmed) {{
+        flushParagraph();
+        closeList();
+        continue;
+      }}
+      if (/^---+$/.test(trimmed)) {{
+        flushParagraph();
+        closeList();
+        html.push("<hr>");
+        continue;
+      }}
+      const heading = trimmed.match(/^(#{1,3})\\s+(.+)$/);
+      if (heading) {{
+        flushParagraph();
+        closeList();
+        const level = heading[1].length;
+        html.push("<h" + level + ">" + renderInlineMarkdown(heading[2]) + "</h" + level + ">");
+        continue;
+      }}
+      const unordered = trimmed.match(/^[-*]\\s+(.+)$/);
+      const ordered = trimmed.match(/^\\d+\\.\\s+(.+)$/);
+      if (unordered || ordered) {{
+        flushParagraph();
+        const nextType = unordered ? "ul" : "ol";
+        if (listType !== nextType) {{
+          closeList();
+          html.push("<" + nextType + ">");
+          listType = nextType;
+        }}
+        html.push("<li>" + renderInlineMarkdown((unordered || ordered)[1]) + "</li>");
+        continue;
+      }}
+      const quote = trimmed.match(/^>\\s?(.+)$/);
+      if (quote) {{
+        flushParagraph();
+        closeList();
+        html.push("<blockquote>" + renderInlineMarkdown(quote[1]) + "</blockquote>");
+        continue;
+      }}
+      paragraph.push(trimmed);
+    }}
+    if (inCode) {{
+      html.push("<pre><code>" + escapeHtml(codeLines.join("\\n")) + "</code></pre>");
+    }}
+    flushParagraph();
+    closeList();
+    return html.join("\\n");
+  }}
+  docsMarkdown.addEventListener("input", () => {{
+    docsPreview.innerHTML = renderMarkdown(docsMarkdown.value);
+  }});
+</script>
+"""
+    return page("编辑服务器文档", body, status, user=user, active="docs")
+
+
+def read_server_docs_markdown():
+    try:
+        with open(SERVER_DOCS_HOME_PATH, "r", encoding="utf-8") as file:
+            return file.read()
+    except FileNotFoundError:
+        write_server_docs_markdown(DEFAULT_SERVER_DOCS_MARKDOWN)
+        return DEFAULT_SERVER_DOCS_MARKDOWN
+
+
+def write_server_docs_markdown(markdown):
+    value = str(markdown or "").replace("\r\n", "\n")
+    if len(value) > SERVER_DOCS_MAX_LENGTH:
+        raise ValueError(f"服务器文档不能超过 {SERVER_DOCS_MAX_LENGTH} 个字符。")
+    os.makedirs(os.path.dirname(SERVER_DOCS_HOME_PATH), exist_ok=True)
+    temp_path = SERVER_DOCS_HOME_PATH + ".tmp"
+    with DOCS_LOCK:
+        with open(temp_path, "w", encoding="utf-8") as file:
+            file.write(value)
+            if value and not value.endswith("\n"):
+                file.write("\n")
+        os.replace(temp_path, SERVER_DOCS_HOME_PATH)
+
+
+def markdown_to_html(markdown):
+    lines = str(markdown or "").replace("\r\n", "\n").split("\n")
+    html_parts = []
+    paragraph = []
+    list_type = None
+    in_code = False
+    code_lines = []
+
+    def flush_paragraph():
+        nonlocal paragraph
+        if paragraph:
+            html_parts.append(f"<p>{render_inline_markdown(' '.join(paragraph))}</p>")
+            paragraph = []
+
+    def close_list():
+        nonlocal list_type
+        if list_type:
+            html_parts.append(f"</{list_type}>")
+            list_type = None
+
+    for line in lines:
+        if line.strip().startswith("```"):
+            if in_code:
+                html_parts.append(f"<pre><code>{esc(chr(10).join(code_lines))}</code></pre>")
+                code_lines = []
+                in_code = False
+            else:
+                flush_paragraph()
+                close_list()
+                in_code = True
+            continue
+
+        if in_code:
+            code_lines.append(line)
+            continue
+
+        stripped = line.strip()
+        if not stripped:
+            flush_paragraph()
+            close_list()
+            continue
+
+        if re.fullmatch(r"---+", stripped):
+            flush_paragraph()
+            close_list()
+            html_parts.append("<hr>")
+            continue
+
+        heading = re.match(r"^(#{1,3})\s+(.+)$", stripped)
+        if heading:
+            flush_paragraph()
+            close_list()
+            level = len(heading.group(1))
+            html_parts.append(f"<h{level}>{render_inline_markdown(heading.group(2))}</h{level}>")
+            continue
+
+        unordered = re.match(r"^[-*]\s+(.+)$", stripped)
+        ordered = re.match(r"^\d+\.\s+(.+)$", stripped)
+        if unordered or ordered:
+            flush_paragraph()
+            next_type = "ul" if unordered else "ol"
+            if list_type != next_type:
+                close_list()
+                html_parts.append(f"<{next_type}>")
+                list_type = next_type
+            html_parts.append(f"<li>{render_inline_markdown((unordered or ordered).group(1))}</li>")
+            continue
+
+        quote = re.match(r"^>\s?(.+)$", stripped)
+        if quote:
+            flush_paragraph()
+            close_list()
+            html_parts.append(f"<blockquote>{render_inline_markdown(quote.group(1))}</blockquote>")
+            continue
+
+        paragraph.append(stripped)
+
+    if in_code:
+        html_parts.append(f"<pre><code>{esc(chr(10).join(code_lines))}</code></pre>")
+    flush_paragraph()
+    close_list()
+    return "\n".join(html_parts)
+
+
+def render_inline_markdown(value):
+    placeholders = []
+
+    def stash(html_value):
+        token = f"\x00{len(placeholders)}\x00"
+        placeholders.append(html_value)
+        return token
+
+    text = str(value or "")
+    text = re.sub(r"`([^`]+)`", lambda match: stash(f"<code>{esc(match.group(1))}</code>"), text)
+    text = esc(text)
+    text = re.sub(
+        r"\[([^\]]+)\]\(([^)\s]+)\)",
+        lambda match: render_markdown_link(match.group(1), match.group(2)),
+        text,
+    )
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", text)
+    for index, html_value in enumerate(placeholders):
+        text = text.replace(f"\x00{index}\x00", html_value)
+    return text
+
+
+def render_markdown_link(label, url):
+    safe_url = html.unescape(url)
+    if not (safe_url.startswith("/") or safe_url.startswith("http://") or safe_url.startswith("https://")):
+        return esc(label)
+    return f'<a href="{esc(safe_url)}">{esc(html.unescape(label))}</a>'
 
 
 def players_page(user, message=""):
@@ -2898,6 +3262,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.respond(*server_docs_page(user))
             return
+        if parsed.path == "/docs/edit":
+            if not user:
+                self.send_redirect("/")
+                return
+            if not can_edit_server_docs(user):
+                self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
+                return
+            self.respond(*server_docs_edit_page(user))
+            return
         if parsed.path in {"/players/suggestions", "/audit/source-suggestions"}:
             if not user:
                 self.respond_json(HTTPStatus.UNAUTHORIZED, {"items": []})
@@ -2948,6 +3321,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/profile":
             self.handle_profile_update()
+            return
+        if parsed.path == "/docs/edit":
+            self.handle_server_docs_update()
             return
         self.respond(*page("未找到", "<h1>未找到</h1>", HTTPStatus.NOT_FOUND))
 
@@ -3228,6 +3604,22 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self.respond(*home_page(user, "简介已更新。"))
+
+    def handle_server_docs_update(self):
+        user = parse_session(self.headers.get("Cookie"))
+        if not user:
+            self.send_redirect("/")
+            return
+        if not can_edit_server_docs(user):
+            self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
+            return
+        try:
+            params = self.read_form(max_length=SERVER_DOCS_MAX_LENGTH * 12)
+            write_server_docs_markdown(params.get("markdown", [""])[0])
+        except Exception as exc:
+            self.respond(*server_docs_edit_page(user, f"保存失败：{exc}", HTTPStatus.BAD_REQUEST))
+            return
+        self.respond(*server_docs_page(user, "服务器文档已保存。"))
 
     def send_redirect(self, location, cookie=None):
         headers = [("Location", location)]
