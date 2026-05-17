@@ -73,21 +73,28 @@
 
 ## 每日自动备份与更新
 
-服务器使用 `xicemc-maintenance.timer` 在每天 `00:00` 触发每日维护任务。
+服务器使用 `xicemc-maintenance.timer` 在每天 `16:00` 触发每日维护任务。
 
 每日维护流程：
 
 1. 关闭 `xicemc.service`。
 2. 在停服状态下执行 `scripts/backup.sh`，备份运行目录中的世界、玩家数据、白名单、封禁列表、服务端配置和插件配置。
 3. 执行 `scripts/prune-backups.sh` 清理过期备份。
-4. 执行 `scripts/deploy.sh` 从 GitHub 拉取最新内容，并部署配置、Paper 核心和自制插件。
-5. 重新启动 `xicemc.service`。
+4. 执行 `scripts/prune-audit-log.sh` 清理超过 `3` 天的审计日志。
+5. 执行 `scripts/deploy.sh` 从 GitHub 拉取最新内容，并部署配置、Paper 核心和自制插件。
+6. 重新启动 `xicemc.service`。
 
 备份保留策略：
 
 1. 普通每日备份保留 `3` 天。
 2. 星期一生成的备份额外保留至第 `3` 周。
 3. 星期一备份进入第 `4` 周后删除。
+
+审计日志保留策略：
+
+1. `audit_log` 记录默认保留 `3` 天。
+2. 过期审计记录会被每日维护任务删除，容器取放记录中的细节字段会随记录一并清理。
+3. Web 审计查询的时间选择范围限制在最近 `3` 天内。
 
 备份文件位于：
 

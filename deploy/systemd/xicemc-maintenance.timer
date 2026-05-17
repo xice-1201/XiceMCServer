@@ -1,8 +1,8 @@
 [Unit]
-Description=Run XiceMCServer daily backup and update at midnight
+Description=Run XiceMCServer daily backup and update at 16:00
 
 [Timer]
-OnCalendar=*-*-* 00:00:00
+OnCalendar=*-*-* 16:00:00
 Persistent=true
 Unit=xicemc-maintenance.service
 

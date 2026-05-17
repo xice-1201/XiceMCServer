@@ -8,4 +8,5 @@ Type=oneshot
 User=root
 Group=root
 WorkingDirectory=/opt/xicemc/repo
+EnvironmentFile=-/opt/xicemc/secrets/xicemc.env
 ExecStart=/opt/xicemc/repo/scripts/daily-maintenance.sh

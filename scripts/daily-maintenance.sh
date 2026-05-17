@@ -33,6 +33,11 @@ echo "Creating backup..."
 echo "Pruning expired backups..."
 "${REPO_DIR}/scripts/prune-backups.sh"
 
+echo "Pruning expired audit logs..."
+if ! "${REPO_DIR}/scripts/prune-audit-log.sh"; then
+  echo "Audit log pruning failed; continuing maintenance." >&2
+fi
+
 echo "Deploying latest GitHub content..."
 "${REPO_DIR}/scripts/deploy.sh"
 

@@ -6,8 +6,10 @@ import html
 import json
 import os
 import re
+import shutil
 import socket
 import struct
+import subprocess
 import time
 import secrets as token_secrets
 from datetime import datetime
@@ -56,6 +58,7 @@ RCON_HOST = env("XICEMC_RCON_HOST", "127.0.0.1")
 RCON_PORT = int(env("XICEMC_RCON_PORT", "25575"))
 RCON_PASSWORD = env("XICEMC_RCON_PASSWORD", required=True)
 RUNTIME_DIR = env("XICEMC_RUNTIME_DIR", "/opt/xicemc/runtime")
+BACKUP_DIR = env("XICEMC_BACKUP_DIR", "/opt/xicemc/backups")
 WHITELIST_PATH = env("XICEMC_WHITELIST_PATH", os.path.join(RUNTIME_DIR, "whitelist.json"))
 SESSION_SECRET = env("WHITELIST_WEB_SESSION_SECRET", INVITE_CODE + RCON_PASSWORD, required=True)
 AUDIT_DB_HOST = env("XICE_AUDIT_DB_HOST", "127.0.0.1")
@@ -72,6 +75,9 @@ MICROSOFT_AUTH_URL = env("MICROSOFT_AUTH_URL", "https://login.live.com/oauth20_a
 MICROSOFT_TOKEN_URL = env("MICROSOFT_TOKEN_URL", "https://login.live.com/oauth20_token.srf")
 MICROSOFT_REGISTER_INVITE_REQUIRED = env_bool("MICROSOFT_REGISTER_INVITE_REQUIRED", True)
 OAUTH_STATE_SECONDS = 10 * 60
+AUDIT_RETENTION_DAYS = int(env("XICE_AUDIT_RETENTION_DAYS", "3"))
+SERVER_SERVICE_NAME = env("XICEMC_SERVICE_NAME", "xicemc.service")
+SERVER_LOG_PATH = env("XICEMC_SERVER_LOG_PATH", os.path.join(RUNTIME_DIR, "logs", "latest.log"))
 
 
 class RconClient:
@@ -434,6 +440,8 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
   <nav>
     <a class="{ 'active' if active == 'home' else '' }" href="/home">首页</a>
     <a class="{ 'active' if active == 'audit' else '' }" href="/audit">操作查询</a>
+    <a class="{ 'active' if active == 'report' else '' }" href="/report">举报</a>
+    <a class="{ 'active' if active == 'status' else '' }" href="/status">服务器状态</a>
   </nav>
   <form method="post" action="/logout"><button class="secondary" type="submit">退出登录</button></form>
 </aside>
@@ -556,6 +564,8 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     .divider {{ border-top: 1px solid var(--line); margin: 18px 0; }}
     .message {{ color: var(--muted); }}
     .error {{ color: var(--danger); }}
+    .mono {{ font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; }}
+    .log-lines {{ white-space: pre-wrap; overflow-wrap: anywhere; }}
     .table-wrap {{ width: 100%; overflow-x: auto; }}
     table {{ width: 100%; min-width: 100%; border-collapse: collapse; font-size: 14px; }}
     th, td {{ padding: 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }}
@@ -670,6 +680,52 @@ def home_page(user):
     return page("首页", body, user=user, active="home")
 
 
+def report_page(user):
+    body = """
+<h1>举报</h1>
+<section class="panel">
+</section>
+"""
+    return page("举报", body, user=user, active="report")
+
+
+def status_page(user):
+    status = load_server_status()
+    backups_html = "".join(
+        f"<tr><td>{esc(item['name'])}</td><td>{esc(item['size'])}</td><td>{esc(item['mtime'])}</td></tr>"
+        for item in status["backups"]
+    )
+    if not backups_html:
+        backups_html = '<tr><td colspan="3" class="message">暂无备份文件</td></tr>'
+    error_lines = "\n".join(status["log_errors"]) if status["log_errors"] else "最近日志未发现 ERROR / Exception / SEVERE。"
+    body = f"""
+<h1>服务器状态</h1>
+<section class="panel">
+  <div class="grid">
+    <div class="stat"><div class="label">开服状态</div><div class="value">{esc(status["server_state"])}</div></div>
+    <div class="stat"><div class="label">在线玩家</div><div class="value">{esc(status["online_players"])}</div></div>
+    <div class="stat"><div class="label">磁盘空间</div><div class="value">{esc(status["disk"])}</div></div>
+    <div class="stat"><div class="label">内存占用</div><div class="value">{esc(status["memory"])}</div></div>
+  </div>
+</section>
+<section class="panel">
+  <h2>备份文件</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件名</th><th>大小</th><th>修改时间</th></tr></thead>
+      <tbody>{backups_html}</tbody>
+    </table>
+  </div>
+</section>
+<section class="panel">
+  <h2>日志 ERROR 情况</h2>
+  <p class="message">最近 {esc(status["log_scan_lines"])} 行日志，匹配 ERROR / Exception / SEVERE 共 {esc(status["log_error_count"])} 行。</p>
+  <div class="mono log-lines">{esc(error_lines)}</div>
+</section>
+"""
+    return page("服务器状态", body, user=user, active="status")
+
+
 def load_player_stats(user):
     result = {
         "registered_at": "暂无记录",
@@ -708,10 +764,132 @@ def load_player_stats(user):
     return result
 
 
+def load_server_status():
+    errors = log_error_lines()
+    return {
+        "server_state": server_state(),
+        "online_players": online_player_summary(),
+        "disk": disk_summary(),
+        "memory": memory_summary(),
+        "backups": backup_files(),
+        "log_errors": errors[-10:],
+        "log_error_count": len(errors),
+        "log_scan_lines": "500",
+    }
+
+
+def server_state():
+    result = run_command(["systemctl", "is-active", SERVER_SERVICE_NAME])
+    if result["ok"]:
+        state = result["stdout"].strip()
+        return "运行中" if state == "active" else state
+    try:
+        RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD, timeout=3).run("list")
+        return "运行中"
+    except Exception:
+        return "未运行或无法连接"
+
+
+def online_player_summary():
+    try:
+        output = RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD, timeout=3).run("list")
+        return output or "暂无在线玩家"
+    except Exception as exc:
+        return f"无法读取：{exc}"
+
+
+def disk_summary():
+    try:
+        usage = shutil.disk_usage(RUNTIME_DIR if os.path.exists(RUNTIME_DIR) else "/")
+        used = usage.total - usage.free
+        percent = used / usage.total * 100 if usage.total else 0
+        return f"{format_bytes(used)} / {format_bytes(usage.total)} ({percent:.1f}%)"
+    except Exception as exc:
+        return f"无法读取：{exc}"
+
+
+def memory_summary():
+    try:
+        meminfo = {}
+        with open("/proc/meminfo", "r", encoding="utf-8") as file:
+            for line in file:
+                key, value = line.split(":", 1)
+                meminfo[key] = int(value.strip().split()[0]) * 1024
+        total = meminfo.get("MemTotal", 0)
+        available = meminfo.get("MemAvailable", 0)
+        used = total - available
+        percent = used / total * 100 if total else 0
+        return f"{format_bytes(used)} / {format_bytes(total)} ({percent:.1f}%)"
+    except FileNotFoundError:
+        return "当前系统不支持 /proc/meminfo"
+    except Exception as exc:
+        return f"无法读取：{exc}"
+
+
+def backup_files(limit=20):
+    if not os.path.isdir(BACKUP_DIR):
+        return []
+    files = []
+    for name in os.listdir(BACKUP_DIR):
+        path = os.path.join(BACKUP_DIR, name)
+        if not os.path.isfile(path) or not name.endswith(".tar.gz"):
+            continue
+        stat = os.stat(path)
+        files.append(
+            {
+                "name": name,
+                "size": format_bytes(stat.st_size),
+                "mtime": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)),
+            }
+        )
+    files.sort(key=lambda item: item["mtime"], reverse=True)
+    return files[:limit]
+
+
+def log_error_lines(scan_lines=500):
+    lines = tail_lines(SERVER_LOG_PATH, scan_lines)
+    matched = [line for line in lines if log_line_is_error(line)]
+    return matched
+
+
+def log_line_is_error(line):
+    upper = line.upper()
+    return "ERROR" in upper or "EXCEPTION" in upper or "SEVERE" in upper
+
+
+def tail_lines(path, limit):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as file:
+            lines = file.readlines()
+        return [line.rstrip("\n") for line in lines[-limit:]]
+    except FileNotFoundError:
+        return []
+    except Exception as exc:
+        return [f"无法读取日志：{exc}"]
+
+
+def run_command(args, timeout=3):
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+        return {"ok": result.returncode == 0, "stdout": result.stdout, "stderr": result.stderr}
+    except Exception as exc:
+        return {"ok": False, "stdout": "", "stderr": str(exc)}
+
+
+def format_bytes(value):
+    value = float(value or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024
+
+
 def audit_page(user, params):
     rows, next_cursor, message = query_audit(params)
     query = {key: params.get(key, [""])[0] for key in params}
     container_options_html = container_options(query.get("target_type", ""))
+    min_audit_time = format_datetime_local(audit_cutoff_ms())
+    max_audit_time = format_datetime_local(int(time.time() * 1000))
     body = f"""
 <h1>操作查询</h1>
 <section class="panel">
@@ -750,11 +928,11 @@ def audit_page(user, params):
       </div>
       <div>
         <label for="time_from">开始时间</label>
-        <input id="time_from" name="time_from" type="datetime-local" value="{esc(query.get("time_from", ""))}">
+        <input id="time_from" name="time_from" type="datetime-local" min="{esc(min_audit_time)}" max="{esc(max_audit_time)}" value="{esc(query.get("time_from", ""))}">
       </div>
       <div>
         <label for="time_to">结束时间</label>
-        <input id="time_to" name="time_to" type="datetime-local" value="{esc(query.get("time_to", ""))}">
+        <input id="time_to" name="time_to" type="datetime-local" min="{esc(min_audit_time)}" max="{esc(max_audit_time)}" value="{esc(query.get("time_to", ""))}">
       </div>
       <div>
         <label for="world">世界</label>
@@ -924,6 +1102,8 @@ def query_audit(params):
 def build_audit_filters(params):
     where = []
     values = []
+    cutoff = audit_cutoff_ms()
+    now_ms = int(time.time() * 1000)
 
     action = first(params, "action").upper()
     allowed_actions = {"BLOCK_PLACE", "BLOCK_BREAK", "CONTAINER_ADD", "CONTAINER_REMOVE", "PLAYER_JOIN", "PLAYER_QUIT"}
@@ -956,11 +1136,24 @@ def build_audit_filters(params):
 
     time_from = parse_datetime_local(first(params, "time_from"))
     if time_from is not None:
+        if time_from < cutoff:
+            raise ValueError(f"开始时间只能选择最近 {AUDIT_RETENTION_DAYS} 天内")
+        if time_from > now_ms:
+            raise ValueError("开始时间不能晚于当前时间")
         where.append("created_at >= %s")
         values.append(time_from)
+    else:
+        where.append("created_at >= %s")
+        values.append(cutoff)
 
     time_to = parse_datetime_local(first(params, "time_to"))
     if time_to is not None:
+        if time_to < cutoff:
+            raise ValueError(f"结束时间只能选择最近 {AUDIT_RETENTION_DAYS} 天内")
+        if time_to > now_ms:
+            raise ValueError("结束时间不能晚于当前时间")
+        if time_from is not None and time_to < time_from:
+            raise ValueError("结束时间不能早于开始时间")
         where.append("created_at <= %s")
         values.append(time_to)
 
@@ -995,6 +1188,14 @@ def parse_datetime_local(value):
     if not value:
         return None
     return int(datetime.fromisoformat(value).timestamp() * 1000)
+
+
+def audit_cutoff_ms():
+    return int((time.time() - AUDIT_RETENTION_DAYS * 86400) * 1000)
+
+
+def format_datetime_local(value_ms):
+    return time.strftime("%Y-%m-%dT%H:%M", time.localtime(int(value_ms) / 1000))
 
 
 def first(params, key):
@@ -1038,6 +1239,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_redirect("/")
                 return
             self.respond(*home_page(user))
+            return
+        if parsed.path == "/report":
+            if not user:
+                self.send_redirect("/")
+                return
+            self.respond(*report_page(user))
+            return
+        if parsed.path == "/status":
+            if not user:
+                self.send_redirect("/")
+                return
+            self.respond(*status_page(user))
             return
         if parsed.path == "/audit":
             if not user:
