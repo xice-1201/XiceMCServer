@@ -1,0 +1,6 @@
+name: XiceAuditLog
+version: 0.0.5
+main: com.xice.xicemc.auditlog.XiceAuditLogPlugin
+api-version: '1.21'
+author: Xice
+description: Lightweight audit logging for XiceMCServer.

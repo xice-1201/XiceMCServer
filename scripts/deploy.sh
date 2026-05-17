@@ -55,7 +55,7 @@ if compgen -G "${REPO_DIR}/plugins/*/pom.xml" > /dev/null; then
     else
       run_as_server_user mvn -q -f "${pom}" clean package
     fi
-    jar_path="$(find "${plugin_dir}/target" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
+    jar_path="$(find "${plugin_dir}/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
     if [[ -z "${jar_path}" ]]; then
       echo "No plugin jar found for ${plugin_name}" >&2
       exit 1

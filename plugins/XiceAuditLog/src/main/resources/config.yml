@@ -1,0 +1,15 @@
+storage:
+  type: postgresql
+  batch-size: 100
+  queue-capacity: 20000
+  postgresql:
+    host: 127.0.0.1
+    port: 5432
+    database: xicemc_audit
+    username: xicemc_audit
+    password-env: XICE_AUDIT_DB_PASSWORD
+
+logging:
+  block-break: true
+  block-place: true
+  container-transfer: true

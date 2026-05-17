@@ -12,6 +12,7 @@ Environment=XICEMC_RUNTIME_DIR=/opt/xicemc/runtime
 Environment=XICEMC_JAVA=/opt/xicemc/java/bin/java
 Environment=XICEMC_XMS=1G
 Environment=XICEMC_XMX=3G
+EnvironmentFile=-/opt/xicemc/secrets/xicemc.env
 ExecStart=/opt/xicemc/repo/scripts/start-server.sh
 Restart=on-failure
 RestartSec=15
