@@ -286,6 +286,10 @@ def can_manage_players(user):
     return can_handle_reports(user)
 
 
+def can_change_player_roles(user):
+    return user and user.get("role") == OWNER_ROLE
+
+
 def db_connect():
     if psycopg2 is None:
         raise RuntimeError("python3 psycopg2 is not installed")
@@ -715,46 +719,43 @@ def add_manual_blacklist(entry, reason, expires_at=None, permanent=False):
 
 
 def all_web_players():
-    whitelist = read_whitelist()
-    rows = []
+    whitelist_entries = list(read_whitelist().values())
+    web_players = {}
     with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT player_uuid, player_name, registered_at, updated_at, role
+            SELECT player_uuid, player_name, registered_at, updated_at, role, profile_bio
             FROM web_players
             ORDER BY lower(player_name)
             """
         )
         for row in cur.fetchall():
-            entry = whitelist.get(row["player_name"].lower())
-            rows.append({
-                "uuid": canonical_uuid(row["player_uuid"]),
-                "name": row["player_name"],
-                "registered_at": row["registered_at"],
-                "updated_at": row["updated_at"],
-                "role": row["role"],
-                "whitelisted": entry is not None,
-                "blacklisted": blacklist_entry_by_uuid(row["player_uuid"]) is not None,
-            })
-    for entry in whitelist.values():
-        if not any(row["uuid"] == canonical_uuid(entry["uuid"]) for row in rows):
-            rows.append({
-                "uuid": canonical_uuid(entry["uuid"]),
-                "name": entry["name"],
-                "registered_at": None,
-                "updated_at": None,
-                "role": PLAYER_ROLE,
-                "whitelisted": True,
-                "blacklisted": blacklist_entry_by_uuid(entry["uuid"]) is not None,
-            })
+            web_players[canonical_uuid(row["player_uuid"])] = row
+
+    rows = []
+    for entry in whitelist_entries:
+        player_uuid = canonical_uuid(entry["uuid"])
+        web_player_row = web_players.get(player_uuid, {})
+        rows.append({
+            "uuid": player_uuid,
+            "name": entry["name"],
+            "registered_at": web_player_row.get("registered_at"),
+            "updated_at": web_player_row.get("updated_at"),
+            "role": web_player_row.get("role") or PLAYER_ROLE,
+            "profile_bio": web_player_row.get("profile_bio") or DEFAULT_PROFILE_BIO,
+        })
+    rows.sort(key=lambda row: row["name"].lower())
     return rows
 
 
 def update_player_role(player_uuid, role):
     if role not in {PLAYER_ROLE, ADMIN_ROLE, OWNER_ROLE}:
         raise ValueError("身份不正确。")
+    entry = whitelist_entry_by_uuid(player_uuid)
+    if not entry:
+        raise ValueError("玩家不存在或不在白名单中。")
+    ensure_web_player(entry)
     if role != OWNER_ROLE:
-        entry = whitelist_entry_by_uuid(player_uuid)
         if entry and entry["name"].lower() == "exampleplayer":
             raise ValueError("不能将 ExamplePlayer 从服主身份降级。")
     now = int(time.time() * 1000)
@@ -873,7 +874,6 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
         management_links = ""
         if can_manage_players(user):
             management_links = f"""
-    <a class="{ 'active' if active == 'players' else '' }" href="/players">玩家管理</a>
     <a class="{ 'active' if active == 'blacklist' else '' }" href="/blacklist">黑名单管理</a>
 """
         nav = f"""
@@ -884,6 +884,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     <a class="{ 'active' if active == 'home' else '' }" href="/home">首页</a>
     <a class="{ 'active' if active == 'status' else '' }" href="/status">服务器状态</a>
     <a class="{ 'active' if active == 'audit' else '' }" href="/audit">操作查询</a>
+    <a class="{ 'active' if active == 'players' else '' }" href="/players">玩家列表</a>
     <a class="{ 'active' if active == 'report' else '' }" href="/report">举报</a>
     {report_admin_link}
     {management_links}
@@ -1025,6 +1026,19 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     .identity-role.owner {{ background: #fff4d6; color: #a15c00; }}
     .identity-role.admin {{ background: #eafaf2; color: #176f48; }}
     .identity-role.player {{ background: #eaf3ff; color: #1d5fa7; }}
+    .role-badge {{
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      max-width: 100%;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+    }}
+    .role-badge.owner {{ background: #fff4d6; color: #a15c00; }}
+    .role-badge.admin {{ background: #eafaf2; color: #176f48; }}
+    .role-badge.player {{ background: #eaf3ff; color: #1d5fa7; }}
     .identity-main {{
       min-width: 0;
       display: grid;
@@ -1106,6 +1120,9 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       padding: 0;
       background: #ffffff;
       color: var(--text);
+    }}
+    dialog.player-card-dialog {{
+      width: min(94vw, 920px);
     }}
     dialog::backdrop {{ background: rgba(20, 32, 51, 0.32); }}
     .dialog-body {{ padding: 22px; }}
@@ -1483,7 +1500,10 @@ def report_page(user):
 <section class="panel">
   <form method="post" action="/report">
     <label for="target">被举报者游戏 ID</label>
-    <input id="target" name="target" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
+    <div class="autocomplete-field">
+      <input id="target" name="target" required minlength="3" maxlength="36" autocomplete="off" aria-autocomplete="list" aria-controls="target-suggestions">
+      <div id="target-suggestions" class="autocomplete-menu" role="listbox"></div>
+    </div>
     <label for="reason">举报理由</label>
     <textarea id="reason" name="reason" required minlength="5" maxlength="2000"></textarea>
     <div class="actions">
@@ -1491,6 +1511,115 @@ def report_page(user):
     </div>
   </form>
 </section>
+<script>
+  const targetInput = document.getElementById("target");
+  const targetSuggestions = document.getElementById("target-suggestions");
+  let targetSuggestionItems = [];
+  let activeTargetSuggestionIndex = -1;
+  let targetSuggestionTimer = null;
+
+  function closeTargetSuggestions() {
+    targetSuggestions.classList.remove("is-open");
+    targetSuggestions.innerHTML = "";
+    targetSuggestionItems = [];
+    activeTargetSuggestionIndex = -1;
+  }
+
+  function setActiveTargetSuggestion(index) {
+    const options = Array.from(targetSuggestions.querySelectorAll(".autocomplete-option"));
+    options.forEach((option, optionIndex) => {
+      option.classList.toggle("is-active", optionIndex === index);
+    });
+    activeTargetSuggestionIndex = index;
+  }
+
+  function chooseTargetSuggestion(item) {
+    targetInput.value = item.label;
+    closeTargetSuggestions();
+    targetInput.focus();
+  }
+
+  function renderTargetSuggestions(items) {
+    targetSuggestions.innerHTML = "";
+    targetSuggestionItems = items;
+    if (!items.length) {
+      closeTargetSuggestions();
+      return;
+    }
+    items.forEach((item, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "autocomplete-option";
+      option.setAttribute("role", "option");
+      const name = document.createElement("span");
+      name.className = "autocomplete-name";
+      name.textContent = item.label;
+      const detail = document.createElement("span");
+      detail.className = "autocomplete-detail";
+      detail.textContent = item.match + " 匹配 · " + item.source + " · " + item.uuid;
+      option.appendChild(name);
+      option.appendChild(detail);
+      option.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        chooseTargetSuggestion(item);
+      });
+      option.addEventListener("mouseenter", () => setActiveTargetSuggestion(index));
+      targetSuggestions.appendChild(option);
+    });
+    targetSuggestions.classList.add("is-open");
+    setActiveTargetSuggestion(0);
+  }
+
+  async function loadTargetSuggestions() {
+    const query = targetInput.value.trim();
+    if (!query) {
+      closeTargetSuggestions();
+      return;
+    }
+    try {
+      const response = await fetch("/players/suggestions?q=" + encodeURIComponent(query), {
+        headers: { "Accept": "application/json" }
+      });
+      if (!response.ok) {
+        closeTargetSuggestions();
+        return;
+      }
+      const data = await response.json();
+      renderTargetSuggestions(data.items || []);
+    } catch (error) {
+      closeTargetSuggestions();
+    }
+  }
+
+  targetInput.addEventListener("input", () => {
+    clearTimeout(targetSuggestionTimer);
+    targetSuggestionTimer = setTimeout(loadTargetSuggestions, 140);
+  });
+
+  targetInput.addEventListener("keydown", (event) => {
+    if (!targetSuggestions.classList.contains("is-open")) {
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveTargetSuggestion((activeTargetSuggestionIndex + 1) % targetSuggestionItems.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveTargetSuggestion((activeTargetSuggestionIndex - 1 + targetSuggestionItems.length) % targetSuggestionItems.length);
+    } else if (event.key === "Enter" && activeTargetSuggestionIndex >= 0) {
+      event.preventDefault();
+      chooseTargetSuggestion(targetSuggestionItems[activeTargetSuggestionIndex]);
+    } else if (event.key === "Escape") {
+      closeTargetSuggestions();
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!targetInput.contains(event.target) && !targetSuggestions.contains(event.target)) {
+      closeTargetSuggestions();
+    }
+  });
+</script>
 """
     return page("举报", body, user=user, active="report")
 
@@ -1653,53 +1782,130 @@ def render_metric_card(label, metric):
 
 def players_page(user, message=""):
     try:
-        rows = "".join(render_player_row(player) for player in all_web_players())
+        players = all_web_players()
+        rows = "".join(render_player_row(player, user) for player in players)
+        dialogs = "".join(render_player_card_dialog(player) for player in players)
     except Exception as exc:
         rows = ""
+        dialogs = ""
         message = f"玩家列表暂不可用：{exc}"
     if not rows:
-        rows = '<tr><td colspan="7" class="message">暂无玩家</td></tr>'
+        rows = '<tr><td colspan="6" class="message">暂无玩家</td></tr>'
     safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
     body = f"""
-<h1>玩家管理</h1>
+<h1>玩家列表</h1>
 <section class="panel">
   {safe_message}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>玩家</th><th>UUID</th><th>身份</th><th>白名单</th><th>黑名单</th><th>注册时间</th><th>操作</th></tr></thead>
+      <thead><tr><th>玩家</th><th>UUID</th><th>身份</th><th>注册时间</th><th>ID 卡</th><th>身份管理</th></tr></thead>
       <tbody>{rows}</tbody>
     </table>
   </div>
 </section>
+{dialogs}
+<script>
+  document.querySelectorAll("[data-open-player-card]").forEach((button) => {{
+    button.addEventListener("click", () => {{
+      const dialog = document.getElementById(button.dataset.openPlayerCard);
+      if (!dialog) {{
+        return;
+      }}
+      if (typeof dialog.showModal === "function") {{
+        dialog.showModal();
+      }} else {{
+        dialog.setAttribute("open", "");
+      }}
+    }});
+  }});
+  document.querySelectorAll("[data-close-dialog]").forEach((button) => {{
+    button.addEventListener("click", () => {{
+      const dialog = button.closest("dialog");
+      if (dialog) {{
+        dialog.close();
+      }}
+    }});
+  }});
+</script>
 """
-    return page("玩家管理", body, user=user, active="players")
+    return page("玩家列表", body, user=user, active="players")
 
 
-def render_player_row(player):
+def render_player_row(player, viewer):
     role_options = "".join(
         f'<option value="{esc(role)}" { "selected" if player["role"] == role else "" }>{esc(role)}</option>'
         for role in (PLAYER_ROLE, ADMIN_ROLE, OWNER_ROLE)
     )
+    role_badge = render_role_badge(player["role"])
+    dialog_id = f"player-card-{re.sub(r'[^A-Za-z0-9_-]', '-', player['uuid'])}"
+    can_change_role = can_change_player_roles(viewer) and canonical_uuid(viewer["uuid"]) != canonical_uuid(player["uuid"])
+    controls = "-"
+    if can_change_role:
+        controls = f"""
+<form method="post" action="/players/role" class="inline-form">
+  <input type="hidden" name="player_uuid" value="{esc(player["uuid"])}">
+  <select name="role">{role_options}</select>
+  <button type="submit">修改身份</button>
+</form>
+"""
+    elif can_change_player_roles(viewer):
+        controls = '<span class="message">不能修改自己</span>'
     return f"""
 <tr>
   <td>{esc(player["name"])}</td>
   <td class="mono">{esc(player["uuid"])}</td>
-  <td>{esc(player["role"])}</td>
-  <td>{esc("是" if player["whitelisted"] else "否")}</td>
-  <td>{esc("是" if player["blacklisted"] else "否")}</td>
+  <td>{role_badge}</td>
   <td>{esc(format_time_ms(player["registered_at"]))}</td>
-  <td>
-    <form method="post" action="/players/role" class="inline-form">
-      <input type="hidden" name="player_uuid" value="{esc(player["uuid"])}">
-      <select name="role">{role_options}</select>
-      <button type="submit">修改身份</button>
-    </form>
-    <form method="post" action="/players/reset-password" class="inline-form">
-      <input type="hidden" name="player_uuid" value="{esc(player["uuid"])}">
-      <button type="submit">重置密码</button>
-    </form>
-  </td>
+  <td><button class="secondary" type="button" data-open-player-card="{esc(dialog_id)}">查看 ID 卡</button></td>
+  <td>{controls}</td>
 </tr>
+"""
+
+
+def render_role_badge(role):
+    return f'<span class="role-badge {esc(role_css_class(role))}">{esc(role)}</span>'
+
+
+def render_player_card_dialog(player):
+    dialog_id = f"player-card-{re.sub(r'[^A-Za-z0-9_-]', '-', player['uuid'])}"
+    role = player["role"]
+    role_class = role_css_class(role)
+    skin_url = f"https://minotar.net/armor/body/{player['name']}/128.png"
+    return f"""
+<dialog id="{esc(dialog_id)}" class="player-card-dialog">
+  <div class="dialog-body">
+    <div class="identity-card-wrap">
+      <section class="identity-card">
+        <div class="identity-visual">
+          <div class="skin-frame">
+            <img class="player-skin" src="{esc(skin_url)}" alt="{esc(player["name"])} 的 Minecraft 皮肤" loading="lazy">
+          </div>
+          <span class="identity-role {esc(role_class)}">{esc(role)}</span>
+        </div>
+        <div class="identity-main">
+          <div>
+            <div class="identity-kicker">XiceMCServer 玩家 ID 卡</div>
+            <div class="identity-title">
+              <h2>{esc(player["name"])}</h2>
+            </div>
+            <div class="identity-uuid mono">{esc(player["uuid"])}</div>
+          </div>
+          <div class="identity-bio">
+            <div class="label">个人简介</div>
+            <div class="value">{esc(player["profile_bio"])}</div>
+          </div>
+          <div class="identity-stats">
+            <div class="identity-stat"><div class="label">注册时间</div><div class="value">{esc(format_time_ms(player["registered_at"]))}</div></div>
+            <div class="identity-stat"><div class="label">Web 身份</div><div class="value">{esc(role)}</div></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="dialog-actions">
+      <button class="secondary" type="button" data-close-dialog>关闭</button>
+    </div>
+  </div>
+</dialog>
 """
 
 
@@ -2043,10 +2249,6 @@ def audit_page(user, params):
         <label for="radius">半径，最大 {MAX_RADIUS}</label>
         <input id="radius" name="radius" value="{esc(query.get("radius", ""))}" inputmode="numeric" placeholder="10">
       </div>
-      <div>
-        <label>每页数量</label>
-        <input value="{QUERY_LIMIT}" disabled>
-      </div>
     </div>
     <div class="actions">
       <button type="submit">查询</button>
@@ -2147,7 +2349,7 @@ def audit_page(user, params):
       return;
     }}
     try {{
-      const response = await fetch("/audit/source-suggestions?q=" + encodeURIComponent(query), {{
+      const response = await fetch("/players/suggestions?q=" + encodeURIComponent(query), {{
         headers: {{ "Accept": "application/json" }}
       }});
       if (!response.ok) {{
@@ -2487,9 +2689,6 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 self.send_redirect("/")
                 return
-            if not can_manage_players(user):
-                self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
-                return
             self.respond(*players_page(user))
             return
         if parsed.path == "/blacklist":
@@ -2507,7 +2706,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.respond(*status_page(user))
             return
-        if parsed.path == "/audit/source-suggestions":
+        if parsed.path in {"/players/suggestions", "/audit/source-suggestions"}:
             if not user:
                 self.respond_json(HTTPStatus.UNAUTHORIZED, {"items": []})
                 return
@@ -2701,13 +2900,26 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return user
 
+    def require_owner(self):
+        user = parse_session(self.headers.get("Cookie"))
+        if not user:
+            self.send_redirect("/")
+            return None
+        if not can_change_player_roles(user):
+            self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
+            return None
+        return user
+
     def handle_player_role(self):
-        user = self.require_manager()
+        user = self.require_owner()
         if not user:
             return
         try:
             params = self.read_form()
-            update_player_role(first(params, "player_uuid"), first(params, "role"))
+            player_uuid = first(params, "player_uuid")
+            if canonical_uuid(player_uuid) == canonical_uuid(user["uuid"]):
+                raise ValueError("服主不能修改自己的身份。")
+            update_player_role(player_uuid, first(params, "role"))
         except Exception as exc:
             self.respond(*players_page(user, f"身份修改失败：{exc}"))
             return
