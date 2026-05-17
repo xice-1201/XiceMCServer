@@ -608,6 +608,79 @@ def all_blacklist_entries(limit=200):
         return cur.fetchall()
 
 
+def audit_source_suggestions(term, limit=12):
+    query = str(term or "").strip().lower()
+    if not query:
+        return []
+
+    players = {}
+    for entry in read_whitelist().values():
+        add_suggestion_player(players, entry.get("name"), entry.get("uuid"), "白名单")
+
+    try:
+        for entry in active_blacklist_entries():
+            add_suggestion_player(players, entry.get("player_name"), entry.get("player_uuid"), "黑名单")
+    except Exception:
+        for entry in read_blacklist_file_entries():
+            add_suggestion_player(players, entry.get("name"), entry.get("uuid"), "黑名单")
+
+    compact_query = query.replace("-", "")
+    results = []
+    for player in players.values():
+        name = player["name"]
+        player_uuid = player["uuid"]
+        name_match = query in name.lower()
+        uuid_match = query in player_uuid.lower() or compact_query in player_uuid.replace("-", "").lower()
+        if not name_match and not uuid_match:
+            continue
+        results.append({
+            "label": name,
+            "value": player_uuid if uuid_match and not name_match else name,
+            "uuid": player_uuid,
+            "match": "UUID" if uuid_match and not name_match else "玩家ID",
+            "source": "、".join(sorted(player["sources"])),
+        })
+
+    results.sort(key=lambda item: (
+        0 if item["label"].lower().startswith(query) else 1,
+        item["label"].lower(),
+    ))
+    return results[:limit]
+
+
+def add_suggestion_player(players, name, player_uuid, source):
+    if not name or not player_uuid:
+        return
+    normalized_uuid = canonical_uuid(player_uuid)
+    key = normalized_uuid.lower()
+    if key not in players:
+        players[key] = {
+            "name": str(name),
+            "uuid": normalized_uuid,
+            "sources": set(),
+        }
+    if source:
+        players[key]["sources"].add(source)
+
+
+def read_blacklist_file_entries():
+    entries = []
+    try:
+        with open(BLACKLIST_PATH, "r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) >= 3:
+                    entries.append({"uuid": parts[1], "name": parts[2]})
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return entries
+
+
 def deactivate_blacklist(player_uuid):
     with db_connect() as conn, conn.cursor() as cur:
         cur.execute(
@@ -1055,6 +1128,51 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 8px;
+    }}
+    .autocomplete-field {{
+      position: relative;
+    }}
+    .autocomplete-menu {{
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 4px);
+      z-index: 20;
+      display: none;
+      max-height: 260px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 12px 30px rgba(20, 32, 51, 0.16);
+    }}
+    .autocomplete-menu.is-open {{ display: block; }}
+    .autocomplete-option {{
+      width: 100%;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--text);
+      padding: 10px 12px;
+      text-align: left;
+      cursor: pointer;
+    }}
+    .autocomplete-option:hover,
+    .autocomplete-option.is-active {{
+      background: #edf5ff;
+      color: #1d5fa7;
+    }}
+    .autocomplete-name {{
+      display: block;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }}
+    .autocomplete-detail {{
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
     }}
     .is-hidden {{ display: none; }}
     .stat {{
@@ -1882,7 +2000,10 @@ def audit_page(user, params):
       </div>
       <div>
         <label for="player">操作来源：玩家名或 UUID</label>
-        <input id="player" name="player" value="{esc(query.get("player", ""))}" placeholder="例如 ExamplePlayer">
+        <div class="autocomplete-field">
+          <input id="player" name="player" value="{esc(query.get("player", ""))}" placeholder="例如 ExamplePlayer" autocomplete="off" aria-autocomplete="list" aria-controls="player-suggestions">
+          <div id="player-suggestions" class="autocomplete-menu" role="listbox"></div>
+        </div>
       </div>
       <div id="block-target-field">
         <label for="block_target_type">方块类型</label>
@@ -1944,6 +2065,11 @@ def audit_page(user, params):
   const containerTargetSelect = document.getElementById("container_target_type");
   const itemTypeField = document.getElementById("item-type-field");
   const itemTypeInput = document.getElementById("item_type");
+  const playerInput = document.getElementById("player");
+  const playerSuggestions = document.getElementById("player-suggestions");
+  let suggestionItems = [];
+  let activeSuggestionIndex = -1;
+  let suggestionTimer = null;
 
   function setFieldVisible(field, control, visible) {{
     field.classList.toggle("is-hidden", !visible);
@@ -1961,6 +2087,108 @@ def audit_page(user, params):
 
   actionSelect.addEventListener("change", refreshAuditFields);
   refreshAuditFields();
+
+  function closePlayerSuggestions() {{
+    playerSuggestions.classList.remove("is-open");
+    playerSuggestions.innerHTML = "";
+    suggestionItems = [];
+    activeSuggestionIndex = -1;
+  }}
+
+  function setActiveSuggestion(index) {{
+    const options = Array.from(playerSuggestions.querySelectorAll(".autocomplete-option"));
+    options.forEach((option, optionIndex) => {{
+      option.classList.toggle("is-active", optionIndex === index);
+    }});
+    activeSuggestionIndex = index;
+  }}
+
+  function choosePlayerSuggestion(item) {{
+    playerInput.value = item.value;
+    closePlayerSuggestions();
+    playerInput.focus();
+  }}
+
+  function renderPlayerSuggestions(items) {{
+    playerSuggestions.innerHTML = "";
+    suggestionItems = items;
+    if (!items.length) {{
+      closePlayerSuggestions();
+      return;
+    }}
+    items.forEach((item, index) => {{
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "autocomplete-option";
+      option.setAttribute("role", "option");
+      const name = document.createElement("span");
+      name.className = "autocomplete-name";
+      name.textContent = item.label;
+      const detail = document.createElement("span");
+      detail.className = "autocomplete-detail";
+      detail.textContent = item.match + " 匹配 · " + item.source + " · " + item.uuid;
+      option.appendChild(name);
+      option.appendChild(detail);
+      option.addEventListener("mousedown", (event) => {{
+        event.preventDefault();
+        choosePlayerSuggestion(item);
+      }});
+      option.addEventListener("mouseenter", () => setActiveSuggestion(index));
+      playerSuggestions.appendChild(option);
+    }});
+    playerSuggestions.classList.add("is-open");
+    setActiveSuggestion(0);
+  }}
+
+  async function loadPlayerSuggestions() {{
+    const query = playerInput.value.trim();
+    if (!query) {{
+      closePlayerSuggestions();
+      return;
+    }}
+    try {{
+      const response = await fetch("/audit/source-suggestions?q=" + encodeURIComponent(query), {{
+        headers: {{ "Accept": "application/json" }}
+      }});
+      if (!response.ok) {{
+        closePlayerSuggestions();
+        return;
+      }}
+      const data = await response.json();
+      renderPlayerSuggestions(data.items || []);
+    }} catch (error) {{
+      closePlayerSuggestions();
+    }}
+  }}
+
+  playerInput.addEventListener("input", () => {{
+    clearTimeout(suggestionTimer);
+    suggestionTimer = setTimeout(loadPlayerSuggestions, 140);
+  }});
+
+  playerInput.addEventListener("keydown", (event) => {{
+    if (!playerSuggestions.classList.contains("is-open")) {{
+      return;
+    }}
+    if (event.key === "ArrowDown") {{
+      event.preventDefault();
+      setActiveSuggestion((activeSuggestionIndex + 1) % suggestionItems.length);
+    }} else if (event.key === "ArrowUp") {{
+      event.preventDefault();
+      setActiveSuggestion((activeSuggestionIndex - 1 + suggestionItems.length) % suggestionItems.length);
+    }} else if (event.key === "Enter" && activeSuggestionIndex >= 0) {{
+      event.preventDefault();
+      choosePlayerSuggestion(suggestionItems[activeSuggestionIndex]);
+    }} else if (event.key === "Escape") {{
+      closePlayerSuggestions();
+    }}
+  }});
+
+  document.addEventListener("click", (event) => {{
+    if (!playerInput.contains(event.target) && !playerSuggestions.contains(event.target)) {{
+      closePlayerSuggestions();
+    }}
+  }});
 </script>
 """
     return page("操作查询", body, user=user, active="audit")
@@ -2278,6 +2506,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_redirect("/")
                 return
             self.respond(*status_page(user))
+            return
+        if parsed.path == "/audit/source-suggestions":
+            if not user:
+                self.respond_json(HTTPStatus.UNAUTHORIZED, {"items": []})
+                return
+            params = parse_qs(parsed.query)
+            self.respond_json(HTTPStatus.OK, {"items": audit_source_suggestions(first(params, "q"))})
             return
         if parsed.path == "/audit":
             if not user:
@@ -2608,6 +2843,15 @@ class Handler(BaseHTTPRequestHandler):
         if extra_headers:
             for name, value in extra_headers:
                 self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def respond_json(self, status, data):
+        encoded = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(encoded)
 
