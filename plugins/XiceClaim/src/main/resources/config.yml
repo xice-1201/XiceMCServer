@@ -1,0 +1,50 @@
+limits:
+  max-claims-per-player: 5
+  max-area-blocks: 40000
+  world-min-y: -64
+  world-max-y: 320
+
+protection:
+  block-break: true
+  block-place: true
+  block-interact: true
+  container-open: true
+  entity-interact: true
+  bucket: true
+  fire: true
+  explosion: true
+  piston: true
+
+messages:
+  prefix: '&6[XiceClaim] &f'
+  player-only: '&c该指令只能由玩家执行。'
+  no-permission: '&c你没有管理该领地的权限。'
+  usage:
+    - '&e/claim pos1 &7设置第一个角点'
+    - '&e/claim pos2 &7设置第二个角点'
+    - '&e/claim create <名称> &7创建从基岩到天顶的矩形领地'
+    - '&e/claim info &7查看当前位置领地'
+    - '&e/claim list &7查看自己的领地'
+    - '&e/claim trust <玩家> &7授权当前位置领地'
+    - '&e/claim untrust <玩家> &7移除当前位置领地授权'
+    - '&e/claim delete <名称> &7删除自己的领地'
+  pos1-set: '&a已设置第一个角点：{world} {x}, {z}'
+  pos2-set: '&a已设置第二个角点：{world} {x}, {z}'
+  selection-missing: '&c请先使用 /claim pos1 和 /claim pos2 选择两个角点。'
+  selection-world-mismatch: '&c两个角点必须在同一个世界。'
+  invalid-name: '&c领地名称只能包含英文、数字、下划线和短横线，长度 1-24。'
+  area-too-large: '&c领地面积过大：{area}，当前上限为 {limit}。'
+  too-many-claims: '&c你的领地数量已达到上限：{limit}。'
+  overlap: '&c该区域与已有领地 {claim} 重叠。'
+  created: '&a已创建领地 {claim}，面积 {area}。'
+  not-in-claim: '&c你当前不在任何领地内。'
+  claim-info: '&a领地 {claim} &7| 所有者：{owner} | 成员：{members}'
+  claim-list-empty: '&7你还没有领地。'
+  claim-list-line: '&a{claim} &7| {world} {minX},{minZ} 到 {maxX},{maxZ} | 成员：{members}'
+  player-not-found: '&c没有找到玩家：{player}'
+  trusted: '&a已将 {player} 加入领地 {claim}。'
+  untrusted: '&a已将 {player} 移出领地 {claim}。'
+  deleted: '&a已删除领地 {claim}。'
+  claim-not-found: '&c没有找到你的领地：{claim}'
+  protected: '&c这里属于 {claim}，你没有操作权限。'
+  reload-complete: '&aXiceClaim 配置和领地数据已重新加载。'

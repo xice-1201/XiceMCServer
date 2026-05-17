@@ -9,7 +9,7 @@
 1. 确认每日备份和每周备份是否成功。
 2. 检查磁盘空间。
 3. 查看崩溃报告和近期控制台错误。
-4. 如有争议，检查 CoreProtect 等审计记录。
+4. 如有争议，检查 `XiceAuditLog` 审计记录和 Web 举报记录。
 5. 应用已经测试过的配置变更。
 6. 插件更新前先阅读更新日志，重要插件尽量先在测试环境验证。
 
@@ -81,7 +81,7 @@
 1. 通过 RCON 调用 `XiceTextArranger` 的 `xicebroadcast` 命令，分别在维护前 `10` 分钟、`5` 分钟、`1` 分钟、`10` 秒和 `3` 秒向在线玩家广播重启提醒。
 2. 关闭 `xicemc.service`。
 3. 执行 `scripts/renew-certificates.sh`，当 HTTPS 证书有效期不足 `7` 天时自动续期。
-4. 在停服状态下执行 `scripts/backup.sh`，备份运行目录中的世界、玩家数据、白名单、封禁列表、服务端配置和插件配置。
+4. 在停服状态下执行 `scripts/backup.sh`，备份运行目录中的世界、玩家数据、白名单、封禁列表、服务端配置、插件配置和插件运行时数据。
 5. 执行 `scripts/prune-backups.sh` 清理过期备份。
 6. 执行 `scripts/prune-audit-log.sh` 清理超过 `3` 天的审计日志。
 7. 执行 `scripts/deploy.sh` 从 GitHub 拉取最新内容，并部署配置、Paper 核心和自制插件。
@@ -116,7 +116,7 @@ HTTPS 证书续期策略：
 1. 备份文件名格式为 `xicemc-backup-YYYYMMDD-HHMMSS-wN.tar.gz`，其中 `wN` 是生成当天的星期编号。
 2. 备份内容以运行目录 `/opt/xicemc/runtime` 为根目录打包，包内路径均为相对路径。
 3. 已包含 `main`、`main_nether`、`main_the_end` 三个世界目录。
-4. 已包含 `server.properties`、`bukkit.yml`、`spigot.yml`、`commands.yml`、`permissions.yml`、`config/`、`plugins/*/config.yml`、`whitelist.json`、`ops.json`、封禁列表、玩家缓存和玩家数据。
+4. 已包含 `server.properties`、`bukkit.yml`、`spigot.yml`、`commands.yml`、`permissions.yml`、`config/`、`plugins/` 中除明确排除项外的插件配置和运行时数据、`whitelist.json`、`ops.json`、封禁列表、玩家缓存和玩家数据。
 5. 已排除 `cache`、`libraries`、`versions`、`logs`、`crash-reports`、`paper.jar` 和 `plugins/spark`。
 6. 当前备份仍会包含 `plugins/.paper-remapped` 这类 Paper 可再生成缓存。该目录不影响整包恢复，但后续可以考虑从备份中排除以减少体积。
 
