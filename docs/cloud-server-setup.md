@@ -9,6 +9,7 @@
   repo/       # 完整 Git 仓库，用于保存运维文档、脚本、配置、自制插件源码等
   runtime/    # Minecraft 实际运行目录，只放服务端核心、运行配置、插件 jar、世界和日志
   backups/    # 本机备份目录
+  java/       # Paper 使用的 Java 运行时
 ```
 
 这样做是为了避免未来将自制插件源码、文档、测试文件等非运行内容直接部署进服务器运行目录。
@@ -20,8 +21,10 @@
 1. 云厂商：腾讯云轻量应用服务器。
 2. 系统：OpenCloudOS 9.4。
 3. 规格：2核 4GB 内存，60GB SSD。
-4. Java：使用 `java-21-konajdk-headless`。
+4. Java：使用 Eclipse Temurin JRE 21，安装在 `/opt/xicemc/java`。
 5. 运行用户：`minecraft`。
+
+说明：OpenCloudOS 软件源中的 Tencent Kona JDK 21 会被 Paper 识别为非官方 Java 版本并拒绝启动，因此 Paper 服务使用独立安装的 Temurin JRE 21。
 
 ## 部署边界
 

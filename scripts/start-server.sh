@@ -8,6 +8,7 @@ TEMPLATE_PROPERTIES="$ROOT/server/config/server.properties.template"
 TEMPLATE_EULA="$ROOT/server/config/eula.txt.template"
 XMS="${XICEMC_XMS:-1G}"
 XMX="${XICEMC_XMX:-3G}"
+JAVA_BIN="${XICEMC_JAVA:-java}"
 
 if [[ ! -f "$JAR_PATH" ]]; then
   echo "Paper jar not found. Run scripts/download-paper.sh first." >&2
@@ -28,4 +29,4 @@ if [[ ! -f "$SERVER_DIR/eula.txt" && -f "$TEMPLATE_EULA" ]]; then
 fi
 
 cd "$SERVER_DIR"
-exec java -Xms"$XMS" -Xmx"$XMX" -jar paper.jar --nogui
+exec "$JAVA_BIN" -Xms"$XMS" -Xmx"$XMX" -jar paper.jar --nogui
