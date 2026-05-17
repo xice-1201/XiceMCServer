@@ -1,0 +1,45 @@
+# Minecraft runtime data
+world/
+world_nether/
+world_the_end/
+worlds/
+logs/
+crash-reports/
+backups/
+cache/
+versions/
+libraries/
+
+# Server runtime files
+*.log
+*.pid
+*.lock
+banned-ips.json
+banned-players.json
+ops.json
+usercache.json
+whitelist.json
+
+# Secrets and local overrides
+.env
+*.secret
+*.key
+*.pem
+server.properties
+rcon.properties
+secrets/
+
+# Plugin generated data that should be backed up, not versioned
+server/plugins/*/data/
+server/plugins/*/database/
+server/plugins/*/logs/
+server/plugins/*/cache/
+server/plugins/**/*.db
+server/plugins/**/*.sqlite
+server/plugins/**/*.sqlite3
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
