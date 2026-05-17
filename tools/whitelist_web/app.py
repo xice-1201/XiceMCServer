@@ -818,8 +818,19 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       place-items: center;
       padding: 20px;
     }}
+    .login-shell main {{
+      width: min(94vw, 920px);
+      padding: 0;
+    }}
+    .auth-grid {{
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+    }}
     .login-card {{
-      width: min(92vw, 440px);
+      width: 100%;
       padding: 28px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -940,6 +951,12 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       font-size: 14px;
       line-height: 1.6;
     }}
+    .field-hint {{
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }}
     .error {{ color: var(--danger); }}
     .mono {{ font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; }}
     .log-lines {{ white-space: pre-wrap; overflow-wrap: anywhere; }}
@@ -949,6 +966,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     th {{ color: var(--muted); font-weight: 600; }}
     .nowrap {{ white-space: nowrap; }}
     @media (max-width: 760px) {{
+      .auth-grid {{ grid-template-columns: 1fr; }}
       .app-shell {{ grid-template-columns: 1fr; }}
       .sidebar {{ border-right: 0; border-bottom: 1px solid var(--line); }}
       main {{ padding: 18px; }}
@@ -974,34 +992,37 @@ def redirect(location, cookie=None):
 
 
 def login_page(message="", status=HTTPStatus.OK):
-    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
-    body = f"""
-<section class="login-card">
-  <h1>XiceMCServer 登录</h1>
-  <p class="help-text">服务器版本：Minecraft Java 版 {MINECRAFT_VERSION}。已有白名单的玩家可直接登录。未加入白名单时，请先在 Minecraft 中连接服务器，按拒绝提示获取白名单验证码。</p>
-  {safe_message}
-  <form method="post" action="/login">
-    <label for="username">Minecraft Java 版 ID</label>
-    <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
-    <label for="password">密码</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
-    <div class="actions">
-      <button type="submit">登录</button>
-      <a class="button secondary" href="/register">注册白名单</a>
-    </div>
-  </form>
-</section>
-"""
-    return page("XiceMCServer 登录", body, status)
+    return auth_page(login_message=message, status=status)
 
 
 def register_page(message="", status=HTTPStatus.OK):
-    safe_message = f'<p class="register-message">{esc(message)}</p>' if message else ""
+    return auth_page(register_message=message, status=status)
+
+
+def auth_page(login_message="", register_message="", status=HTTPStatus.OK):
+    safe_login_message = f'<p class="message">{esc(login_message)}</p>' if login_message else ""
+    safe_register_message = f'<p class="register-message">{esc(register_message)}</p>' if register_message else ""
     body = f"""
+<div class="auth-grid">
+<section class="login-card">
+  <h1>XiceMCServer 登录</h1>
+  <p class="help-text">服务器版本：Minecraft Java 版 {MINECRAFT_VERSION}。</p>
+  {safe_login_message}
+  <form method="post" action="/login">
+    <label for="username">Minecraft Java 版 ID</label>
+    <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
+    <label for="password">Web 登录密码</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+" placeholder="初始密码 123456">
+    <p class="field-hint">成功注册白名单后，初始 Web 登录密码为 123456；登录后可在首页修改。</p>
+    <div class="actions">
+      <button type="submit">登录</button>
+    </div>
+  </form>
+</section>
 <section class="login-card">
   <h1>注册白名单</h1>
   <p class="help-text">请使用 Minecraft Java 版 {MINECRAFT_VERSION} 连接服务器获取白名单验证码。白名单验证码在 5 分钟内有效。</p>
-  {safe_message}
+  {safe_register_message}
   <form method="post" action="/register">
     <label for="username">Minecraft Java 版 ID</label>
     <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
@@ -1009,12 +1030,12 @@ def register_page(message="", status=HTTPStatus.OK):
     <input id="verification_code" name="verification_code" autocomplete="off" required minlength="4" maxlength="16">
     <div class="actions">
       <button type="submit">加入白名单</button>
-      <a class="button secondary" href="/">返回登录</a>
     </div>
   </form>
 </section>
+</div>
 """
-    return page("注册白名单", body, status)
+    return page("XiceMCServer 登录与注册", body, status)
 
 
 def home_page(user):
@@ -1971,7 +1992,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             entry = whitelist_entry(username)
             if not entry:
-                self.respond(*login_page("该玩家不在白名单内，请先注册白名单。", HTTPStatus.FORBIDDEN))
+                self.respond(*login_page("该玩家不在白名单内，请先在右侧注册白名单。", HTTPStatus.FORBIDDEN))
                 return
             player = web_player(entry)
             if not player or not hmac.compare_digest(player["password_hash"], password_hash(submitted_password)):
