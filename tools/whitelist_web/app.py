@@ -248,25 +248,25 @@ def ensure_web_player(entry):
         print(f"failed to ensure web player: {exc}")
 
 
-def consume_verification_code(username, code):
+def find_verification_code(username, code):
     now = int(time.time() * 1000)
     username_key = username.lower()
     submitted_code = code.strip().upper()
     entries = read_verification_codes(now)
-    matched = None
-    kept = []
     for entry in entries:
         if entry["key"] == username_key and hmac.compare_digest(entry["code"].upper(), submitted_code):
-            matched = entry
-            continue
-        kept.append(entry)
+            return {"name": entry["name"], "uuid": canonical_uuid(entry["uuid"])}
+    return None
 
-    if matched is None:
-        write_verification_codes(kept)
-        return None
 
+def consume_verification_code(username, code):
+    username_key = username.lower()
+    submitted_code = code.strip().upper()
+    kept = [
+        entry for entry in read_verification_codes()
+        if not (entry["key"] == username_key and hmac.compare_digest(entry["code"].upper(), submitted_code))
+    ]
     write_verification_codes(kept)
-    return {"name": matched["name"], "uuid": canonical_uuid(matched["uuid"])}
 
 
 def read_verification_codes(now_ms=None):
@@ -1184,7 +1184,7 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(*register_page("Minecraft ID 格式不正确。", HTTPStatus.BAD_REQUEST))
             return
 
-        verified_entry = consume_verification_code(username, verification_code)
+        verified_entry = find_verification_code(username, verification_code)
         if not verified_entry:
             self.respond(*register_page("验证码不正确或已过期。请重新进入服务器获取新的验证码。", HTTPStatus.FORBIDDEN))
             return
@@ -1194,6 +1194,7 @@ class Handler(BaseHTTPRequestHandler):
             entry = whitelist_entry_by_uuid(verified_entry["uuid"]) or whitelist_entry(verified_entry["name"]) or verified_entry
             if entry:
                 ensure_web_player(entry)
+            consume_verification_code(username, verification_code)
         except Exception as exc:
             self.respond(*register_page(f"白名单服务暂时不可用：{exc}", HTTPStatus.INTERNAL_SERVER_ERROR))
             return
