@@ -531,6 +531,12 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     .actions {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }}
     .divider {{ border-top: 1px solid var(--line); margin: 18px 0; }}
     .message {{ color: var(--muted); }}
+    .help-text {{
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }}
     .error {{ color: var(--danger); }}
     .mono {{ font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; }}
     .log-lines {{ white-space: pre-wrap; overflow-wrap: anywhere; }}
@@ -569,6 +575,7 @@ def login_page(message="", status=HTTPStatus.OK):
     body = f"""
 <section class="login-card">
   <h1>XiceMCServer 登录</h1>
+  <p class="help-text">已有白名单的玩家可直接登录。未加入白名单时，请先在 Minecraft 中连接服务器，按拒绝提示获取白名单验证码。</p>
   {safe_message}
   <form method="post" action="/login">
     <label for="username">Minecraft Java 版 ID</label>
@@ -588,11 +595,12 @@ def register_page(message="", status=HTTPStatus.OK):
     body = f"""
 <section class="login-card">
   <h1>注册白名单</h1>
+  <p class="help-text">白名单验证码不是邀请码。请先在 Minecraft 中连接服务器，被白名单拒绝时会看到 5 分钟内有效的验证码。</p>
   {safe_message}
   <form method="post" action="/register">
     <label for="username">Minecraft Java 版 ID</label>
     <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
-    <label for="verification_code">验证码</label>
+    <label for="verification_code">白名单验证码</label>
     <input id="verification_code" name="verification_code" autocomplete="off" required minlength="4" maxlength="16">
     <div class="actions">
       <button type="submit">加入白名单</button>

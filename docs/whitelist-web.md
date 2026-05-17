@@ -52,6 +52,7 @@ deploy/nginx/xicemc-web.conf
 3. 验证码在 Web 注册成功使用后会立刻失效。
 4. 验证码文件默认位于 `/opt/xicemc/runtime/plugins/XiceTextArranger/verification-codes.tsv`。
 5. Web 注册不会执行 `whitelist add` 命令，避免 Paper 拒绝异步执行该命令；注册流程直接写入白名单文件并刷新白名单。
+6. 登录页和注册页会提示玩家：白名单验证码不是邀请码，需要先在 Minecraft 客户端连接服务器并被白名单拒绝后获取。
 
 ## 审计查询保护
 
