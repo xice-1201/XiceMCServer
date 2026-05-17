@@ -1,0 +1,12 @@
+{
+  "project": "paper",
+  "minecraftVersion": "1.21.11",
+  "paperBuild": 69,
+  "channel": "STABLE",
+  "javaVersion": 21,
+  "fileName": "paper-1.21.11-69.jar",
+  "sha256": "cf374f2af9d71dfcc75343f37b722a7abcb091c574131b95e3b13c6fc2cb8fae",
+  "apiUrl": "https://api.papermc.io/v2/projects/paper/versions/1.21.11/builds/69",
+  "downloadUrl": "https://api.papermc.io/v2/projects/paper/versions/1.21.11/builds/69/downloads/paper-1.21.11-69.jar",
+  "checkedAt": "2026-05-17"
+}

@@ -9,11 +9,15 @@ backups/
 cache/
 versions/
 libraries/
+server/runtime/
+server/*.jar
+server/paper.jar
 
 # Server runtime files
 *.log
 *.pid
 *.lock
+eula.txt
 banned-ips.json
 banned-players.json
 ops.json

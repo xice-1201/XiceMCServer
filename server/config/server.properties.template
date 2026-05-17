@@ -1,0 +1,53 @@
+# XiceMCServer basic Paper configuration template
+# Copy this file to server.properties on the server host before first launch.
+
+# Identity
+motd=XiceMCServer 0.0.1 - Vanilla Survival Test
+server-name=XiceMCServer
+
+# Access control
+online-mode=true
+white-list=true
+enforce-whitelist=true
+prevent-proxy-connections=false
+
+# Worlds
+level-name=main
+level-seed=
+level-type=minecraft:normal
+generate-structures=true
+allow-nether=true
+
+# Gameplay
+gamemode=survival
+force-gamemode=false
+difficulty=normal
+hardcore=false
+pvp=false
+spawn-protection=16
+allow-flight=false
+enable-command-block=false
+
+# Network
+server-ip=
+server-port=25565
+enable-status=true
+hide-online-players=false
+max-players=20
+
+# Performance baseline
+view-distance=10
+simulation-distance=8
+sync-chunk-writes=true
+max-tick-time=60000
+
+# Administration
+enable-rcon=false
+rcon.password=
+rcon.port=25575
+enable-query=false
+
+# Resource pack
+require-resource-pack=false
+resource-pack=
+resource-pack-sha1=
