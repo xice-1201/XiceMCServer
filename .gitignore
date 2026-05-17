@@ -45,6 +45,7 @@ server/plugins/**/*.sqlite
 server/plugins/**/*.sqlite3
 
 # OS and editor files
+__pycache__/
 .DS_Store
 Thumbs.db
 .idea/
