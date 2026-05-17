@@ -33,6 +33,14 @@ PLAYER_ROLE = "玩家"
 ADMIN_ROLE = "管理员"
 OWNER_ROLE = "服主"
 MINECRAFT_VERSION = "1.21.11"
+AUDIT_ACTION_LABELS = {
+    "BLOCK_PLACE": "放置方块",
+    "BLOCK_BREAK": "破坏方块",
+    "CONTAINER_ADD": "存入物品",
+    "CONTAINER_REMOVE": "取出物品",
+    "PLAYER_JOIN": "玩家进入",
+    "PLAYER_QUIT": "玩家退出",
+}
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_ATTEMPTS = 10
 SESSION_SECONDS = 7 * 24 * 60 * 60
@@ -1504,12 +1512,7 @@ def audit_page(user, params):
         <label for="action">操作</label>
         <select id="action" name="action">
           {option("", "请选择", query.get("action"))}
-          {option("BLOCK_PLACE", "放置方块", query.get("action"))}
-          {option("BLOCK_BREAK", "破坏方块", query.get("action"))}
-          {option("CONTAINER_ADD", "存入物品", query.get("action"))}
-          {option("CONTAINER_REMOVE", "取出物品", query.get("action"))}
-          {option("PLAYER_JOIN", "玩家进入", query.get("action"))}
-          {option("PLAYER_QUIT", "玩家退出", query.get("action"))}
+          {audit_action_options(query.get("action"))}
         </select>
       </div>
       <div>
@@ -1603,6 +1606,14 @@ def option(value, label, selected):
     return f'<option value="{esc(value)}"{attr}>{esc(label)}</option>'
 
 
+def audit_action_options(selected):
+    return "\n".join(option(value, label, selected) for value, label in AUDIT_ACTION_LABELS.items())
+
+
+def audit_action_label(action):
+    return AUDIT_ACTION_LABELS.get(action, action)
+
+
 def container_options(selected):
     values = {
         "",
@@ -1651,7 +1662,7 @@ def render_audit_results(rows, next_cursor, query, message):
         table_rows.append(
             "<tr>"
             f'<td class="nowrap">{esc(format_time_ms(row["created_at"]))}</td>'
-            f"<td>{esc(row['action'])}</td>"
+            f"<td>{esc(audit_action_label(row['action']))}</td>"
             f"<td>{esc(row['player_name'])}</td>"
             f"<td>{esc(row['world'])}<br>{esc(row['x'])}, {esc(row['y'])}, {esc(row['z'])}</td>"
             f"<td>{esc(row['target_type'] or '')}</td>"
@@ -1710,7 +1721,7 @@ def build_audit_filters(params):
     now_ms = int(time.time() * 1000)
 
     action = first(params, "action").upper()
-    allowed_actions = {"BLOCK_PLACE", "BLOCK_BREAK", "CONTAINER_ADD", "CONTAINER_REMOVE", "PLAYER_JOIN", "PLAYER_QUIT"}
+    allowed_actions = set(AUDIT_ACTION_LABELS)
     if action:
         if action not in allowed_actions:
             raise ValueError("未知操作类型")
