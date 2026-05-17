@@ -10,6 +10,7 @@ import shutil
 import socket
 import struct
 import subprocess
+import threading
 import time
 from datetime import datetime
 from http import HTTPStatus
@@ -32,6 +33,7 @@ SESSION_SECONDS = 7 * 24 * 60 * 60
 QUERY_LIMIT = 50
 MAX_RADIUS = 200
 ATTEMPTS = {}
+WHITELIST_LOCK = threading.Lock()
 
 
 def env(name, default=None, required=False):
@@ -128,11 +130,53 @@ def rate_limited(ip):
     return len(attempts) > RATE_LIMIT_MAX_ATTEMPTS
 
 
-def read_whitelist():
+def read_whitelist_entries():
     try:
         with open(WHITELIST_PATH, "r", encoding="utf-8") as file:
             entries = json.load(file)
     except FileNotFoundError:
+        return []
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def write_whitelist_entries(entries):
+    os.makedirs(os.path.dirname(WHITELIST_PATH), exist_ok=True)
+    temp_path = WHITELIST_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as file:
+        json.dump(entries, file, ensure_ascii=False, indent=2)
+        file.write("\n")
+    os.replace(temp_path, WHITELIST_PATH)
+
+
+def add_whitelist_entry(entry):
+    normalized_uuid = canonical_uuid(entry["uuid"])
+    normalized_name = entry["name"]
+    new_entry = {"uuid": normalized_uuid, "name": normalized_name}
+    with WHITELIST_LOCK:
+        entries = read_whitelist_entries()
+        replaced = False
+        for index, current in enumerate(entries):
+            current_uuid = canonical_uuid(current.get("uuid", ""))
+            current_name = str(current.get("name", "")).lower()
+            if current_uuid == normalized_uuid or current_name == normalized_name.lower():
+                entries[index] = new_entry
+                replaced = True
+                break
+        if not replaced:
+            entries.append(new_entry)
+        write_whitelist_entries(entries)
+    return not replaced
+
+
+def reload_whitelist():
+    return RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD).run("whitelist reload")
+
+
+def read_whitelist():
+    entries = read_whitelist_entries()
+    if not entries:
         return {}
     return {entry.get("name", "").lower(): entry for entry in entries if entry.get("name") and entry.get("uuid")}
 
@@ -1190,8 +1234,9 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         try:
-            result = RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD).run(f"whitelist add {verified_entry['name']}")
-            entry = whitelist_entry_by_uuid(verified_entry["uuid"]) or whitelist_entry(verified_entry["name"]) or verified_entry
+            added = add_whitelist_entry(verified_entry)
+            result = reload_whitelist()
+            entry = whitelist_entry_by_uuid(verified_entry["uuid"]) or whitelist_entry(verified_entry["name"])
             if entry:
                 ensure_web_player(entry)
             consume_verification_code(username, verification_code)
@@ -1203,7 +1248,8 @@ class Handler(BaseHTTPRequestHandler):
 <section class="login-card">
   <h1>已提交白名单</h1>
   <p>玩家 <strong>{esc(verified_entry["name"])}</strong> 已提交加入白名单。</p>
-  <p>{esc(result or "已提交白名单命令。")}</p>
+  <p>{esc("已加入白名单。" if added else "该玩家已在白名单内，已刷新白名单。")}</p>
+  <p>{esc(result or "白名单已刷新。")}</p>
   <div class="actions"><a class="button" href="/">返回登录</a></div>
 </section>
 """
