@@ -271,6 +271,10 @@ def can_handle_reports(user):
     return user and user.get("role") in {ADMIN_ROLE, OWNER_ROLE}
 
 
+def can_manage_players(user):
+    return can_handle_reports(user)
+
+
 def db_connect():
     if psycopg2 is None:
         raise RuntimeError("python3 psycopg2 is not installed")
@@ -531,6 +535,131 @@ def sync_blacklist_file():
     os.replace(temp_path, BLACKLIST_PATH)
 
 
+def blacklist_entry_by_uuid(player_uuid):
+    now = int(time.time() * 1000)
+    with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT player_uuid, player_name, reason, report_id, created_at, expires_at, permanent, active
+            FROM web_blacklist
+            WHERE player_uuid = %s AND active = TRUE AND (permanent = TRUE OR expires_at > %s)
+            """,
+            (canonical_uuid(player_uuid), now),
+        )
+        return cur.fetchone()
+
+
+def all_blacklist_entries(limit=200):
+    with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT player_uuid, player_name, reason, report_id, created_at, expires_at, permanent, active
+            FROM web_blacklist
+            ORDER BY active DESC, created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return cur.fetchall()
+
+
+def deactivate_blacklist(player_uuid):
+    with db_connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE web_blacklist SET active = FALSE WHERE player_uuid = %s",
+            (canonical_uuid(player_uuid),),
+        )
+    sync_blacklist_file()
+
+
+def add_manual_blacklist(entry, reason, expires_at=None, permanent=False):
+    now = int(time.time() * 1000)
+    with db_connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO web_blacklist (
+              player_uuid, player_name, reason, report_id, created_at,
+              expires_at, permanent, active
+            )
+            VALUES (%s, %s, %s, NULL, %s, %s, %s, TRUE)
+            ON CONFLICT (player_uuid)
+            DO UPDATE SET player_name = EXCLUDED.player_name,
+                          reason = EXCLUDED.reason,
+                          report_id = NULL,
+                          created_at = EXCLUDED.created_at,
+                          expires_at = EXCLUDED.expires_at,
+                          permanent = EXCLUDED.permanent,
+                          active = TRUE
+            """,
+            (canonical_uuid(entry["uuid"]), entry["name"], reason, now, expires_at, permanent),
+        )
+    sync_blacklist_file()
+
+
+def all_web_players():
+    whitelist = read_whitelist()
+    rows = []
+    with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT player_uuid, player_name, registered_at, updated_at, role
+            FROM web_players
+            ORDER BY lower(player_name)
+            """
+        )
+        for row in cur.fetchall():
+            entry = whitelist.get(row["player_name"].lower())
+            rows.append({
+                "uuid": canonical_uuid(row["player_uuid"]),
+                "name": row["player_name"],
+                "registered_at": row["registered_at"],
+                "updated_at": row["updated_at"],
+                "role": row["role"],
+                "whitelisted": entry is not None,
+                "blacklisted": blacklist_entry_by_uuid(row["player_uuid"]) is not None,
+            })
+    for entry in whitelist.values():
+        if not any(row["uuid"] == canonical_uuid(entry["uuid"]) for row in rows):
+            rows.append({
+                "uuid": canonical_uuid(entry["uuid"]),
+                "name": entry["name"],
+                "registered_at": None,
+                "updated_at": None,
+                "role": PLAYER_ROLE,
+                "whitelisted": True,
+                "blacklisted": blacklist_entry_by_uuid(entry["uuid"]) is not None,
+            })
+    return rows
+
+
+def update_player_role(player_uuid, role):
+    if role not in {PLAYER_ROLE, ADMIN_ROLE, OWNER_ROLE}:
+        raise ValueError("身份不正确。")
+    if role != OWNER_ROLE:
+        entry = whitelist_entry_by_uuid(player_uuid)
+        if entry and entry["name"].lower() == "exampleplayer":
+            raise ValueError("不能将 ExamplePlayer 从服主身份降级。")
+    now = int(time.time() * 1000)
+    with db_connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE web_players SET role = %s, updated_at = %s WHERE player_uuid = %s",
+            (role, now, canonical_uuid(player_uuid)),
+        )
+        if cur.rowcount != 1:
+            raise ValueError("玩家 Web 记录不存在。")
+
+
+def reset_player_password(player_uuid):
+    now = int(time.time() * 1000)
+    with db_connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE web_players SET password_hash = %s, updated_at = %s WHERE player_uuid = %s",
+            (DEFAULT_PASSWORD_HASH, now, canonical_uuid(player_uuid)),
+        )
+        if cur.rowcount != 1:
+            raise ValueError("玩家 Web 记录不存在。")
+
+
 def find_verification_code(username, code):
     now = int(time.time() * 1000)
     username_key = username.lower()
@@ -623,6 +752,12 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
             f'<a class="{ "active" if active == "report-admin" else "" }" href="/reports">举报受理</a>'
             if can_handle_reports(user) else ""
         )
+        management_links = ""
+        if can_manage_players(user):
+            management_links = f"""
+    <a class="{ 'active' if active == 'players' else '' }" href="/players">玩家管理</a>
+    <a class="{ 'active' if active == 'blacklist' else '' }" href="/blacklist">黑名单管理</a>
+"""
         nav = f"""
 <aside class="sidebar">
   <div class="brand">XiceMCServer</div>
@@ -633,6 +768,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     <a class="{ 'active' if active == 'audit' else '' }" href="/audit">操作查询</a>
     <a class="{ 'active' if active == 'report' else '' }" href="/report">举报</a>
     {report_admin_link}
+    {management_links}
   </nav>
   <form method="post" action="/logout"><button class="secondary" type="submit">退出登录</button></form>
 </aside>
@@ -765,6 +901,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     .small-input {{ max-width: 110px; }}
     .checkbox-inline {{ display: inline-flex; align-items: center; gap: 6px; margin: 0; }}
     .checkbox-inline input {{ width: auto; }}
+    .compact-actions {{ margin: 0 0 8px; }}
     button, .button {{
       display: inline-block;
       border: 0;
@@ -978,7 +1115,14 @@ def render_report_row(report):
     action_cell = esc(action_text if handled == "-" else f"{action_text}；{handled}")
     controls = "-"
     if report["status"] == "待处理":
+        audit_query = urlencode({
+            "run": "1",
+            "player": report["target_name"],
+            "time_from": format_datetime_local(audit_cutoff_ms()),
+            "time_to": format_datetime_local(int(time.time() * 1000)),
+        })
         controls = f"""
+<div class="actions compact-actions"><a class="button secondary" href="/audit?{esc(audit_query)}">查最近操作</a></div>
 <form method="post" action="/reports/process" class="inline-form">
   <input type="hidden" name="report_id" value="{esc(report["id"])}">
   <select name="action">
@@ -996,6 +1140,14 @@ def render_report_row(report):
   <button type="submit">处理</button>
 </form>
 """
+    else:
+        audit_query = urlencode({
+            "run": "1",
+            "player": report["target_name"],
+            "time_from": format_datetime_local(audit_cutoff_ms()),
+            "time_to": format_datetime_local(int(time.time() * 1000)),
+        })
+        controls = f'<a class="button secondary" href="/audit?{esc(audit_query)}">查最近操作</a>'
     return f"""
 <tr>
   <td>{esc(report["id"])}</td>
@@ -1045,6 +1197,128 @@ def status_page(user):
 </section>
 """
     return page("服务器状态", body, user=user, active="status")
+
+
+def players_page(user, message=""):
+    try:
+        rows = "".join(render_player_row(player) for player in all_web_players())
+    except Exception as exc:
+        rows = ""
+        message = f"玩家列表暂不可用：{exc}"
+    if not rows:
+        rows = '<tr><td colspan="7" class="message">暂无玩家</td></tr>'
+    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
+    body = f"""
+<h1>玩家管理</h1>
+<section class="panel">
+  {safe_message}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>玩家</th><th>UUID</th><th>身份</th><th>白名单</th><th>黑名单</th><th>注册时间</th><th>操作</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+</section>
+"""
+    return page("玩家管理", body, user=user, active="players")
+
+
+def render_player_row(player):
+    role_options = "".join(
+        f'<option value="{esc(role)}" { "selected" if player["role"] == role else "" }>{esc(role)}</option>'
+        for role in (PLAYER_ROLE, ADMIN_ROLE, OWNER_ROLE)
+    )
+    return f"""
+<tr>
+  <td>{esc(player["name"])}</td>
+  <td class="mono">{esc(player["uuid"])}</td>
+  <td>{esc(player["role"])}</td>
+  <td>{esc("是" if player["whitelisted"] else "否")}</td>
+  <td>{esc("是" if player["blacklisted"] else "否")}</td>
+  <td>{esc(format_time_ms(player["registered_at"]))}</td>
+  <td>
+    <form method="post" action="/players/role" class="inline-form">
+      <input type="hidden" name="player_uuid" value="{esc(player["uuid"])}">
+      <select name="role">{role_options}</select>
+      <button type="submit">修改身份</button>
+    </form>
+    <form method="post" action="/players/reset-password" class="inline-form">
+      <input type="hidden" name="player_uuid" value="{esc(player["uuid"])}">
+      <button type="submit">重置密码</button>
+    </form>
+  </td>
+</tr>
+"""
+
+
+def blacklist_page(user, message=""):
+    try:
+        rows = "".join(render_blacklist_row(entry) for entry in all_blacklist_entries())
+    except Exception as exc:
+        rows = ""
+        message = f"黑名单列表暂不可用：{exc}"
+    if not rows:
+        rows = '<tr><td colspan="7" class="message">暂无黑名单记录</td></tr>'
+    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
+    body = f"""
+<h1>黑名单管理</h1>
+<section class="panel">
+  {safe_message}
+  <h2>手动添加黑名单</h2>
+  <form method="post" action="/blacklist/add">
+    <label for="player_name">玩家游戏 ID</label>
+    <input id="player_name" name="player_name" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
+    <label for="reason">原因</label>
+    <textarea id="reason" name="reason" required minlength="2" maxlength="2000"></textarea>
+    <label for="ban_duration">封禁时间</label>
+    <input id="ban_duration" name="ban_duration" type="number" min="1" step="1">
+    <label for="ban_unit">单位</label>
+    <select id="ban_unit" name="ban_unit">
+      <option value="hours">小时</option>
+      <option value="days">天</option>
+      <option value="months">月</option>
+      <option value="years">年</option>
+    </select>
+    <label class="checkbox-inline"><input type="checkbox" name="permanent" value="true"> 永久</label>
+    <div class="actions"><button type="submit">加入黑名单</button></div>
+  </form>
+</section>
+<section class="panel">
+  <h2>黑名单列表</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>玩家</th><th>UUID</th><th>状态</th><th>原因</th><th>关联举报</th><th>到期时间</th><th>操作</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+</section>
+"""
+    return page("黑名单管理", body, user=user, active="blacklist")
+
+
+def render_blacklist_row(entry):
+    status = "生效" if entry["active"] and (entry["permanent"] or int(entry["expires_at"] or 0) > int(time.time() * 1000)) else "失效"
+    expires = "永久" if entry["permanent"] else format_time_ms(entry["expires_at"])
+    report = f'#{entry["report_id"]}' if entry["report_id"] else "-"
+    action = "-"
+    if status == "生效":
+        action = f"""
+<form method="post" action="/blacklist/remove" class="inline-form">
+  <input type="hidden" name="player_uuid" value="{esc(entry["player_uuid"])}">
+  <button type="submit">解除</button>
+</form>
+"""
+    return f"""
+<tr>
+  <td>{esc(entry["player_name"])}</td>
+  <td class="mono">{esc(entry["player_uuid"])}</td>
+  <td>{esc(status)}</td>
+  <td>{esc(entry["reason"])}</td>
+  <td>{esc(report)}</td>
+  <td>{esc(expires)}</td>
+  <td>{action}</td>
+</tr>
+"""
 
 
 def load_player_stats(user):
@@ -1590,6 +1864,24 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.respond(*report_admin_page(user))
             return
+        if parsed.path == "/players":
+            if not user:
+                self.send_redirect("/")
+                return
+            if not can_manage_players(user):
+                self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
+                return
+            self.respond(*players_page(user))
+            return
+        if parsed.path == "/blacklist":
+            if not user:
+                self.send_redirect("/")
+                return
+            if not can_manage_players(user):
+                self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
+                return
+            self.respond(*blacklist_page(user))
+            return
         if parsed.path == "/status":
             if not user:
                 self.send_redirect("/")
@@ -1621,6 +1913,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/reports/process":
             self.handle_report_process()
+            return
+        if parsed.path == "/players/role":
+            self.handle_player_role()
+            return
+        if parsed.path == "/players/reset-password":
+            self.handle_player_password_reset()
+            return
+        if parsed.path == "/blacklist/add":
+            self.handle_blacklist_add()
+            return
+        if parsed.path == "/blacklist/remove":
+            self.handle_blacklist_remove()
             return
         if parsed.path == "/password":
             self.handle_password_change()
@@ -1759,6 +2063,81 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(*report_admin_page(user, f"处理失败：{exc}"))
             return
         self.respond(*report_admin_page(user, "举报已处理。"))
+
+    def require_manager(self):
+        user = parse_session(self.headers.get("Cookie"))
+        if not user:
+            self.send_redirect("/")
+            return None
+        if not can_manage_players(user):
+            self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
+            return None
+        return user
+
+    def handle_player_role(self):
+        user = self.require_manager()
+        if not user:
+            return
+        try:
+            params = self.read_form()
+            update_player_role(first(params, "player_uuid"), first(params, "role"))
+        except Exception as exc:
+            self.respond(*players_page(user, f"身份修改失败：{exc}"))
+            return
+        self.respond(*players_page(user, "身份已更新。"))
+
+    def handle_player_password_reset(self):
+        user = self.require_manager()
+        if not user:
+            return
+        try:
+            params = self.read_form()
+            reset_player_password(first(params, "player_uuid"))
+        except Exception as exc:
+            self.respond(*players_page(user, f"密码重置失败：{exc}"))
+            return
+        self.respond(*players_page(user, "密码已重置为 123456。"))
+
+    def handle_blacklist_add(self):
+        user = self.require_manager()
+        if not user:
+            return
+        try:
+            params = self.read_form(max_length=4096)
+            player_name = first(params, "player_name")
+            reason = first(params, "reason")
+            duration = first(params, "ban_duration")
+            unit = first(params, "ban_unit")
+            permanent = first(params, "permanent").lower() == "true"
+            if not USERNAME_RE.fullmatch(player_name):
+                raise ValueError("玩家游戏 ID 格式不正确。")
+            if len(reason) < 2 or len(reason) > 2000:
+                raise ValueError("原因长度需要在 2 到 2000 个字符之间。")
+            entry = whitelist_entry(player_name)
+            if not entry:
+                raise ValueError("玩家不存在或不在白名单中。")
+            expires_at = None
+            if not permanent:
+                if not duration.isdigit() or int(duration) <= 0:
+                    raise ValueError("封禁时间必须是正整数，或勾选永久。")
+                expires_at = ban_expiry_ms(int(duration), unit)
+            add_manual_blacklist(entry, reason, expires_at, permanent)
+        except Exception as exc:
+            self.respond(*blacklist_page(user, f"加入黑名单失败：{exc}"))
+            return
+        self.respond(*blacklist_page(user, "玩家已加入黑名单。"))
+
+    def handle_blacklist_remove(self):
+        user = self.require_manager()
+        if not user:
+            return
+        try:
+            params = self.read_form()
+            deactivate_blacklist(first(params, "player_uuid"))
+        except Exception as exc:
+            self.respond(*blacklist_page(user, f"解除黑名单失败：{exc}"))
+            return
+        self.respond(*blacklist_page(user, "黑名单已解除。"))
 
     def handle_password_change(self):
         user = parse_session(self.headers.get("Cookie"))
