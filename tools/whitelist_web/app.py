@@ -153,7 +153,7 @@ def page(title, body, status=HTTPStatus.OK):
 </html>"""
 
 
-def form(message=""):
+def form(message="", status=HTTPStatus.OK):
     safe_message = f'<p class="message">{html.escape(message)}</p>' if message else ""
     return page(
         "XiceMCServer 白名单注册",
@@ -168,6 +168,7 @@ def form(message=""):
   <button type="submit">加入白名单</button>
 </form>
 """,
+        status,
     )
 
 
@@ -190,12 +191,12 @@ class Handler(BaseHTTPRequestHandler):
 
         ip = self.client_address[0]
         if rate_limited(ip):
-            self.respond(*form("请求过于频繁，请稍后再试。"), status=HTTPStatus.TOO_MANY_REQUESTS)
+            self.respond(*form("请求过于频繁，请稍后再试。", HTTPStatus.TOO_MANY_REQUESTS))
             return
 
         length = int(self.headers.get("Content-Length", "0"))
         if length > 2048:
-            self.respond(*form("请求内容过大。"), status=HTTPStatus.BAD_REQUEST)
+            self.respond(*form("请求内容过大。", HTTPStatus.BAD_REQUEST))
             return
 
         data = self.rfile.read(length).decode("utf-8", "replace")
@@ -204,17 +205,17 @@ class Handler(BaseHTTPRequestHandler):
         invite_code = params.get("invite_code", [""])[0].strip()
 
         if not USERNAME_RE.fullmatch(username):
-            self.respond(*form("Minecraft ID 格式不正确。"), status=HTTPStatus.BAD_REQUEST)
+            self.respond(*form("Minecraft ID 格式不正确。", HTTPStatus.BAD_REQUEST))
             return
 
         if not hmac.compare_digest(invite_code, INVITE_CODE):
-            self.respond(*form("邀请码不正确。"), status=HTTPStatus.FORBIDDEN)
+            self.respond(*form("邀请码不正确。", HTTPStatus.FORBIDDEN))
             return
 
         try:
             result = RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD).run(f"whitelist add {username}")
         except Exception as exc:
-            self.respond(*form(f"白名单服务暂时不可用：{exc}"), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            self.respond(*form(f"白名单服务暂时不可用：{exc}", HTTPStatus.INTERNAL_SERVER_ERROR))
             return
 
         safe_user = html.escape(username)
@@ -231,8 +232,7 @@ class Handler(BaseHTTPRequestHandler):
             )
         )
 
-    def respond(self, status, content, **override):
-        status = override.get("status", status)
+    def respond(self, status, content):
         encoded = content.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
