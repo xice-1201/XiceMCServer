@@ -218,6 +218,14 @@ def microsoft_auth_available():
     return bool(MICROSOFT_AUTH_ENABLED and MICROSOFT_CLIENT_ID and MICROSOFT_REDIRECT_URI)
 
 
+def microsoft_auth_enabled():
+    return MICROSOFT_AUTH_ENABLED
+
+
+def microsoft_auth_configured():
+    return bool(MICROSOFT_CLIENT_ID and MICROSOFT_REDIRECT_URI)
+
+
 def make_oauth_state(mode):
     verifier = token_secrets.token_urlsafe(48)
     state = token_secrets.token_urlsafe(24)
@@ -597,7 +605,7 @@ def redirect(location, cookie=None):
 def login_page(message="", status=HTTPStatus.OK):
     safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
     microsoft_login = ""
-    if microsoft_auth_available():
+    if microsoft_auth_enabled():
         microsoft_login = """
   <div class="divider"></div>
   <div class="actions">
@@ -625,7 +633,7 @@ def login_page(message="", status=HTTPStatus.OK):
 def register_page(message="", status=HTTPStatus.OK):
     safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
     microsoft_register = ""
-    if microsoft_auth_available():
+    if microsoft_auth_enabled():
         invite_field = ""
         if MICROSOFT_REGISTER_INVITE_REQUIRED:
             invite_field = """
@@ -1282,8 +1290,11 @@ class Handler(BaseHTTPRequestHandler):
         return parse_qs(data)
 
     def handle_microsoft_start(self, params):
-        if not microsoft_auth_available():
+        if not microsoft_auth_enabled():
             self.respond(*login_page("Microsoft 身份验证尚未配置。", HTTPStatus.SERVICE_UNAVAILABLE))
+            return
+        if not microsoft_auth_configured():
+            self.respond(*login_page("Microsoft 身份验证缺少 Client ID 或回调地址，请联系管理员。", HTTPStatus.SERVICE_UNAVAILABLE))
             return
 
         mode = first(params, "mode") or "login"

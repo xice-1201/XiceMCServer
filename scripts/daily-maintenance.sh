@@ -27,6 +27,11 @@ echo "Stopping ${SERVICE_NAME}..."
 systemctl stop "${SERVICE_NAME}"
 server_was_stopped="true"
 
+echo "Checking HTTPS certificate renewal window..."
+if ! "${REPO_DIR}/scripts/renew-certificates.sh"; then
+  echo "HTTPS certificate renewal check failed; continuing maintenance." >&2
+fi
+
 echo "Creating backup..."
 "${REPO_DIR}/scripts/backup.sh"
 
