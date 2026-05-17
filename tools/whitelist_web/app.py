@@ -9,6 +9,7 @@ import re
 import socket
 import struct
 import time
+from datetime import datetime
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -26,8 +27,7 @@ UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_ATTEMPTS = 10
 SESSION_SECONDS = 7 * 24 * 60 * 60
-MAX_QUERY_LIMIT = 100
-DEFAULT_QUERY_LIMIT = 50
+QUERY_LIMIT = 50
 MAX_RADIUS = 200
 ATTEMPTS = {}
 
@@ -261,15 +261,15 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
   <title>{escaped_title}</title>
   <style>
     :root {{
-      color-scheme: dark;
-      --bg: #0f141a;
-      --panel: #171d24;
-      --line: #2b3542;
-      --muted: #aab7c4;
-      --text: #edf2f7;
-      --accent: #2f8cff;
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --line: #d8e0ea;
+      --muted: #607084;
+      --text: #142033;
+      --accent: #1f6feb;
       --accent2: #45c48b;
-      --danger: #ff6b6b;
+      --danger: #c24141;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -279,7 +279,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       background: var(--bg);
       color: var(--text);
     }}
-    a {{ color: #8cc8ff; text-decoration: none; }}
+    a {{ color: #1f6feb; text-decoration: none; }}
     h1 {{ margin: 0 0 18px; font-size: 24px; }}
     h2 {{ margin: 0 0 12px; font-size: 18px; }}
     p {{ line-height: 1.6; color: var(--muted); }}
@@ -304,7 +304,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     .sidebar {{
       border-right: 1px solid var(--line);
       padding: 22px;
-      background: #121820;
+      background: #ffffff;
     }}
     .brand {{ font-weight: 700; margin-bottom: 8px; }}
     .user {{ color: var(--muted); margin-bottom: 22px; }}
@@ -315,8 +315,8 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       border-radius: 6px;
       color: var(--text);
     }}
-    nav a.active, nav a:hover {{ background: #202a36; }}
-    main {{ padding: 28px; max-width: 1220px; width: 100%; }}
+    nav a.active, nav a:hover {{ background: #eaf1ff; }}
+    main {{ padding: 28px; width: 100%; min-width: 0; }}
     .panel {{
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -325,11 +325,22 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       margin-bottom: 18px;
     }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }}
+    .audit-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      align-items: end;
+    }}
+    .coordinate-group {{
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }}
     .stat {{
       border: 1px solid var(--line);
       border-radius: 6px;
       padding: 14px;
-      background: #121820;
+      background: #f8fafc;
     }}
     .stat .label {{ color: var(--muted); font-size: 13px; }}
     .stat .value {{ margin-top: 8px; font-size: 16px; overflow-wrap: anywhere; }}
@@ -338,8 +349,8 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       width: 100%;
       padding: 10px 11px;
       border-radius: 6px;
-      border: 1px solid #3b4654;
-      background: #0f141a;
+      border: 1px solid #c7d2df;
+      background: #ffffff;
       color: var(--text);
       font-size: 15px;
     }}
@@ -354,11 +365,12 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       cursor: pointer;
       text-align: center;
     }}
-    button.secondary, .button.secondary {{ background: #2b3542; }}
+    button.secondary, .button.secondary {{ background: #e7edf5; color: var(--text); }}
     .actions {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }}
     .message {{ color: var(--muted); }}
     .error {{ color: var(--danger); }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
+    .table-wrap {{ width: 100%; overflow-x: auto; }}
+    table {{ width: 100%; min-width: 100%; border-collapse: collapse; font-size: 14px; }}
     th, td {{ padding: 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }}
     th {{ color: var(--muted); font-weight: 600; }}
     .nowrap {{ white-space: nowrap; }}
@@ -484,11 +496,13 @@ def load_player_stats(user):
 def audit_page(user, params):
     rows, next_cursor, message = query_audit(params)
     query = {key: params.get(key, [""])[0] for key in params}
+    target_options_html = target_options(query.get("target_type", ""))
     body = f"""
 <h1>操作查询</h1>
 <section class="panel">
   <form method="get" action="/audit">
-    <div class="grid">
+    <input type="hidden" name="submitted" value="1">
+    <div class="audit-grid">
       <div>
         <label for="action">操作</label>
         <select id="action" name="action">
@@ -507,35 +521,41 @@ def audit_page(user, params):
       </div>
       <div>
         <label for="target_type">作用目标：方块/容器类型</label>
-        <input id="target_type" name="target_type" value="{esc(query.get("target_type", ""))}" placeholder="例如 STONE / CHEST">
+        <select id="target_type" name="target_type">
+          {target_options_html}
+        </select>
       </div>
       <div>
         <label for="item_type">物品类型</label>
         <input id="item_type" name="item_type" value="{esc(query.get("item_type", ""))}" placeholder="例如 DIAMOND">
       </div>
       <div>
+        <label for="time_from">开始时间</label>
+        <input id="time_from" name="time_from" type="datetime-local" value="{esc(query.get("time_from", ""))}">
+      </div>
+      <div>
+        <label for="time_to">结束时间</label>
+        <input id="time_to" name="time_to" type="datetime-local" value="{esc(query.get("time_to", ""))}">
+      </div>
+      <div>
         <label for="world">世界</label>
         <input id="world" name="world" value="{esc(query.get("world", ""))}" placeholder="main">
       </div>
       <div>
-        <label for="x">X</label>
-        <input id="x" name="x" value="{esc(query.get("x", ""))}" inputmode="numeric">
-      </div>
-      <div>
-        <label for="y">Y</label>
-        <input id="y" name="y" value="{esc(query.get("y", ""))}" inputmode="numeric">
-      </div>
-      <div>
-        <label for="z">Z</label>
-        <input id="z" name="z" value="{esc(query.get("z", ""))}" inputmode="numeric">
+        <label>坐标</label>
+        <div class="coordinate-group">
+          <input id="x" name="x" value="{esc(query.get("x", ""))}" inputmode="numeric" placeholder="X">
+          <input id="y" name="y" value="{esc(query.get("y", ""))}" inputmode="numeric" placeholder="Y">
+          <input id="z" name="z" value="{esc(query.get("z", ""))}" inputmode="numeric" placeholder="Z">
+        </div>
       </div>
       <div>
         <label for="radius">半径，最大 {MAX_RADIUS}</label>
         <input id="radius" name="radius" value="{esc(query.get("radius", ""))}" inputmode="numeric" placeholder="10">
       </div>
       <div>
-        <label for="limit">每页数量，最大 {MAX_QUERY_LIMIT}</label>
-        <input id="limit" name="limit" value="{esc(query.get("limit", str(DEFAULT_QUERY_LIMIT)))}" inputmode="numeric">
+        <label>每页数量</label>
+        <input value="{QUERY_LIMIT}" disabled>
       </div>
     </div>
     <div class="actions">
@@ -554,6 +574,48 @@ def audit_page(user, params):
 def option(value, label, selected):
     attr = " selected" if value == (selected or "") else ""
     return f'<option value="{esc(value)}"{attr}>{esc(label)}</option>'
+
+
+def target_options(selected):
+    values = {
+        "",
+        "PLAYER",
+        "CHEST",
+        "BARREL",
+        "SHULKER_BOX",
+        "FURNACE",
+        "BLAST_FURNACE",
+        "SMOKER",
+        "HOPPER",
+        "STONE",
+        "DIRT",
+        "GRASS_BLOCK",
+        "OAK_LOG",
+        "COBBLESTONE",
+        "DIAMOND_ORE",
+        "DEEPSLATE_DIAMOND_ORE",
+        "IRON_ORE",
+        "DEEPSLATE_IRON_ORE",
+    }
+    try:
+        with db_connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT target_type
+                FROM audit_log
+                WHERE target_type IS NOT NULL AND target_type <> ''
+                ORDER BY target_type
+                LIMIT 300
+                """
+            )
+            values.update(row[0] for row in cur.fetchall())
+    except Exception:
+        pass
+    if selected:
+        values.add(selected)
+    ordered = [""] + sorted(value for value in values if value)
+    labels = {"": "不限"}
+    return "\n".join(option(value, labels.get(value, value), selected) for value in ordered)
 
 
 def render_audit_results(rows, next_cursor, query, message):
@@ -582,23 +644,22 @@ def render_audit_results(rows, next_cursor, query, message):
         next_query["cursor"] = next_cursor
         next_link = f'<div class="actions"><a class="button secondary" href="/audit?{esc(urlencode(next_query))}">下一页</a></div>'
     return f"""
+<div class="table-wrap">
 <table>
   <thead><tr><th>时间</th><th>操作</th><th>来源</th><th>位置</th><th>目标</th><th>物品</th><th>数量/秒数</th></tr></thead>
   <tbody>{''.join(table_rows)}</tbody>
 </table>
+</div>
 {next_link}
 """
 
 
 def query_audit(params):
-    if not params:
+    submitted = first(params, "submitted") == "1"
+    if not submitted and not first(params, "cursor"):
         return [], None, "请先设置筛选条件。默认不会展示任何审计记录。"
     try:
-        where, values, real_filters = build_audit_filters(params)
-        if not real_filters:
-            return [], None, "请至少设置一个筛选条件，避免大范围查询。"
-
-        limit = clamp_int(first(params, "limit"), DEFAULT_QUERY_LIMIT, 1, MAX_QUERY_LIMIT)
+        where, values = build_audit_filters(params)
         sql = """
             SELECT id, created_at, action, player_uuid, player_name, world, x, y, z,
                    target_type, item_type, item_amount
@@ -607,15 +668,15 @@ def query_audit(params):
             ORDER BY created_at DESC, id DESC
             LIMIT %s
         """.format(where=" AND ".join(where))
-        values.append(limit + 1)
+        values.append(QUERY_LIMIT + 1)
         with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, values)
             rows = cur.fetchall()
         next_cursor = None
-        if len(rows) > limit:
-            last = rows[limit - 1]
+        if len(rows) > QUERY_LIMIT:
+            last = rows[QUERY_LIMIT - 1]
             next_cursor = b64url(json.dumps({"t": last["created_at"], "id": last["id"]}).encode("utf-8"))
-            rows = rows[:limit]
+            rows = rows[:QUERY_LIMIT]
         return rows, next_cursor, ""
     except Exception as exc:
         return [], None, f"错误：{exc}"
@@ -624,7 +685,6 @@ def query_audit(params):
 def build_audit_filters(params):
     where = []
     values = []
-    real_filters = 0
 
     action = first(params, "action").upper()
     allowed_actions = {"BLOCK_PLACE", "BLOCK_BREAK", "CONTAINER_ADD", "CONTAINER_REMOVE", "PLAYER_JOIN", "PLAYER_QUIT"}
@@ -633,7 +693,6 @@ def build_audit_filters(params):
             raise ValueError("未知操作类型")
         where.append("action = %s")
         values.append(action)
-        real_filters += 1
 
     player = first(params, "player")
     if player:
@@ -642,19 +701,26 @@ def build_audit_filters(params):
         else:
             where.append("player_name = %s")
         values.append(player)
-        real_filters += 1
 
     target_type = first(params, "target_type").upper()
     if target_type:
         where.append("target_type = %s")
         values.append(target_type)
-        real_filters += 1
 
     item_type = first(params, "item_type").upper()
     if item_type:
         where.append("item_type = %s")
         values.append(item_type)
-        real_filters += 1
+
+    time_from = parse_datetime_local(first(params, "time_from"))
+    if time_from is not None:
+        where.append("created_at >= %s")
+        values.append(time_from)
+
+    time_to = parse_datetime_local(first(params, "time_to"))
+    if time_to is not None:
+        where.append("created_at <= %s")
+        values.append(time_to)
 
     world = first(params, "world")
     coords = [first(params, key) for key in ("x", "y", "z")]
@@ -671,7 +737,6 @@ def build_audit_filters(params):
         values.extend([y - radius, y + radius])
         where.append("z BETWEEN %s AND %s")
         values.extend([z - radius, z + radius])
-        real_filters += 1
 
     cursor = first(params, "cursor")
     if cursor:
@@ -680,8 +745,14 @@ def build_audit_filters(params):
         values.extend([int(decoded["t"]), int(decoded["t"]), int(decoded["id"])])
 
     if not where:
-        where.append("FALSE")
-    return where, values, real_filters
+        where.append("TRUE")
+    return where, values
+
+
+def parse_datetime_local(value):
+    if not value:
+        return None
+    return int(datetime.fromisoformat(value).timestamp() * 1000)
 
 
 def first(params, key):
