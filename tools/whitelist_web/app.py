@@ -1065,6 +1065,60 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     }}
     .stat .label {{ color: var(--muted); font-size: 13px; }}
     .stat .value {{ margin-top: 8px; font-size: 16px; overflow-wrap: anywhere; }}
+    .status-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }}
+    .status-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #f8fafc;
+      min-width: 0;
+    }}
+    .status-card .label {{ color: var(--muted); font-size: 13px; }}
+    .status-value {{
+      margin-top: 9px;
+      font-size: 20px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }}
+    .status-subtext {{
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }}
+    .status-pill {{
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      max-width: 100%;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 800;
+    }}
+    .meter {{
+      width: 100%;
+      height: 8px;
+      margin-top: 10px;
+      border-radius: 999px;
+      background: #e7edf5;
+      overflow: hidden;
+    }}
+    .meter-fill {{ height: 100%; border-radius: inherit; }}
+    .level-low {{ color: #1d5fa7; }}
+    .level-low-bg {{ background: #dceeff; }}
+    .level-medium {{ color: #176f48; }}
+    .level-medium-bg {{ background: #dff7ea; }}
+    .level-high {{ color: #a15c00; }}
+    .level-high-bg {{ background: #fff0c2; }}
+    .level-critical {{ color: #a92828; }}
+    .level-critical-bg {{ background: #ffe1e1; }}
+    .level-unknown {{ color: #607084; }}
+    .level-unknown-bg {{ background: #edf2f7; }}
+    .state-running {{ color: #176f48; background: #dff7ea; }}
+    .state-warning {{ color: #a15c00; background: #fff0c2; }}
+    .state-stopped {{ color: #a92828; background: #ffe1e1; }}
+    .state-unknown {{ color: #607084; background: #edf2f7; }}
     label {{ display: block; margin: 12px 0 6px; color: var(--muted); }}
     input, select, textarea {{
       width: 100%;
@@ -1421,27 +1475,27 @@ def render_report_row(report):
 def status_page(user):
     status = load_server_status()
     backups_html = "".join(
-        f"<tr><td>{esc(item['name'])}</td><td>{esc(item['size'])}</td><td>{esc(item['mtime'])}</td></tr>"
+        f"<tr><td>{esc(item['mtime'])}</td><td>{esc(item['size'])}</td></tr>"
         for item in status["backups"]
     )
     if not backups_html:
-        backups_html = '<tr><td colspan="3" class="message">暂无备份文件</td></tr>'
+        backups_html = '<tr><td colspan="2" class="message">暂无备份文件</td></tr>'
     error_lines = "\n".join(status["log_errors"]) if status["log_errors"] else "最近日志未发现 ERROR / Exception / SEVERE。"
     body = f"""
 <h1>服务器状态</h1>
 <section class="panel">
-  <div class="grid">
-    <div class="stat"><div class="label">开服状态</div><div class="value">{esc(status["server_state"])}</div></div>
-    <div class="stat"><div class="label">在线玩家</div><div class="value">{esc(status["online_players"])}</div></div>
-    <div class="stat"><div class="label">磁盘空间</div><div class="value">{esc(status["disk"])}</div></div>
-    <div class="stat"><div class="label">内存占用</div><div class="value">{esc(status["memory"])}</div></div>
+  <div class="status-grid">
+    {render_server_state_card(status["server_state"])}
+    {render_metric_card("在线玩家", status["online_players"])}
+    {render_metric_card("磁盘空间", status["disk"])}
+    {render_metric_card("内存占用", status["memory"])}
   </div>
 </section>
 <section class="panel">
-  <h2>备份文件</h2>
+  <h2>备份记录</h2>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>文件名</th><th>大小</th><th>修改时间</th></tr></thead>
+      <thead><tr><th>备份时间</th><th>大小</th></tr></thead>
       <tbody>{backups_html}</tbody>
     </table>
   </div>
@@ -1453,6 +1507,30 @@ def status_page(user):
 </section>
 """
     return page("服务器状态", body, user=user, active="status")
+
+
+def render_server_state_card(state):
+    return f"""
+<div class="status-card">
+  <div class="label">开服状态</div>
+  <div class="status-value"><span class="status-pill {esc(state['class'])}">{esc(state['label'])}</span></div>
+  <div class="status-subtext">{esc(state['detail'])}</div>
+</div>
+"""
+
+
+def render_metric_card(label, metric):
+    level = metric.get("level", "unknown")
+    percent = metric.get("percent", 0)
+    width = max(0, min(100, float(percent or 0)))
+    return f"""
+<div class="status-card">
+  <div class="label">{esc(label)}</div>
+  <div class="status-value level-{esc(level)}">{esc(metric['value'])}</div>
+  <div class="status-subtext">{esc(metric['detail'])}</div>
+  <div class="meter"><div class="meter-fill level-{esc(level)}-bg" style="width:{width:.1f}%"></div></div>
+</div>
+"""
 
 
 def players_page(user, message=""):
@@ -1633,20 +1711,37 @@ def server_state():
     result = run_command(["systemctl", "is-active", SERVER_SERVICE_NAME])
     if result["ok"]:
         state = result["stdout"].strip()
-        return "运行中" if state == "active" else state
+        if state == "active":
+            return {"label": "运行中", "class": "state-running", "detail": SERVER_SERVICE_NAME}
+        if state in {"activating", "reloading"}:
+            return {"label": "启动中", "class": "state-warning", "detail": state}
+        if state in {"inactive", "failed", "deactivating"}:
+            return {"label": "未运行", "class": "state-stopped", "detail": state}
+        return {"label": state or "未知", "class": "state-unknown", "detail": SERVER_SERVICE_NAME}
     try:
         RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD, timeout=3).run("list")
-        return "运行中"
+        return {"label": "运行中", "class": "state-running", "detail": "RCON 可连接"}
     except Exception:
-        return "未运行或无法连接"
+        return {"label": "无法连接", "class": "state-stopped", "detail": "systemd 与 RCON 均不可用"}
 
 
 def online_player_summary():
     try:
         output = RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD, timeout=3).run("list")
-        return output or "暂无在线玩家"
+        match = re.search(r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", output or "")
+        if not match:
+            return metric_unknown("无法解析在线人数", output or "RCON 未返回玩家列表")
+        current = int(match.group(1))
+        maximum = int(match.group(2))
+        percent = current / maximum * 100 if maximum else 0
+        return {
+            "value": f"{current} / {maximum} ({percent:.1f}%)",
+            "detail": "当前在线 / 最大人数",
+            "percent": percent,
+            "level": usage_level(percent),
+        }
     except Exception as exc:
-        return f"无法读取：{exc}"
+        return metric_unknown("无法读取", str(exc))
 
 
 def disk_summary():
@@ -1654,9 +1749,14 @@ def disk_summary():
         usage = shutil.disk_usage(RUNTIME_DIR if os.path.exists(RUNTIME_DIR) else "/")
         used = usage.total - usage.free
         percent = used / usage.total * 100 if usage.total else 0
-        return f"{format_bytes(used)} / {format_bytes(usage.total)} ({percent:.1f}%)"
+        return {
+            "value": f"{format_bytes(used)} / {format_bytes(usage.total)} ({percent:.1f}%)",
+            "detail": "已用 / 总量",
+            "percent": percent,
+            "level": usage_level(percent),
+        }
     except Exception as exc:
-        return f"无法读取：{exc}"
+        return metric_unknown("无法读取", str(exc))
 
 
 def memory_summary():
@@ -1670,11 +1770,37 @@ def memory_summary():
         available = meminfo.get("MemAvailable", 0)
         used = total - available
         percent = used / total * 100 if total else 0
-        return f"{format_bytes(used)} / {format_bytes(total)} ({percent:.1f}%)"
+        return {
+            "value": f"{format_bytes(used)} / {format_bytes(total)} ({percent:.1f}%)",
+            "detail": "已用 / 总量",
+            "percent": percent,
+            "level": usage_level(percent),
+        }
     except FileNotFoundError:
-        return "当前系统不支持 /proc/meminfo"
+        return metric_unknown("无法读取", "当前系统不支持 /proc/meminfo")
     except Exception as exc:
-        return f"无法读取：{exc}"
+        return metric_unknown("无法读取", str(exc))
+
+
+def usage_level(percent):
+    if percent is None:
+        return "unknown"
+    if percent < 50:
+        return "low"
+    if percent < 75:
+        return "medium"
+    if percent < 90:
+        return "high"
+    return "critical"
+
+
+def metric_unknown(value, detail):
+    return {
+        "value": value,
+        "detail": detail,
+        "percent": 0,
+        "level": "unknown",
+    }
 
 
 def backup_files(limit=20):
