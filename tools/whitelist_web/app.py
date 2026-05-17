@@ -27,6 +27,8 @@ except ImportError:
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,16}$")
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+PASSWORD_RE = re.compile(r"^[A-Za-z0-9_]{6,64}$")
+DEFAULT_PASSWORD_HASH = hashlib.md5("123456".encode("utf-8")).hexdigest()
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_ATTEMPTS = 10
 SESSION_SECONDS = 7 * 24 * 60 * 60
@@ -213,6 +215,10 @@ def sign(value):
     return hmac.new(SESSION_SECRET.encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def password_hash(password):
+    return hashlib.md5(password.encode("utf-8")).hexdigest()
+
+
 def make_session(entry):
     payload = {
         "uuid": canonical_uuid(entry["uuid"]),
@@ -269,10 +275,18 @@ def init_web_tables():
               player_uuid TEXT PRIMARY KEY,
               player_name TEXT NOT NULL,
               registered_at BIGINT NOT NULL,
-              updated_at BIGINT NOT NULL
+              updated_at BIGINT NOT NULL,
+              password_hash TEXT NOT NULL DEFAULT 'e10adc3949ba59abbe56e057f20f883e'
             )
             """
         )
+        cur.execute("ALTER TABLE web_players ADD COLUMN IF NOT EXISTS password_hash TEXT")
+        cur.execute(
+            "UPDATE web_players SET password_hash = %s WHERE password_hash IS NULL OR password_hash = ''",
+            (DEFAULT_PASSWORD_HASH,),
+        )
+        cur.execute(f"ALTER TABLE web_players ALTER COLUMN password_hash SET DEFAULT '{DEFAULT_PASSWORD_HASH}'")
+        cur.execute("ALTER TABLE web_players ALTER COLUMN password_hash SET NOT NULL")
 
 
 def ensure_web_player(entry):
@@ -281,15 +295,35 @@ def ensure_web_player(entry):
         with db_connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO web_players (player_uuid, player_name, registered_at, updated_at)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO web_players (player_uuid, player_name, registered_at, updated_at, password_hash)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (player_uuid)
                 DO UPDATE SET player_name = EXCLUDED.player_name, updated_at = EXCLUDED.updated_at
                 """,
-                (entry["uuid"], entry["name"], now, now),
+                (entry["uuid"], entry["name"], now, now, DEFAULT_PASSWORD_HASH),
             )
     except Exception as exc:
         print(f"failed to ensure web player: {exc}")
+
+
+def web_player(entry):
+    ensure_web_player(entry)
+    with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT player_uuid, player_name, password_hash FROM web_players WHERE player_uuid = %s",
+            (canonical_uuid(entry["uuid"]),),
+        )
+        return cur.fetchone()
+
+
+def update_player_password(player_uuid, new_password):
+    now = int(time.time() * 1000)
+    with db_connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE web_players SET password_hash = %s, updated_at = %s WHERE player_uuid = %s",
+            (password_hash(new_password), now, canonical_uuid(player_uuid)),
+        )
+        return cur.rowcount == 1
 
 
 def find_verification_code(username, code):
@@ -580,6 +614,8 @@ def login_page(message="", status=HTTPStatus.OK):
   <form method="post" action="/login">
     <label for="username">Minecraft Java 版 ID</label>
     <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
+    <label for="password">密码</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
     <div class="actions">
       <button type="submit">登录</button>
       <a class="button secondary" href="/register">注册白名单</a>
@@ -595,7 +631,7 @@ def register_page(message="", status=HTTPStatus.OK):
     body = f"""
 <section class="login-card">
   <h1>注册白名单</h1>
-  <p class="help-text">白名单验证码不是邀请码。请先在 Minecraft 中连接服务器，被白名单拒绝时会看到 5 分钟内有效的验证码。</p>
+  <p class="help-text">未注册白名单时，直接在 Minecraft 中连接服务器即可获取白名单验证码。白名单验证码在 5 分钟内有效。</p>
   {safe_message}
   <form method="post" action="/register">
     <label for="username">Minecraft Java 版 ID</label>
@@ -614,7 +650,7 @@ def register_page(message="", status=HTTPStatus.OK):
 
 def home_page(user):
     stats = load_player_stats(user)
-    skin_url = f"https://crafatar.com/renders/body/{canonical_uuid(user['uuid'])}?overlay&scale=8"
+    skin_url = f"https://minotar.net/armor/body/{user['name']}/128.png"
     body = f"""
 <h1>首页</h1>
 <section class="panel">
@@ -631,9 +667,33 @@ def home_page(user):
       <div class="stat"><div class="label">上次登出地点</div><div class="value">{esc(stats["last_logout"])}</div></div>
     </div>
   </div>
+  <div class="actions"><a class="button secondary" href="/password">修改密码</a></div>
 </section>
 """
     return page("首页", body, user=user, active="home")
+
+
+def password_page(user, message="", status=HTTPStatus.OK):
+    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
+    body = f"""
+<h1>修改密码</h1>
+<section class="panel">
+  {safe_message}
+  <form method="post" action="/password">
+    <label for="old_password">原密码</label>
+    <input id="old_password" name="old_password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
+    <label for="new_password">新密码</label>
+    <input id="new_password" name="new_password" type="password" autocomplete="new-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
+    <label for="confirm_password">再次输入新密码</label>
+    <input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
+    <div class="actions">
+      <button type="submit">保存密码</button>
+      <a class="button secondary" href="/home">返回首页</a>
+    </div>
+  </form>
+</section>
+"""
+    return page("修改密码", body, status, user=user, active="home")
 
 
 def report_page(user):
@@ -1190,6 +1250,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.respond(*home_page(user))
             return
+        if parsed.path == "/password":
+            if not user:
+                self.send_redirect("/")
+                return
+            self.respond(*password_page(user))
+            return
         if parsed.path == "/report":
             if not user:
                 self.send_redirect("/")
@@ -1222,6 +1288,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/register":
             self.handle_register()
             return
+        if parsed.path == "/password":
+            self.handle_password_change()
+            return
         self.respond(*page("未找到", "<h1>未找到</h1>", HTTPStatus.NOT_FOUND))
 
     def read_form(self, max_length=2048):
@@ -1235,14 +1304,21 @@ class Handler(BaseHTTPRequestHandler):
         try:
             params = self.read_form()
             username = first(params, "username")
+            submitted_password = first(params, "password")
             if not USERNAME_RE.fullmatch(username):
                 self.respond(*login_page("Minecraft ID 格式不正确。", HTTPStatus.BAD_REQUEST))
+                return
+            if not PASSWORD_RE.fullmatch(submitted_password):
+                self.respond(*login_page("密码格式不正确。", HTTPStatus.BAD_REQUEST))
                 return
             entry = whitelist_entry(username)
             if not entry:
                 self.respond(*login_page("该玩家不在白名单内，请先注册白名单。", HTTPStatus.FORBIDDEN))
                 return
-            ensure_web_player(entry)
+            player = web_player(entry)
+            if not player or not hmac.compare_digest(player["password_hash"], password_hash(submitted_password)):
+                self.respond(*login_page("Minecraft ID 或密码不正确。", HTTPStatus.FORBIDDEN))
+                return
             self.send_redirect("/home", f"xicemc_session={make_session(entry)}; Path=/; Max-Age={SESSION_SECONDS}; HttpOnly; SameSite=Lax")
         except Exception as exc:
             self.respond(*login_page(f"登录失败：{exc}", HTTPStatus.INTERNAL_SERVER_ERROR))
@@ -1286,11 +1362,54 @@ class Handler(BaseHTTPRequestHandler):
   <h1>已提交白名单</h1>
   <p>玩家 <strong>{esc(verified_entry["name"])}</strong> 已提交加入白名单。</p>
   <p>{esc("已加入白名单。" if added else "该玩家已在白名单内，已刷新白名单。")}</p>
+  <p>Web 默认登录密码为 <strong>123456</strong>，登录后请在首页修改密码。</p>
   <p>{esc(result or "白名单已刷新。")}</p>
   <div class="actions"><a class="button" href="/">返回登录</a></div>
 </section>
 """
         self.respond(*page("已提交白名单", body))
+
+    def handle_password_change(self):
+        user = parse_session(self.headers.get("Cookie"))
+        if not user:
+            self.send_redirect("/")
+            return
+        try:
+            params = self.read_form()
+            old_password = first(params, "old_password")
+            new_password = first(params, "new_password")
+            confirm_password = first(params, "confirm_password")
+        except ValueError as exc:
+            self.respond(*password_page(user, str(exc), HTTPStatus.BAD_REQUEST))
+            return
+
+        if not PASSWORD_RE.fullmatch(old_password):
+            self.respond(*password_page(user, "原密码格式不正确。", HTTPStatus.BAD_REQUEST))
+            return
+        if not PASSWORD_RE.fullmatch(new_password):
+            self.respond(*password_page(user, "新密码长度不得低于 6 位，且只能包含英文、数字和下划线。", HTTPStatus.BAD_REQUEST))
+            return
+        if new_password != confirm_password:
+            self.respond(*password_page(user, "两次输入的新密码不一致。", HTTPStatus.BAD_REQUEST))
+            return
+
+        try:
+            entry = whitelist_entry_by_uuid(user["uuid"]) or whitelist_entry(user["name"])
+            if not entry:
+                self.send_redirect("/", "xicemc_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+                return
+            player = web_player(entry)
+            if not player or not hmac.compare_digest(player["password_hash"], password_hash(old_password)):
+                self.respond(*password_page(user, "原密码不正确。", HTTPStatus.FORBIDDEN))
+                return
+            if not update_player_password(user["uuid"], new_password):
+                self.respond(*password_page(user, "密码更新失败。", HTTPStatus.INTERNAL_SERVER_ERROR))
+                return
+        except Exception as exc:
+            self.respond(*password_page(user, f"密码更新失败：{exc}", HTTPStatus.INTERNAL_SERVER_ERROR))
+            return
+
+        self.respond(*password_page(user, "密码已更新。"))
 
     def send_redirect(self, location, cookie=None):
         headers = [("Location", location)]
