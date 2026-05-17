@@ -4,9 +4,20 @@ whitelist-denied:
   enabled: true
   message:
     - '&c你暂未加入 XiceMCServer 白名单。'
+    - '&f你的注册验证码：&e{verificationCode}'
+    - '&7验证码将在 {verificationExpiresMinutes} 分钟后失效。'
     - '&f请使用浏览器访问：'
     - '&bhttps://xicemc.site/'
-    - '&7填写 Minecraft ID 和邀请码后，再重新连接服务器。'
+    - '&7填写 Minecraft ID 和验证码后，再重新连接服务器。'
+
+# 白名单验证码。
+# 玩家被白名单拒绝时生成，Web 注册成功后会立刻失效。
+verification-codes:
+  enabled: true
+  path: plugins/XiceTextArranger/verification-codes.tsv
+  ttl-seconds: 300
+  length: 6
+  alphabet: '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
 
 # 正版验证失败提示。
 # 仅当服务端可捕获到认证失败拒绝消息，并且原始拒绝消息匹配 match-messages 时生效。

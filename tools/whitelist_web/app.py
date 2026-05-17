@@ -11,13 +11,10 @@ import socket
 import struct
 import subprocess
 import time
-import secrets as token_secrets
 from datetime import datetime
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib import request as urlrequest
-from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
 
 try:
@@ -53,28 +50,19 @@ def env_bool(name, default=False):
 
 HOST = env("WHITELIST_WEB_HOST", "0.0.0.0")
 PORT = int(env("WHITELIST_WEB_PORT", "80"))
-INVITE_CODE = env("WHITELIST_INVITE_CODE", required=True)
 RCON_HOST = env("XICEMC_RCON_HOST", "127.0.0.1")
 RCON_PORT = int(env("XICEMC_RCON_PORT", "25575"))
 RCON_PASSWORD = env("XICEMC_RCON_PASSWORD", required=True)
 RUNTIME_DIR = env("XICEMC_RUNTIME_DIR", "/opt/xicemc/runtime")
 BACKUP_DIR = env("XICEMC_BACKUP_DIR", "/opt/xicemc/backups")
 WHITELIST_PATH = env("XICEMC_WHITELIST_PATH", os.path.join(RUNTIME_DIR, "whitelist.json"))
-SESSION_SECRET = env("WHITELIST_WEB_SESSION_SECRET", INVITE_CODE + RCON_PASSWORD, required=True)
+VERIFY_CODES_PATH = env("XICEMC_VERIFY_CODES_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceTextArranger", "verification-codes.tsv"))
+SESSION_SECRET = env("WHITELIST_WEB_SESSION_SECRET", RCON_PASSWORD, required=True)
 AUDIT_DB_HOST = env("XICE_AUDIT_DB_HOST", "127.0.0.1")
 AUDIT_DB_PORT = int(env("XICE_AUDIT_DB_PORT", "5432"))
 AUDIT_DB_NAME = env("XICE_AUDIT_DB_NAME", "xicemc_audit")
 AUDIT_DB_USER = env("XICE_AUDIT_DB_USER", "xicemc_audit")
 AUDIT_DB_PASSWORD = env("XICE_AUDIT_DB_PASSWORD", "")
-MICROSOFT_AUTH_ENABLED = env_bool("MICROSOFT_AUTH_ENABLED", False)
-MICROSOFT_CLIENT_ID = env("MICROSOFT_CLIENT_ID", "")
-MICROSOFT_CLIENT_SECRET = env("MICROSOFT_CLIENT_SECRET", "")
-MICROSOFT_REDIRECT_URI = env("MICROSOFT_REDIRECT_URI", "")
-MICROSOFT_SCOPE = env("MICROSOFT_SCOPE", "XboxLive.signin offline_access")
-MICROSOFT_AUTH_URL = env("MICROSOFT_AUTH_URL", "https://login.live.com/oauth20_authorize.srf")
-MICROSOFT_TOKEN_URL = env("MICROSOFT_TOKEN_URL", "https://login.live.com/oauth20_token.srf")
-MICROSOFT_REGISTER_INVITE_REQUIRED = env_bool("MICROSOFT_REGISTER_INVITE_REQUIRED", True)
-OAUTH_STATE_SECONDS = 10 * 60
 AUDIT_RETENTION_DAYS = int(env("XICE_AUDIT_RETENTION_DAYS", "3"))
 SERVER_SERVICE_NAME = env("XICEMC_SERVICE_NAME", "xicemc.service")
 SERVER_LOG_PATH = env("XICEMC_SERVER_LOG_PATH", os.path.join(RUNTIME_DIR, "logs", "latest.log"))
@@ -214,165 +202,6 @@ def parse_session(cookie_header):
     return {"uuid": canonical_uuid(entry["uuid"]), "name": entry["name"]}
 
 
-def microsoft_auth_available():
-    return bool(MICROSOFT_AUTH_ENABLED and MICROSOFT_CLIENT_ID and MICROSOFT_REDIRECT_URI)
-
-
-def microsoft_auth_enabled():
-    return MICROSOFT_AUTH_ENABLED
-
-
-def microsoft_auth_configured():
-    return bool(MICROSOFT_CLIENT_ID and MICROSOFT_REDIRECT_URI)
-
-
-def make_oauth_state(mode):
-    verifier = token_secrets.token_urlsafe(48)
-    state = token_secrets.token_urlsafe(24)
-    payload = {
-        "state": state,
-        "mode": mode,
-        "verifier": verifier,
-        "exp": int(time.time()) + OAUTH_STATE_SECONDS,
-    }
-    body = b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    return payload, f"{body}.{sign(body)}"
-
-
-def parse_oauth_state(cookie_header):
-    if not cookie_header:
-        return None
-    cookie = SimpleCookie()
-    cookie.load(cookie_header)
-    morsel = cookie.get("xicemc_oauth")
-    if not morsel or "." not in morsel.value:
-        return None
-    body, signature = morsel.value.rsplit(".", 1)
-    if not hmac.compare_digest(sign(body), signature):
-        return None
-    try:
-        payload = json.loads(b64url_decode(body).decode("utf-8"))
-    except Exception:
-        return None
-    if int(payload.get("exp", 0)) < int(time.time()):
-        return None
-    return payload
-
-
-def microsoft_authorize_url(payload):
-    challenge = b64url(hashlib.sha256(payload["verifier"].encode("ascii")).digest())
-    params = {
-        "client_id": MICROSOFT_CLIENT_ID,
-        "response_type": "code",
-        "redirect_uri": MICROSOFT_REDIRECT_URI,
-        "scope": MICROSOFT_SCOPE,
-        "state": payload["state"],
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-        "prompt": "select_account",
-    }
-    return f"{MICROSOFT_AUTH_URL}?{urlencode(params)}"
-
-
-def post_form(url, data):
-    encoded = urlencode(data).encode("utf-8")
-    req = urlrequest.Request(
-        url,
-        data=encoded,
-        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
-        method="POST",
-    )
-    return read_json_response(req)
-
-
-def post_json(url, data):
-    encoded = json.dumps(data).encode("utf-8")
-    req = urlrequest.Request(
-        url,
-        data=encoded,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        method="POST",
-    )
-    return read_json_response(req)
-
-
-def get_json(url, bearer_token):
-    req = urlrequest.Request(url, headers={"Authorization": f"Bearer {bearer_token}", "Accept": "application/json"})
-    return read_json_response(req)
-
-
-def read_json_response(req):
-    try:
-        with urlrequest.urlopen(req, timeout=12) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")
-        raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"无法连接身份验证服务：{exc.reason}") from exc
-
-
-def exchange_microsoft_code(code, verifier):
-    data = {
-        "client_id": MICROSOFT_CLIENT_ID,
-        "code": code,
-        "grant_type": "authorization_code",
-        "redirect_uri": MICROSOFT_REDIRECT_URI,
-        "code_verifier": verifier,
-    }
-    if MICROSOFT_CLIENT_SECRET:
-        data["client_secret"] = MICROSOFT_CLIENT_SECRET
-    token = post_form(MICROSOFT_TOKEN_URL, data)
-    access_token = token.get("access_token")
-    if not access_token:
-        raise RuntimeError("Microsoft 未返回 access_token")
-    return access_token
-
-
-def load_minecraft_profile(microsoft_access_token):
-    xbox = post_json(
-        "https://user.auth.xboxlive.com/user/authenticate",
-        {
-            "Properties": {
-                "AuthMethod": "RPS",
-                "SiteName": "user.auth.xboxlive.com",
-                "RpsTicket": f"d={microsoft_access_token}",
-            },
-            "RelyingParty": "http://auth.xboxlive.com",
-            "TokenType": "JWT",
-        },
-    )
-    xbox_token = xbox.get("Token")
-    user_hash = xbox.get("DisplayClaims", {}).get("xui", [{}])[0].get("uhs")
-    if not xbox_token or not user_hash:
-        raise RuntimeError("Xbox Live 未返回有效登录令牌")
-
-    xsts = post_json(
-        "https://xsts.auth.xboxlive.com/xsts/authorize",
-        {
-            "Properties": {"SandboxId": "RETAIL", "UserTokens": [xbox_token]},
-            "RelyingParty": "rp://api.minecraftservices.com/",
-            "TokenType": "JWT",
-        },
-    )
-    xsts_token = xsts.get("Token")
-    if not xsts_token:
-        raise RuntimeError("XSTS 未返回有效授权令牌")
-
-    minecraft = post_json(
-        "https://api.minecraftservices.com/authentication/login_with_xbox",
-        {"identityToken": f"XBL3.0 x={user_hash};{xsts_token}"},
-    )
-    minecraft_token = minecraft.get("access_token")
-    if not minecraft_token:
-        raise RuntimeError("Minecraft 服务未返回 access_token")
-
-    profile = get_json("https://api.minecraftservices.com/minecraft/profile", minecraft_token)
-    if not profile.get("id") or not profile.get("name"):
-        raise RuntimeError("该 Microsoft 账号未找到 Minecraft Java Profile")
-    return {"uuid": canonical_uuid(profile["id"]), "name": profile["name"]}
-
-
 def db_connect():
     if psycopg2 is None:
         raise RuntimeError("python3 psycopg2 is not installed")
@@ -417,6 +246,72 @@ def ensure_web_player(entry):
             )
     except Exception as exc:
         print(f"failed to ensure web player: {exc}")
+
+
+def consume_verification_code(username, code):
+    now = int(time.time() * 1000)
+    username_key = username.lower()
+    submitted_code = code.strip().upper()
+    entries = read_verification_codes(now)
+    matched = None
+    kept = []
+    for entry in entries:
+        if entry["key"] == username_key and hmac.compare_digest(entry["code"].upper(), submitted_code):
+            matched = entry
+            continue
+        kept.append(entry)
+
+    if matched is None:
+        write_verification_codes(kept)
+        return None
+
+    write_verification_codes(kept)
+    return {"name": matched["name"], "uuid": canonical_uuid(matched["uuid"])}
+
+
+def read_verification_codes(now_ms=None):
+    now_ms = now_ms or int(time.time() * 1000)
+    entries = []
+    try:
+        with open(VERIFY_CODES_PATH, "r", encoding="utf-8") as file:
+            for line in file:
+                if not line.strip() or line.startswith("#"):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) != 5:
+                    continue
+                try:
+                    expires_at = int(parts[4])
+                except ValueError:
+                    continue
+                if expires_at <= now_ms:
+                    continue
+                entries.append({
+                    "key": parts[0],
+                    "uuid": parts[1],
+                    "name": parts[2],
+                    "code": parts[3],
+                    "expires_at": expires_at,
+                })
+    except FileNotFoundError:
+        return []
+    return entries
+
+
+def write_verification_codes(entries):
+    os.makedirs(os.path.dirname(VERIFY_CODES_PATH), exist_ok=True)
+    temp_path = VERIFY_CODES_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as file:
+        file.write("# key\tuuid\tplayer\tcode\texpiresAtMillis\n")
+        for entry in entries:
+            file.write("\t".join([
+                entry["key"],
+                entry["uuid"],
+                entry["name"],
+                entry["code"],
+                str(entry["expires_at"]),
+            ]) + "\n")
+    os.replace(temp_path, VERIFY_CODES_PATH)
 
 
 def format_time_ms(value):
@@ -604,14 +499,6 @@ def redirect(location, cookie=None):
 
 def login_page(message="", status=HTTPStatus.OK):
     safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
-    microsoft_login = ""
-    if microsoft_auth_enabled():
-        microsoft_login = """
-  <div class="divider"></div>
-  <div class="actions">
-    <a class="button" href="/auth/microsoft/start?mode=login">使用 Microsoft 登录</a>
-  </div>
-"""
     body = f"""
 <section class="login-card">
   <h1>XiceMCServer 登录</h1>
@@ -624,7 +511,6 @@ def login_page(message="", status=HTTPStatus.OK):
       <a class="button secondary" href="/register">注册白名单</a>
     </div>
   </form>
-  {microsoft_login}
 </section>
 """
     return page("XiceMCServer 登录", body, status)
@@ -632,24 +518,6 @@ def login_page(message="", status=HTTPStatus.OK):
 
 def register_page(message="", status=HTTPStatus.OK):
     safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
-    microsoft_register = ""
-    if microsoft_auth_enabled():
-        invite_field = ""
-        if MICROSOFT_REGISTER_INVITE_REQUIRED:
-            invite_field = """
-    <label for="microsoft_invite_code">邀请码</label>
-    <input id="microsoft_invite_code" name="invite_code" autocomplete="off" required>
-"""
-        microsoft_register = f"""
-  <div class="divider"></div>
-  <form method="get" action="/auth/microsoft/start">
-    <input type="hidden" name="mode" value="register">
-    {invite_field}
-    <div class="actions">
-      <button type="submit">使用 Microsoft 注册白名单</button>
-    </div>
-  </form>
-"""
     body = f"""
 <section class="login-card">
   <h1>注册白名单</h1>
@@ -657,14 +525,13 @@ def register_page(message="", status=HTTPStatus.OK):
   <form method="post" action="/register">
     <label for="username">Minecraft Java 版 ID</label>
     <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
-    <label for="invite_code">邀请码</label>
-    <input id="invite_code" name="invite_code" autocomplete="off" required>
+    <label for="verification_code">验证码</label>
+    <input id="verification_code" name="verification_code" autocomplete="off" required minlength="4" maxlength="16">
     <div class="actions">
       <button type="submit">加入白名单</button>
       <a class="button secondary" href="/">返回登录</a>
     </div>
   </form>
-  {microsoft_register}
 </section>
 """
     return page("注册白名单", body, status)
@@ -1236,12 +1103,6 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/register":
             self.respond(*register_page())
             return
-        if parsed.path == "/auth/microsoft/start":
-            self.handle_microsoft_start(parse_qs(parsed.query))
-            return
-        if parsed.path == "/auth/microsoft/callback":
-            self.handle_microsoft_callback(parse_qs(parsed.query))
-            return
         if parsed.path == "/home":
             if not user:
                 self.send_redirect("/")
@@ -1289,78 +1150,6 @@ class Handler(BaseHTTPRequestHandler):
         data = self.rfile.read(length).decode("utf-8", "replace")
         return parse_qs(data)
 
-    def handle_microsoft_start(self, params):
-        if not microsoft_auth_enabled():
-            self.respond(*login_page("Microsoft 身份验证尚未配置。", HTTPStatus.SERVICE_UNAVAILABLE))
-            return
-        if not microsoft_auth_configured():
-            self.respond(*login_page("Microsoft 身份验证缺少 Client ID 或回调地址，请联系管理员。", HTTPStatus.SERVICE_UNAVAILABLE))
-            return
-
-        mode = first(params, "mode") or "login"
-        if mode not in {"login", "register"}:
-            self.respond(*login_page("Microsoft 身份验证请求无效。", HTTPStatus.BAD_REQUEST))
-            return
-
-        if mode == "register" and MICROSOFT_REGISTER_INVITE_REQUIRED:
-            invite_code = first(params, "invite_code")
-            if not hmac.compare_digest(invite_code, INVITE_CODE):
-                self.respond(*register_page("邀请码不正确。", HTTPStatus.FORBIDDEN))
-                return
-
-        payload, cookie_value = make_oauth_state(mode)
-        cookie = f"xicemc_oauth={cookie_value}; Path=/; Max-Age={OAUTH_STATE_SECONDS}; HttpOnly; SameSite=Lax"
-        self.send_redirect(microsoft_authorize_url(payload), cookie)
-
-    def handle_microsoft_callback(self, params):
-        state_payload = parse_oauth_state(self.headers.get("Cookie"))
-        clear_oauth_cookie = "xicemc_oauth=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
-        if not state_payload:
-            self.respond(*login_page("Microsoft 登录状态已过期，请重新开始。", HTTPStatus.BAD_REQUEST))
-            return
-
-        mode = state_payload.get("mode", "login")
-        if first(params, "error"):
-            message = first(params, "error_description") or first(params, "error")
-            page_func = register_page if mode == "register" else login_page
-            self.respond(*page_func(f"Microsoft 身份验证失败：{message}", HTTPStatus.BAD_REQUEST), extra_headers=[("Set-Cookie", clear_oauth_cookie)])
-            return
-        if first(params, "state") != state_payload.get("state"):
-            self.respond(*login_page("Microsoft 登录状态校验失败。", HTTPStatus.BAD_REQUEST), extra_headers=[("Set-Cookie", clear_oauth_cookie)])
-            return
-
-        code = first(params, "code")
-        if not code:
-            self.respond(*login_page("Microsoft 未返回授权码。", HTTPStatus.BAD_REQUEST), extra_headers=[("Set-Cookie", clear_oauth_cookie)])
-            return
-
-        try:
-            microsoft_token = exchange_microsoft_code(code, state_payload["verifier"])
-            profile = load_minecraft_profile(microsoft_token)
-            entry = whitelist_entry_by_uuid(profile["uuid"]) or whitelist_entry(profile["name"])
-
-            if mode == "register":
-                if not entry:
-                    RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD).run(f"whitelist add {profile['name']}")
-                    entry = whitelist_entry_by_uuid(profile["uuid"]) or whitelist_entry(profile["name"]) or profile
-                ensure_web_player(entry)
-                session_cookie = f"xicemc_session={make_session(entry)}; Path=/; Max-Age={SESSION_SECONDS}; HttpOnly; SameSite=Lax"
-                self.send_redirect("/home", [session_cookie, clear_oauth_cookie])
-                return
-
-            if not entry:
-                self.respond(
-                    *login_page("该 Microsoft 账号对应的 Minecraft Java 玩家不在白名单内，请先注册白名单。", HTTPStatus.FORBIDDEN),
-                    extra_headers=[("Set-Cookie", clear_oauth_cookie)],
-                )
-                return
-            ensure_web_player(entry)
-            session_cookie = f"xicemc_session={make_session(entry)}; Path=/; Max-Age={SESSION_SECONDS}; HttpOnly; SameSite=Lax"
-            self.send_redirect("/home", [session_cookie, clear_oauth_cookie])
-        except Exception as exc:
-            page_func = register_page if mode == "register" else login_page
-            self.respond(*page_func(f"Microsoft 身份验证失败：{exc}", HTTPStatus.BAD_GATEWAY), extra_headers=[("Set-Cookie", clear_oauth_cookie)])
-
     def handle_login(self):
         try:
             params = self.read_form()
@@ -1386,7 +1175,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             params = self.read_form()
             username = first(params, "username")
-            invite_code = first(params, "invite_code")
+            verification_code = first(params, "verification_code")
         except ValueError as exc:
             self.respond(*register_page(str(exc), HTTPStatus.BAD_REQUEST))
             return
@@ -1394,13 +1183,15 @@ class Handler(BaseHTTPRequestHandler):
         if not USERNAME_RE.fullmatch(username):
             self.respond(*register_page("Minecraft ID 格式不正确。", HTTPStatus.BAD_REQUEST))
             return
-        if not hmac.compare_digest(invite_code, INVITE_CODE):
-            self.respond(*register_page("邀请码不正确。", HTTPStatus.FORBIDDEN))
+
+        verified_entry = consume_verification_code(username, verification_code)
+        if not verified_entry:
+            self.respond(*register_page("验证码不正确或已过期。请重新进入服务器获取新的验证码。", HTTPStatus.FORBIDDEN))
             return
 
         try:
-            result = RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD).run(f"whitelist add {username}")
-            entry = whitelist_entry(username)
+            result = RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD).run(f"whitelist add {verified_entry['name']}")
+            entry = whitelist_entry_by_uuid(verified_entry["uuid"]) or whitelist_entry(verified_entry["name"]) or verified_entry
             if entry:
                 ensure_web_player(entry)
         except Exception as exc:
@@ -1410,7 +1201,7 @@ class Handler(BaseHTTPRequestHandler):
         body = f"""
 <section class="login-card">
   <h1>已提交白名单</h1>
-  <p>玩家 <strong>{esc(username)}</strong> 已提交加入白名单。</p>
+  <p>玩家 <strong>{esc(verified_entry["name"])}</strong> 已提交加入白名单。</p>
   <p>{esc(result or "已提交白名单命令。")}</p>
   <div class="actions"><a class="button" href="/">返回登录</a></div>
 </section>

@@ -5,9 +5,10 @@
 ## 当前功能
 
 1. 重写白名单拒绝提示，引导玩家访问 Web 页面注册白名单。
-2. 在服务端可捕获认证失败拒绝消息时，重写正版验证失败提示。
-3. 管理玩家加入服务器消息。
-4. 管理玩家离开服务器消息。
+2. 玩家被白名单拒绝时生成 Web 注册验证码。
+3. 在服务端可捕获认证失败拒绝消息时，重写正版验证失败提示。
+4. 管理玩家加入服务器消息。
+5. 管理玩家离开服务器消息。
 
 ## 白名单拒绝提示
 
@@ -18,12 +19,22 @@ whitelist-denied:
   enabled: true
   message:
     - '&c你暂未加入 XiceMCServer 白名单。'
+    - '&f你的注册验证码：&e{verificationCode}'
+    - '&7验证码将在 {verificationExpiresMinutes} 分钟后失效。'
     - '&f请使用浏览器访问：'
     - '&bhttps://xicemc.site/'
-    - '&7填写 Minecraft ID 和邀请码后，再重新连接服务器。'
+    - '&7填写 Minecraft ID 和验证码后，再重新连接服务器。'
+
+verification-codes:
+  enabled: true
+  path: plugins/XiceTextArranger/verification-codes.tsv
+  ttl-seconds: 300
+  length: 6
+  alphabet: '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
 ```
 
 该功能只修改玩家被拒绝时看到的文本，不改变白名单判断逻辑，也不会绕过正版验证。
+验证码在未过期时重复获取不会变化，被 Web 注册成功使用后会立刻失效。
 
 ## 正版验证失败提示
 
@@ -57,3 +68,5 @@ auth-denied:
 
 1. `{player}`：玩家名。
 2. `{displayName}`：玩家显示名。
+3. `{verificationCode}`：白名单注册验证码。
+4. `{verificationExpiresMinutes}`：验证码剩余有效分钟数。
