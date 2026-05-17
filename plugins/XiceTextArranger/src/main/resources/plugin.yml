@@ -1,5 +1,5 @@
 name: XiceTextArranger
-version: 0.0.6
+version: 0.0.7
 main: com.xice.xicemc.textarranger.XiceTextArrangerPlugin
 api-version: '1.21'
 author: Xice

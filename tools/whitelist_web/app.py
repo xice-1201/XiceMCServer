@@ -12,7 +12,7 @@ import struct
 import subprocess
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -73,6 +73,7 @@ AUDIT_DB_PASSWORD = env("XICE_AUDIT_DB_PASSWORD", "")
 AUDIT_RETENTION_DAYS = int(env("XICE_AUDIT_RETENTION_DAYS", "3"))
 SERVER_SERVICE_NAME = env("XICEMC_SERVICE_NAME", "xicemc.service")
 SERVER_LOG_PATH = env("XICEMC_SERVER_LOG_PATH", os.path.join(RUNTIME_DIR, "logs", "latest.log"))
+BLACKLIST_PATH = env("XICEMC_BLACKLIST_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceTextArranger", "blacklist.tsv"))
 
 
 class RconClient:
@@ -311,6 +312,40 @@ def init_web_tables():
         cur.execute("ALTER TABLE web_players ALTER COLUMN password_hash SET NOT NULL")
         cur.execute(f"ALTER TABLE web_players ALTER COLUMN role SET DEFAULT '{PLAYER_ROLE}'")
         cur.execute("ALTER TABLE web_players ALTER COLUMN role SET NOT NULL")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS web_reports (
+              id BIGSERIAL PRIMARY KEY,
+              reporter_uuid TEXT NOT NULL,
+              reporter_name TEXT NOT NULL,
+              target_uuid TEXT NOT NULL,
+              target_name TEXT NOT NULL,
+              reason TEXT NOT NULL,
+              status TEXT NOT NULL,
+              action TEXT,
+              handler_uuid TEXT,
+              handler_name TEXT,
+              created_at BIGINT NOT NULL,
+              handled_at BIGINT,
+              ban_expires_at BIGINT,
+              ban_permanent BOOLEAN NOT NULL DEFAULT FALSE
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS web_blacklist (
+              player_uuid TEXT PRIMARY KEY,
+              player_name TEXT NOT NULL,
+              reason TEXT NOT NULL,
+              report_id BIGINT,
+              created_at BIGINT NOT NULL,
+              expires_at BIGINT,
+              permanent BOOLEAN NOT NULL DEFAULT FALSE,
+              active BOOLEAN NOT NULL DEFAULT TRUE
+            )
+            """
+        )
 
 
 def ensure_web_player(entry):
@@ -349,6 +384,151 @@ def update_player_password(player_uuid, new_password):
             (password_hash(new_password), now, canonical_uuid(player_uuid)),
         )
         return cur.rowcount == 1
+
+
+def create_report(reporter, target, reason):
+    now = int(time.time() * 1000)
+    with db_connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO web_reports (
+              reporter_uuid, reporter_name, target_uuid, target_name, reason, status, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                reporter["uuid"],
+                reporter["name"],
+                canonical_uuid(target["uuid"]),
+                target["name"],
+                reason,
+                "待处理",
+                now,
+            ),
+        )
+        return cur.fetchone()[0]
+
+
+def list_reports(limit=100):
+    with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id, reporter_name, target_name, reason, status, action, handler_name,
+                   created_at, handled_at, ban_expires_at, ban_permanent
+            FROM web_reports
+            ORDER BY created_at DESC, id DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return cur.fetchall()
+
+
+def report_by_id(report_id):
+    with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM web_reports WHERE id = %s", (report_id,))
+        return cur.fetchone()
+
+
+def process_report(report_id, handler, action, ban_expires_at=None, ban_permanent=False):
+    now = int(time.time() * 1000)
+    report = report_by_id(report_id)
+    if not report:
+        raise ValueError("举报不存在。")
+    if report["status"] != "待处理":
+        raise ValueError("该举报已处理。")
+
+    status = "已处理" if action == "封禁" else "不予处理"
+    with db_connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE web_reports
+            SET status = %s, action = %s, handler_uuid = %s, handler_name = %s,
+                handled_at = %s, ban_expires_at = %s, ban_permanent = %s
+            WHERE id = %s
+            """,
+            (
+                status,
+                action,
+                handler["uuid"],
+                handler["name"],
+                now,
+                ban_expires_at,
+                ban_permanent,
+                report_id,
+            ),
+        )
+        if action == "封禁":
+            cur.execute(
+                """
+                INSERT INTO web_blacklist (
+                  player_uuid, player_name, reason, report_id, created_at,
+                  expires_at, permanent, active
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+                ON CONFLICT (player_uuid)
+                DO UPDATE SET player_name = EXCLUDED.player_name,
+                              reason = EXCLUDED.reason,
+                              report_id = EXCLUDED.report_id,
+                              created_at = EXCLUDED.created_at,
+                              expires_at = EXCLUDED.expires_at,
+                              permanent = EXCLUDED.permanent,
+                              active = TRUE
+                """,
+                (
+                    report["target_uuid"],
+                    report["target_name"],
+                    report["reason"],
+                    report_id,
+                    now,
+                    ban_expires_at,
+                    ban_permanent,
+                ),
+            )
+    sync_blacklist_file()
+    if action == "封禁":
+        try:
+            RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD, timeout=3).run(
+                f"kick {report['target_name']} 你已被加入服务器黑名单。"
+            )
+        except Exception:
+            pass
+
+
+def active_blacklist_entries():
+    now = int(time.time() * 1000)
+    with db_connect() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT player_uuid, player_name, reason, expires_at, permanent
+            FROM web_blacklist
+            WHERE active = TRUE AND (permanent = TRUE OR expires_at > %s)
+            ORDER BY player_name
+            """,
+            (now,),
+        )
+        return cur.fetchall()
+
+
+def sync_blacklist_file():
+    entries = active_blacklist_entries()
+    os.makedirs(os.path.dirname(BLACKLIST_PATH), exist_ok=True)
+    temp_path = BLACKLIST_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as file:
+        file.write("# key\tuuid\tplayer\texpiresAtMillis\tpermanent\treason\n")
+        for entry in entries:
+            player_name = entry["player_name"]
+            reason = str(entry["reason"] or "").replace("\t", " ").replace("\n", " ")
+            file.write("\t".join([
+                player_name.lower(),
+                canonical_uuid(entry["player_uuid"]),
+                player_name,
+                str(entry["expires_at"] or -1),
+                "true" if entry["permanent"] else "false",
+                reason,
+            ]) + "\n")
+    os.replace(temp_path, BLACKLIST_PATH)
 
 
 def find_verification_code(username, code):
@@ -571,7 +751,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     .stat .label {{ color: var(--muted); font-size: 13px; }}
     .stat .value {{ margin-top: 8px; font-size: 16px; overflow-wrap: anywhere; }}
     label {{ display: block; margin: 12px 0 6px; color: var(--muted); }}
-    input, select {{
+    input, select, textarea {{
       width: 100%;
       padding: 10px 11px;
       border-radius: 6px;
@@ -580,6 +760,11 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       color: var(--text);
       font-size: 15px;
     }}
+    textarea {{ min-height: 140px; resize: vertical; }}
+    .inline-form {{ display: grid; gap: 8px; min-width: 280px; }}
+    .small-input {{ max-width: 110px; }}
+    .checkbox-inline {{ display: inline-flex; align-items: center; gap: 6px; margin: 0; }}
+    .checkbox-inline input {{ width: auto; }}
     button, .button {{
       display: inline-block;
       border: 0;
@@ -731,18 +916,98 @@ def report_page(user):
     body = """
 <h1>举报</h1>
 <section class="panel">
+  <form method="post" action="/report">
+    <label for="target">被举报者游戏 ID</label>
+    <input id="target" name="target" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
+    <label for="reason">举报理由</label>
+    <textarea id="reason" name="reason" required minlength="5" maxlength="2000"></textarea>
+    <div class="actions">
+      <button type="submit">提交举报</button>
+    </div>
+  </form>
 </section>
 """
     return page("举报", body, user=user, active="report")
 
 
-def report_admin_page(user):
-    body = """
+def report_page_message(user, message, status=HTTPStatus.OK):
+    body = f"""
+<h1>举报</h1>
+<section class="panel">
+  <p class="message">{esc(message)}</p>
+  <div class="actions"><a class="button secondary" href="/report">继续举报</a></div>
+</section>
+"""
+    return page("举报", body, status, user=user, active="report")
+
+
+def report_admin_page(user, message=""):
+    try:
+        reports = list_reports()
+    except Exception as exc:
+        reports = []
+        message = f"举报列表暂不可用：{exc}"
+    rows = "".join(render_report_row(report) for report in reports)
+    if not rows:
+        rows = '<tr><td colspan="8" class="message">暂无举报</td></tr>'
+    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
+    body = f"""
 <h1>举报受理</h1>
 <section class="panel">
+  {safe_message}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>状态</th><th>举报者</th><th>被举报者</th><th>理由</th><th>提交时间</th><th>处理结果</th><th>操作</th></tr>
+      </thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
 </section>
 """
     return page("举报受理", body, user=user, active="report-admin")
+
+
+def render_report_row(report):
+    action_text = report["action"] or "-"
+    if report["action"] == "封禁":
+        action_text = "永久封禁" if report["ban_permanent"] else f"封禁至 {format_time_ms(report['ban_expires_at'])}"
+    handled = "-"
+    if report["handler_name"]:
+        handled = f'{report["handler_name"]} / {format_time_ms(report["handled_at"])}'
+    action_cell = esc(action_text if handled == "-" else f"{action_text}；{handled}")
+    controls = "-"
+    if report["status"] == "待处理":
+        controls = f"""
+<form method="post" action="/reports/process" class="inline-form">
+  <input type="hidden" name="report_id" value="{esc(report["id"])}">
+  <select name="action">
+    <option value="不予处理">不予处理</option>
+    <option value="封禁">封禁</option>
+  </select>
+  <input class="small-input" name="ban_duration" type="number" min="1" step="1" placeholder="时长">
+  <select name="ban_unit">
+    <option value="hours">小时</option>
+    <option value="days">天</option>
+    <option value="months">月</option>
+    <option value="years">年</option>
+  </select>
+  <label class="checkbox-inline"><input type="checkbox" name="permanent" value="true"> 永久</label>
+  <button type="submit">处理</button>
+</form>
+"""
+    return f"""
+<tr>
+  <td>{esc(report["id"])}</td>
+  <td>{esc(report["status"])}</td>
+  <td>{esc(report["reporter_name"])}</td>
+  <td>{esc(report["target_name"])}</td>
+  <td>{esc(report["reason"])}</td>
+  <td>{esc(format_time_ms(report["created_at"]))}</td>
+  <td>{action_cell}</td>
+  <td>{controls}</td>
+</tr>
+"""
 
 
 def status_page(user):
@@ -1265,6 +1530,20 @@ def clamp_int(value, default, minimum, maximum):
     return max(minimum, min(maximum, number))
 
 
+def ban_expiry_ms(amount, unit):
+    if unit == "hours":
+        delta = timedelta(hours=amount)
+    elif unit == "days":
+        delta = timedelta(days=amount)
+    elif unit == "months":
+        delta = timedelta(days=amount * 30)
+    elif unit == "years":
+        delta = timedelta(days=amount * 365)
+    else:
+        raise ValueError("封禁单位不正确。")
+    return int((datetime.now() + delta).timestamp() * 1000)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "XiceWeb/0.2"
 
@@ -1336,6 +1615,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/register":
             self.handle_register()
+            return
+        if parsed.path == "/report":
+            self.handle_report_submit()
+            return
+        if parsed.path == "/reports/process":
+            self.handle_report_process()
             return
         if parsed.path == "/password":
             self.handle_password_change()
@@ -1417,6 +1702,63 @@ class Handler(BaseHTTPRequestHandler):
 </section>
 """
         self.respond(*page("已提交白名单", body))
+
+    def handle_report_submit(self):
+        user = parse_session(self.headers.get("Cookie"))
+        if not user:
+            self.send_redirect("/")
+            return
+        try:
+            params = self.read_form(max_length=4096)
+            target_name = first(params, "target")
+            reason = first(params, "reason")
+        except ValueError as exc:
+            self.respond(*report_page_message(user, str(exc), HTTPStatus.BAD_REQUEST))
+            return
+        if not USERNAME_RE.fullmatch(target_name):
+            self.respond(*report_page_message(user, "被举报者游戏 ID 格式不正确。", HTTPStatus.BAD_REQUEST))
+            return
+        if len(reason) < 5 or len(reason) > 2000:
+            self.respond(*report_page_message(user, "举报理由长度需要在 5 到 2000 个字符之间。", HTTPStatus.BAD_REQUEST))
+            return
+        target = whitelist_entry(target_name)
+        if not target:
+            self.respond(*report_page_message(user, "玩家不存在或不在白名单中。", HTTPStatus.NOT_FOUND))
+            return
+        try:
+            report_id = create_report(user, target, reason)
+        except Exception as exc:
+            self.respond(*report_page_message(user, f"举报提交失败：{exc}", HTTPStatus.INTERNAL_SERVER_ERROR))
+            return
+        self.respond(*report_page_message(user, f"举报已提交，编号为 #{report_id}。"))
+
+    def handle_report_process(self):
+        user = parse_session(self.headers.get("Cookie"))
+        if not user:
+            self.send_redirect("/")
+            return
+        if not can_handle_reports(user):
+            self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
+            return
+        try:
+            params = self.read_form()
+            report_id = int(first(params, "report_id"))
+            action = first(params, "action")
+            permanent = first(params, "permanent").lower() == "true"
+            duration = first(params, "ban_duration")
+            unit = first(params, "ban_unit")
+            if action not in {"不予处理", "封禁"}:
+                raise ValueError("处置方式不正确。")
+            ban_expires_at = None
+            if action == "封禁" and not permanent:
+                if not duration.isdigit() or int(duration) <= 0:
+                    raise ValueError("封禁时间必须是正整数。")
+                ban_expires_at = ban_expiry_ms(int(duration), unit)
+            process_report(report_id, user, action, ban_expires_at, permanent)
+        except Exception as exc:
+            self.respond(*report_admin_page(user, f"处理失败：{exc}"))
+            return
+        self.respond(*report_admin_page(user, "举报已处理。"))
 
     def handle_password_change(self):
         user = parse_session(self.headers.get("Cookie"))

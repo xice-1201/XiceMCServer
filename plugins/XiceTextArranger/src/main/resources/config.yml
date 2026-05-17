@@ -19,6 +19,16 @@ verification-codes:
   length: 6
   alphabet: '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
 
+# 服务器黑名单。
+# Web 举报受理选择封禁后会写入该文件；插件会在玩家登录时拦截。
+blacklist:
+  enabled: true
+  path: plugins/XiceTextArranger/blacklist.tsv
+  message:
+    - '&c你已被加入 XiceMCServer 黑名单。'
+    - '&f原因：&e{reason}'
+    - '&f到期时间：&e{expiresAt}'
+
 # 正版验证失败提示。
 # 仅当服务端可捕获到认证失败拒绝消息，并且原始拒绝消息匹配 match-messages 时生效。
 auth-denied:

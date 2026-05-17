@@ -68,6 +68,12 @@ public final class XiceTextArrangerPlugin extends JavaPlugin implements Listener
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onAsyncPlayerPreLogin(AsyncPlayerPreLoginEvent event) {
+        BlacklistEntry blacklistEntry = blacklistEntryFor(event.getName(), event.getUniqueId());
+        if (blacklistEntry != null) {
+            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED, blacklistMessage(event.getName(), event.getName(), blacklistEntry));
+            return;
+        }
+
         if (event.getLoginResult() == AsyncPlayerPreLoginEvent.Result.ALLOWED) {
             return;
         }
@@ -85,6 +91,15 @@ public final class XiceTextArrangerPlugin extends JavaPlugin implements Listener
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerLogin(PlayerLoginEvent event) {
+        BlacklistEntry blacklistEntry = blacklistEntryFor(event.getPlayer().getName(), event.getPlayer().getUniqueId());
+        if (blacklistEntry != null) {
+            event.disallow(PlayerLoginEvent.Result.KICK_BANNED, blacklistMessage(
+                    event.getPlayer().getName(),
+                    event.getPlayer().getDisplayName(),
+                    blacklistEntry));
+            return;
+        }
+
         if (event.getResult() == PlayerLoginEvent.Result.ALLOWED) {
             return;
         }
@@ -202,6 +217,70 @@ public final class XiceTextArrangerPlugin extends JavaPlugin implements Listener
         return configuredMessage("whitelist-denied.message", playerName, displayName, placeholders);
     }
 
+    private String blacklistMessage(String playerName, String displayName, BlacklistEntry entry) {
+        Map<String, String> placeholders = new HashMap<>();
+        placeholders.put("reason", entry.reason());
+        placeholders.put("expiresAt", entry.permanent() ? "永久" : formatExpiry(entry.expiresAt()));
+        return configuredMessage("blacklist.message", playerName, displayName, placeholders);
+    }
+
+    private synchronized BlacklistEntry blacklistEntryFor(String playerName, UUID playerUuid) {
+        if (!getConfig().getBoolean("blacklist.enabled", true)) {
+            return null;
+        }
+        long now = Instant.now().toEpochMilli();
+        String key = playerName.toLowerCase(Locale.ROOT);
+        String uuid = playerUuid.toString();
+        for (BlacklistEntry entry : readBlacklist(blacklistPath(), now)) {
+            if (entry.key().equals(key) || entry.uuid().equalsIgnoreCase(uuid)) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private Path blacklistPath() {
+        String configured = getConfig().getString("blacklist.path", "plugins/XiceTextArranger/blacklist.tsv");
+        Path path = Path.of(configured);
+        if (path.isAbsolute()) {
+            return path;
+        }
+        return getServer().getWorldContainer().toPath().resolve(path).normalize();
+    }
+
+    private List<BlacklistEntry> readBlacklist(Path path, long now) {
+        List<BlacklistEntry> entries = new ArrayList<>();
+        if (!Files.isRegularFile(path)) {
+            return entries;
+        }
+
+        try {
+            for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+                if (line.isBlank() || line.startsWith("#")) {
+                    continue;
+                }
+                String[] parts = line.split("\t", -1);
+                if (parts.length != 6) {
+                    continue;
+                }
+                long expiresAt = Long.parseLong(parts[3]);
+                boolean permanent = Boolean.parseBoolean(parts[4]);
+                if (permanent || expiresAt > now) {
+                    entries.add(new BlacklistEntry(parts[0], parts[1], parts[2], expiresAt, permanent, parts[5]));
+                }
+            }
+        } catch (IOException | NumberFormatException exception) {
+            getLogger().warning("Failed to read blacklist: " + exception.getMessage());
+        }
+        return entries;
+    }
+
+    private String formatExpiry(long expiresAt) {
+        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                .withZone(java.time.ZoneId.systemDefault())
+                .format(Instant.ofEpochMilli(expiresAt));
+    }
+
     private synchronized VerificationCode verificationCodeFor(String playerName, UUID playerUuid) {
         long now = Instant.now().toEpochMilli();
         long ttlMillis = Math.max(1, getConfig().getLong("verification-codes.ttl-seconds", 300)) * 1000L;
@@ -305,5 +384,8 @@ public final class XiceTextArrangerPlugin extends JavaPlugin implements Listener
     }
 
     private record VerificationCodeEntry(String key, String uuid, String playerName, String code, long expiresAt) {
+    }
+
+    private record BlacklistEntry(String key, String uuid, String playerName, long expiresAt, boolean permanent, String reason) {
     }
 }

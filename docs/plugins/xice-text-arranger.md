@@ -10,6 +10,7 @@
 4. 管理玩家加入服务器消息。
 5. 管理玩家离开服务器消息。
 6. 提供控制台广播命令，用于每日维护前的系统提醒。
+7. 读取 Web 维护的黑名单文件，在玩家登录时拒绝黑名单玩家。
 
 ## 白名单拒绝提示
 
@@ -94,3 +95,25 @@ broadcasts:
 ```
 
 命令权限为 `xicetextarranger.broadcast`，默认只允许 OP 或控制台执行。每日维护通过 RCON 以控制台身份调用。
+
+## 黑名单
+
+Web 举报受理选择“封禁”后，会同步生成黑名单文件：
+
+```text
+plugins/XiceTextArranger/blacklist.tsv
+```
+
+插件会在玩家登录时读取该文件。若玩家 UUID 或玩家名命中未过期黑名单，则直接拒绝登录，即使该玩家仍在白名单内。
+
+默认提示：
+
+```yaml
+blacklist:
+  enabled: true
+  path: plugins/XiceTextArranger/blacklist.tsv
+  message:
+    - '&c你已被加入 XiceMCServer 黑名单。'
+    - '&f原因：&e{reason}'
+    - '&f到期时间：&e{expiresAt}'
+```
