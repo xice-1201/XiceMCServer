@@ -20,6 +20,8 @@ if [[ ! -d "${REPO_DIR}/.git" ]]; then
   exit 1
 fi
 
+cd "${REPO_DIR}"
+
 echo "Updating repository from GitHub..."
 run_as_server_user git -C "${REPO_DIR}" fetch origin main
 run_as_server_user git -C "${REPO_DIR}" pull --ff-only origin main
