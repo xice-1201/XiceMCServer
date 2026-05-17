@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.logging.Level;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -17,11 +18,14 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class XiceAuditLogPlugin extends JavaPlugin implements Listener {
     private final Map<String, PendingContainerChange> pendingContainerChanges = new HashMap<>();
+    private final Map<UUID, Long> sessionStarts = new HashMap<>();
     private AuditStorage storage;
 
     @Override
@@ -76,6 +80,30 @@ public final class XiceAuditLogPlugin extends JavaPlugin implements Listener {
         if (event.getWhoClicked() instanceof Player player) {
             scheduleContainerDiff(player, event.getView().getTopInventory());
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        if (!getConfig().getBoolean("logging.player-session", true)) {
+            return;
+        }
+        Player player = event.getPlayer();
+        sessionStarts.put(player.getUniqueId(), System.currentTimeMillis());
+        recordPlayerLocation(player, "PLAYER_JOIN", 0);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        if (!getConfig().getBoolean("logging.player-session", true)) {
+            return;
+        }
+        Player player = event.getPlayer();
+        Long startedAt = sessionStarts.remove(player.getUniqueId());
+        int playSeconds = 0;
+        if (startedAt != null) {
+            playSeconds = Math.max(0, (int) ((System.currentTimeMillis() - startedAt) / 1000L));
+        }
+        recordPlayerLocation(player, "PLAYER_QUIT", playSeconds);
     }
 
     private void recordBlock(Player player, String action, Block block) {
@@ -171,6 +199,28 @@ public final class XiceAuditLogPlugin extends JavaPlugin implements Listener {
         if (storage != null) {
             storage.enqueue(record);
         }
+    }
+
+    private void recordPlayerLocation(Player player, String action, int playSeconds) {
+        Location location = player.getLocation();
+        World world = location.getWorld();
+        if (world == null) {
+            return;
+        }
+
+        enqueue(new AuditRecord(
+                System.currentTimeMillis(),
+                action,
+                player.getUniqueId().toString(),
+                player.getName(),
+                world.getName(),
+                location.getBlockX(),
+                location.getBlockY(),
+                location.getBlockZ(),
+                "PLAYER",
+                null,
+                playSeconds,
+                null));
     }
 
     private AuditStorage createStorage() {

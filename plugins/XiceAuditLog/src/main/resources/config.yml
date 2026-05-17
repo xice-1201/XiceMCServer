@@ -13,3 +13,4 @@ logging:
   block-break: true
   block-place: true
   container-transfer: true
+  player-session: true

@@ -1,67 +1,80 @@
-# 白名单注册页面
+# XiceMCServer Web 页面
 
-## 目标
+Web 页面用于承载白名单注册、玩家登录、个人信息展示和审计查询。
 
-白名单注册页面用于降低朋友服添加白名单的维护成本。玩家访问网页后填写 Minecraft Java 版 ID 和邀请码，服务端通过本机 RCON 执行：
+## 页面结构
 
-```text
-whitelist add <玩家ID>
-```
+1. `/`：登录页。玩家使用 Minecraft Java 版 ID 登录，且该 ID 必须已经在白名单内。
+2. `/register`：白名单注册页。玩家填写 Minecraft ID 和邀请码后，Web 服务通过本机 RCON 执行 `whitelist add <玩家ID>`。
+3. `/home`：登录后的首页，展示玩家 UUID、注册时间、累计游玩时间和上次登出地点。
+4. `/audit`：操作查询页，用于查询 `XiceAuditLog` 写入 PostgreSQL 的审计记录。
 
-未加入白名单的玩家直连服务器时，会由 `XiceTextArranger` 插件在拒绝提示中引导玩家使用浏览器访问白名单注册页面。
+## 登录说明
 
-## 安全边界
+当前登录只用于白名单玩家进入 Web 后台。登录依据是：
 
-1. 网页必须使用邀请码。
-2. RCON 只由本机 Web 服务访问，不对外公布。
-3. RCON 密码和邀请码只保存在服务器 `/opt/xicemc/secrets/whitelist-web.env`。
-4. 密码、邀请码和 RCON 密钥不提交到 Git。
-5. Web 服务只负责添加白名单，不提供 OP、执行任意命令或管理功能。
+1. 玩家填写的 Minecraft ID 格式合法。
+2. 该 ID 存在于服务器 `whitelist.json`。
+3. 登录后浏览器保存签名 Cookie。
 
-## 服务文件
+该机制不是强身份认证。若未来公开服需要更严格的账户安全，应加入 Microsoft OAuth、一次性验证码或游戏内确认码。
 
-systemd 服务：
+## 审计查询保护
+
+`/audit` 查询页的保护策略：
+
+1. 默认不展示任何记录。
+2. 必须至少设置一个筛选条件。
+3. 查询使用参数化 SQL。
+4. 每页默认 `50` 条，最多 `100` 条。
+5. 使用游标分页，不使用大 `OFFSET`。
+6. 不执行总数统计。
+7. 查询只访问 PostgreSQL，不在 Minecraft 主线程执行。
+
+## systemd 服务
+
+仓库内服务文件：
 
 ```text
 deploy/systemd/xicemc-whitelist.service
 ```
 
-服务器上安装为：
+服务器安装位置：
 
 ```text
 /etc/systemd/system/xicemc-whitelist.service
 ```
 
+服务名沿用 `xicemc-whitelist`，但实际已经是 XiceMCServer Web Portal。
+
 ## 环境变量
 
-服务器私密配置文件：
+白名单 Web 私密配置：
 
 ```text
 /opt/xicemc/secrets/whitelist-web.env
 ```
 
-示例：
+Minecraft/数据库共享私密配置：
+
+```text
+/opt/xicemc/secrets/xicemc.env
+```
+
+需要的关键环境变量：
 
 ```env
 WHITELIST_WEB_HOST=0.0.0.0
 WHITELIST_WEB_PORT=80
 WHITELIST_INVITE_CODE=change-this-code
+WHITELIST_WEB_SESSION_SECRET=change-this-secret
 XICEMC_RCON_HOST=127.0.0.1
 XICEMC_RCON_PORT=25575
 XICEMC_RCON_PASSWORD=change-this-password
+XICE_AUDIT_DB_PASSWORD=change-this-password
 ```
 
-## Minecraft 配置要求
-
-`server.properties` 需要启用 RCON：
-
-```properties
-enable-rcon=true
-rcon.port=25575
-rcon.password=<服务器私密密码>
-```
-
-RCON 端口不要在腾讯云安全组中对公网开放。
+`XICE_AUDIT_DB_PASSWORD` 也会被 `XiceAuditLog` 插件读取。
 
 ## 常用命令
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=XiceMCServer Whitelist Registration Web
+Description=XiceMCServer Web Portal
 After=network-online.target xicemc.service
 Wants=network-online.target
 
@@ -9,6 +9,7 @@ User=minecraft
 Group=minecraft
 WorkingDirectory=/opt/xicemc/repo
 EnvironmentFile=/opt/xicemc/secrets/whitelist-web.env
+EnvironmentFile=-/opt/xicemc/secrets/xicemc.env
 ExecStart=/usr/bin/python3 /opt/xicemc/repo/tools/whitelist_web/app.py
 Restart=on-failure
 RestartSec=10

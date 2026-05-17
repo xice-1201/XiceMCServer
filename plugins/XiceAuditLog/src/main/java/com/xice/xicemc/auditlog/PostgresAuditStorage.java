@@ -188,8 +188,12 @@ public final class PostgresAuditStorage implements AuditStorage {
                     """);
             statement.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_time ON audit_log(created_at)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_player_time ON audit_log(player_uuid, created_at)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_player_action_time ON audit_log(player_uuid, action, created_at)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_player_name_time ON audit_log(player_name, created_at)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_location_time ON audit_log(world, x, y, z, created_at)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_action_time ON audit_log(action, created_at)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_target_time ON audit_log(target_type, created_at)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_item_time ON audit_log(item_type, created_at)");
         }
     }
 }
