@@ -19,7 +19,7 @@ whitelist-denied:
   message:
     - '&c你暂未加入 XiceMCServer 白名单。'
     - '&f请使用浏览器访问：'
-    - '&bhttp://150.158.93.80/'
+    - '&bhttps://xicemc.site/'
     - '&7填写 Minecraft ID 和邀请码后，再重新连接服务器。'
 ```
 

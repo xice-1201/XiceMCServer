@@ -1,5 +1,19 @@
 # 更新记录
 
+## 0.0.9
+
+类型：个人测试版本，尚未正式上线的第九个更新。
+
+### 新增
+
+1. 新增 Nginx 反向代理配置模板，Web 域名为 `xicemc.site` 和 `www.xicemc.site`。
+
+### 调整
+
+1. Web 服务部署方式调整为本机 `127.0.0.1:8080`，由 Nginx 对外提供 `80/443`。
+2. 白名单拒绝提示中的注册链接改为 `https://xicemc.site/`。
+3. Microsoft OAuth 回调示例改为 `https://xicemc.site/auth/microsoft/callback`。
+
 ## 0.0.8
 
 类型：个人测试版本，尚未正式上线的第八个更新。
