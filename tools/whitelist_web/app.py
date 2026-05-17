@@ -85,6 +85,7 @@ AUDIT_RETENTION_DAYS = int(env("XICE_AUDIT_RETENTION_DAYS", "3"))
 SERVER_SERVICE_NAME = env("XICEMC_SERVICE_NAME", "xicemc.service")
 SERVER_LOG_PATH = env("XICEMC_SERVER_LOG_PATH", os.path.join(RUNTIME_DIR, "logs", "latest.log"))
 BLACKLIST_PATH = env("XICEMC_BLACKLIST_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceTextArranger", "blacklist.tsv"))
+CLAIMS_PATH = env("XICEMC_CLAIMS_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceClaim", "claims.yml"))
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 WEB_ICON_PATH = env("XICEMC_WEB_ICON_PATH", os.path.join(REPO_ROOT, "server", "assets", "xicemc-logo.png"))
 WEB_FAVICON_PATH = env("XICEMC_WEB_FAVICON_PATH", os.path.join(REPO_ROOT, "server", "assets", "favicon.ico"))
@@ -476,6 +477,127 @@ def player_profile(user):
     except Exception as exc:
         print(f"failed to load player profile: {exc}")
     return result
+
+
+def player_claims(user):
+    player_uuid = canonical_uuid(user["uuid"]).lower()
+    owned = []
+    trusted = []
+    for claim in read_claims():
+        owner_uuid = canonical_uuid(claim.get("owner_uuid", "")).lower()
+        members = {canonical_uuid(value).lower() for value in claim.get("members", []) if value}
+        if owner_uuid == player_uuid:
+            owned.append(claim)
+        elif player_uuid in members:
+            trusted.append(claim)
+    owned.sort(key=lambda claim: claim["name"].lower())
+    trusted.sort(key=lambda claim: (claim["owner_name"].lower(), claim["name"].lower()))
+    return {"owned": owned, "trusted": trusted}
+
+
+def read_claims():
+    try:
+        with open(CLAIMS_PATH, "r", encoding="utf-8") as file:
+            return parse_claims_yml(file.read())
+    except FileNotFoundError:
+        return []
+    except Exception as exc:
+        print(f"failed to load claims: {exc}")
+        return []
+
+
+def parse_claims_yml(text):
+    claims = []
+    current = None
+    current_list = None
+    current_map = None
+    for raw_line in text.splitlines():
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        stripped = raw_line.strip()
+        if indent == 0:
+            current = None
+            current_list = None
+            current_map = None
+            continue
+        if indent == 2 and stripped.endswith(":"):
+            if current:
+                claims.append(normalize_claim(current))
+            current = {"id": stripped[:-1], "members": [], "member_names": {}}
+            current_list = None
+            current_map = None
+            continue
+        if current is None:
+            continue
+        if stripped.startswith("- ") and current_list:
+            current[current_list].append(yaml_scalar(stripped[2:]))
+            continue
+        if ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if indent == 4:
+            current_map = None
+            if key == "members":
+                current_list = "members"
+                if value and value != "[]":
+                    current["members"] = [yaml_scalar(item.strip()) for item in value.strip("[]").split(",") if item.strip()]
+                continue
+            current_list = None
+            if key == "member-names":
+                current_map = "member_names"
+                continue
+            current[key.replace("-", "_")] = yaml_scalar(value)
+            continue
+        if indent >= 6 and current_map == "member_names":
+            current["member_names"][key] = yaml_scalar(value)
+    if current:
+        claims.append(normalize_claim(current))
+    return [claim for claim in claims if claim["name"]]
+
+
+def yaml_scalar(value):
+    value = value.strip()
+    if not value:
+        return ""
+    if value[0:1] in {"'", '"'} and value[-1:] == value[0]:
+        return value[1:-1]
+    return value
+
+
+def normalize_claim(claim):
+    def as_int(name):
+        try:
+            return int(claim.get(name, 0))
+        except (TypeError, ValueError):
+            return 0
+
+    min_x = as_int("min_x")
+    max_x = as_int("max_x")
+    min_y = as_int("min_y")
+    max_y = as_int("max_y")
+    min_z = as_int("min_z")
+    max_z = as_int("max_z")
+    return {
+        "id": claim.get("id", ""),
+        "name": claim.get("name", ""),
+        "owner_uuid": claim.get("owner_uuid", ""),
+        "owner_name": claim.get("owner_name", "unknown"),
+        "world": claim.get("world", "main"),
+        "min_x": min_x,
+        "max_x": max_x,
+        "min_y": min_y,
+        "max_y": max_y,
+        "min_z": min_z,
+        "max_z": max_z,
+        "size_x": max_x - min_x + 1,
+        "size_y": max_y - min_y + 1,
+        "size_z": max_z - min_z + 1,
+        "members": claim.get("members", []),
+        "member_names": claim.get("member_names", {}),
+    }
 
 
 def update_profile_bio(player_uuid, profile_bio):
@@ -1178,6 +1300,47 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       flex-wrap: wrap;
       margin: 0 0 18px;
     }}
+    .claim-summary {{
+      width: min(100%, 860px);
+    }}
+    .claim-summary-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }}
+    .claim-group {{
+      min-width: 0;
+    }}
+    .claim-group h3 {{
+      margin: 0 0 10px;
+      font-size: 15px;
+    }}
+    .claim-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .claim-item {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 12px;
+      min-width: 0;
+    }}
+    .claim-title {{
+      font-weight: 800;
+      margin-bottom: 6px;
+      overflow-wrap: anywhere;
+    }}
+    .claim-meta {{
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }}
+    .empty-text {{
+      margin: 0;
+      color: var(--muted);
+    }}
     dialog {{
       width: min(92vw, 520px);
       border: 1px solid var(--line);
@@ -1475,6 +1638,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       .identity-visual {{ min-height: 0; }}
       .skin-frame {{ min-height: 170px; }}
       .identity-title h2 {{ font-size: 26px; }}
+      .claim-summary-grid {{ grid-template-columns: 1fr; }}
       .markdown-edit-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
@@ -1546,9 +1710,51 @@ def auth_page(login_message="", register_message="", status=HTTPStatus.OK):
     return page("XiceMCServer玩家平台", body, status)
 
 
+def render_home_claims(claims):
+    owned_html = render_claim_group("我拥有的领地", claims["owned"], "暂无自己创建的领地。", show_owner=False)
+    trusted_html = render_claim_group("授权给我的领地", claims["trusted"], "暂无被授权的领地。", show_owner=True)
+    return f"""
+<section class="panel claim-summary">
+  <h2>领地列表</h2>
+  <div class="claim-summary-grid">
+    {owned_html}
+    {trusted_html}
+  </div>
+</section>
+"""
+
+
+def render_claim_group(title, claims, empty_text, show_owner):
+    if not claims:
+        content = f'<p class="empty-text">{esc(empty_text)}</p>'
+    else:
+        rows = "\n".join(render_home_claim(claim, show_owner) for claim in claims)
+        content = f'<div class="claim-list">{rows}</div>'
+    return f"""
+<div class="claim-group">
+  <h3>{esc(title)}</h3>
+  {content}
+</div>
+"""
+
+
+def render_home_claim(claim, show_owner):
+    owner = f'<div class="claim-meta">所有者：{esc(claim["owner_name"])}</div>' if show_owner else ""
+    return f"""
+<article class="claim-item">
+  <div class="claim-title">{esc(claim["name"])}</div>
+  {owner}
+  <div class="claim-meta">世界：{esc(claim["world"])}</div>
+  <div class="claim-meta">坐标：{claim["min_x"]},{claim["min_y"]},{claim["min_z"]} 到 {claim["max_x"]},{claim["max_y"]},{claim["max_z"]}</div>
+  <div class="claim-meta">大小：{claim["size_x"]} x {claim["size_y"]} x {claim["size_z"]}</div>
+</article>
+"""
+
+
 def home_page(user, message="", status=HTTPStatus.OK):
     stats = load_player_stats(user)
     profile = player_profile(user)
+    claims = player_claims(user)
     role = user.get("role", PLAYER_ROLE)
     role_class = role_css_class(role)
     skin_url = f"https://minotar.net/armor/body/{user['name']}/128.png"
@@ -1589,6 +1795,7 @@ def home_page(user, message="", status=HTTPStatus.OK):
   <button class="secondary" type="button" id="open-profile-dialog">编辑个人简介</button>
   <a class="button secondary" href="/password">修改密码</a>
 </div>
+{render_home_claims(claims)}
 <dialog id="profile-dialog">
   <div class="dialog-body">
     <h2>编辑个人简介</h2>

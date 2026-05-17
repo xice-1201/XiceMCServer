@@ -319,13 +319,23 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private void deleteClaim(Player player, String[] args) {
-        if (args.length < 2) {
-            sendUsage(player);
-            return;
+        ClaimRegion claim;
+        String queryName = args.length >= 2 ? args[1] : "";
+        if (args.length >= 2) {
+            claim = claimByOwnerAndName(player, queryName);
+        } else {
+            claim = claimAt(player.getLocation());
+            if (claim == null) {
+                send(player, message("not-in-claim"));
+                return;
+            }
+            if (!claim.ownerUuid.equals(player.getUniqueId())) {
+                send(player, message("no-permission"));
+                return;
+            }
         }
-        ClaimRegion claim = claimByOwnerAndName(player, args[1]);
         if (claim == null) {
-            send(player, message("claim-not-found-owned"), "claim", args[1]);
+            send(player, message("claim-not-found-owned"), "claim", queryName);
             return;
         }
         claims.remove(claim.id);

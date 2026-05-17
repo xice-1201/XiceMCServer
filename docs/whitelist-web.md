@@ -10,7 +10,7 @@ Web 图标来自仓库内 `server/assets/xicemc-logo.png`，浏览器会通过 `
 
 1. `/`：登录与注册页。页面使用两张卡片分别展示 Web 登录和白名单注册。登录卡片提示初始 Web 密码 `123456`；注册卡片用于提交白名单验证码。
 2. `/register`：兼容入口，展示同一套登录与注册页面。玩家填写 Minecraft ID 和 5 分钟内有效的验证码后，Web 服务写入服务器 `whitelist.json`，再通过本机 RCON 执行 `whitelist reload` 使白名单立即生效。
-3. `/home`：登录后的首页，以固定比例个人 ID 卡形式展示玩家皮肤、身份、个人简介、UUID、注册时间、累计游玩时间和上次登出地点，并提供编辑个人简介和修改密码入口。编辑个人简介通过首页对话框完成。
+3. `/home`：登录后的首页，以固定比例个人 ID 卡形式展示玩家皮肤、身份、个人简介、UUID、注册时间、累计游玩时间和上次登出地点，并提供编辑个人简介和修改密码入口。按钮下方展示该玩家拥有的领地和被授权的领地，数据来自 `XiceClaim` 运行时 `claims.yml`。编辑个人简介通过首页对话框完成。
 4. `/profile`：个人简介保存接口。玩家在首页对话框中提交后，Web 会更新展示在个人 ID 卡上的简介，默认简介为“一名普通的Minecraft玩家”。
 5. `/password`：修改密码页。玩家输入原密码和两次新密码后更新 Web 登录密码。
 6. `/status`：服务器状态页面，使用颜色展示开服状态，并以当前值 / 最大值（百分比）展示在线玩家、磁盘空间和内存占用。备份记录仅展示备份时间和备份大小，同时保留日志 ERROR 情况。
@@ -167,6 +167,7 @@ XICEMC_RCON_HOST=127.0.0.1
 XICEMC_RCON_PORT=25575
 XICEMC_RCON_PASSWORD=change-this-password
 XICEMC_VERIFY_CODES_PATH=/opt/xicemc/runtime/plugins/XiceTextArranger/verification-codes.tsv
+XICEMC_CLAIMS_PATH=/opt/xicemc/runtime/plugins/XiceClaim/claims.yml
 XICE_AUDIT_DB_PASSWORD=change-this-password
 XICE_AUDIT_RETENTION_DAYS=3
 XICEMC_BACKUP_DIR=/opt/xicemc/backups

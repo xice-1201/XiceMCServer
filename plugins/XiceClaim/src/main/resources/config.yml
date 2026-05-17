@@ -34,7 +34,7 @@ messages:
     - '&e/claim list [玩家ID] &7查看自己或指定玩家的领地'
     - '&e/claim trust <玩家> &7授权当前位置领地'
     - '&e/claim untrust <玩家> &7移除当前位置领地授权'
-    - '&e/claim delete <名称> &7删除自己的领地'
+    - '&e/claim delete [名称] &7删除当前位置或指定的自己的领地'
   invalid-position: '&c坐标格式错误，请使用 /claim pos1 [X Y Z] 或 /claim pos2 [X Y Z]。'
   pos1-set: '&a已设置第一个角点：{world} {x}, {y}, {z}'
   pos2-set: '&a已设置第二个角点：{world} {x}, {y}, {z}'

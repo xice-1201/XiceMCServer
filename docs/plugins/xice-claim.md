@@ -22,7 +22,7 @@
 /claim list [玩家ID]
 /claim trust <玩家>
 /claim untrust <玩家>
-/claim delete <名称>
+/claim delete [名称]
 ```
 
 使用方式：
@@ -34,6 +34,8 @@
 5. 站在领地内执行 `/claim trust 玩家名` 授权朋友共同建设。
 6. 执行 `/claim info` 查询当前位置领地，也可以执行 `/claim info home` 查询指定领地。
 7. 执行 `/claim list` 查询自己的所有领地；执行 `/claim list 玩家ID` 查询指定玩家的领地列表。
+
+`/claim delete` 不填写名称时会尝试删除当前位置领地；如果当前位置不是自己的领地，会提示没有权限。填写名称时只能删除自己的同名领地。
 
 领地名称只能包含英文、数字、下划线和短横线，长度 `1-24`。当前领地名称全服唯一，创建时如果重名会失败。
 
