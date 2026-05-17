@@ -1191,7 +1191,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       font-size: 12px;
       overflow-wrap: anywhere;
     }}
-    .is-hidden {{ display: none; }}
+    [hidden], .is-hidden {{ display: none !important; }}
     .stat {{
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -1947,7 +1947,7 @@ def blacklist_page(user, message=""):
     </div>
     <label for="reason">原因</label>
     <textarea id="reason" name="reason" required minlength="2" maxlength="2000"></textarea>
-    <div id="blacklist-ban-time-row" class="ban-time-row">
+    <div id="blacklist-ban-time-row" class="ban-time-row" data-ban-time-row>
       <div>
         <label for="ban_duration">封禁时间</label>
         <input id="ban_duration" name="ban_duration" type="number" min="1" step="1">
@@ -1962,7 +1962,7 @@ def blacklist_page(user, message=""):
         </select>
       </div>
     </div>
-    <label class="checkbox-inline"><input id="blacklist_permanent" type="checkbox" name="permanent" value="true"> 永久</label>
+    <label class="checkbox-inline"><input id="blacklist_permanent" type="checkbox" name="permanent" value="true" data-ban-permanent> 永久</label>
     <div class="actions"><button type="submit">加入黑名单</button></div>
   </form>
 </section>
@@ -2053,7 +2053,9 @@ def blacklist_page(user, message=""):
   }
 
   function refreshBlacklistBanTime() {
-    blacklistBanTimeRow.classList.toggle("is-hidden", blacklistPermanent.checked);
+    const hidden = blacklistPermanent.checked;
+    blacklistBanTimeRow.hidden = hidden;
+    blacklistBanTimeRow.classList.toggle("is-hidden", hidden);
   }
 
   blacklistPlayerInput.addEventListener("input", () => {
