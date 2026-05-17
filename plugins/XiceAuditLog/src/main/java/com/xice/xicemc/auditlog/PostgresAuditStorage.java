@@ -159,6 +159,11 @@ public final class PostgresAuditStorage implements AuditStorage {
     }
 
     private Connection connect() throws SQLException {
+        try {
+            Class.forName("org.postgresql.Driver");
+        } catch (ClassNotFoundException exception) {
+            throw new SQLException("PostgreSQL JDBC driver is not available.", exception);
+        }
         return DriverManager.getConnection(jdbcUrl, username, password);
     }
 
