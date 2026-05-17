@@ -882,6 +882,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
   <nav>
     <a class="{ 'active' if active == 'home' else '' }" href="/home">首页</a>
     <a class="{ 'active' if active == 'status' else '' }" href="/status">服务器状态</a>
+    <a class="{ 'active' if active == 'docs' else '' }" href="/docs">服务器文档</a>
     <a class="{ 'active' if active == 'audit' else '' }" href="/audit">操作查询</a>
     <a class="{ 'active' if active == 'players' else '' }" href="/players">玩家列表</a>
     <a class="{ 'active' if active == 'blacklist' else '' }" href="/blacklist">黑名单列表</a>
@@ -1792,6 +1793,39 @@ def render_metric_card(label, metric):
   <div class="meter"><div class="meter-fill level-{esc(level)}-bg" style="width:{width:.1f}%"></div></div>
 </div>
 """
+
+
+def server_docs_page(user):
+    body = f"""
+<h1>服务器文档</h1>
+<section class="panel">
+  <h2>服务器文档首页</h2>
+  <div class="grid">
+    <div class="stat">
+      <div class="label">游戏版本</div>
+      <div class="value">Minecraft Java 版 {esc(MINECRAFT_VERSION)}</div>
+    </div>
+    <div class="stat">
+      <div class="label">服务器定位</div>
+      <div class="value">原版生存与建筑优先的朋友服</div>
+    </div>
+    <div class="stat">
+      <div class="label">基本准则</div>
+      <div class="value">未经允许偷东西、炸图、恶意破坏会被封禁。</div>
+    </div>
+  </div>
+</section>
+<section class="panel">
+  <h2>常用入口</h2>
+  <div class="actions">
+    <a class="button secondary" href="/status">服务器状态</a>
+    <a class="button secondary" href="/players">玩家列表</a>
+    <a class="button secondary" href="/blacklist">黑名单列表</a>
+    <a class="button secondary" href="/report">举报</a>
+  </div>
+</section>
+"""
+    return page("服务器文档", body, user=user, active="docs")
 
 
 def players_page(user, message=""):
@@ -2857,6 +2891,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_redirect("/")
                 return
             self.respond(*status_page(user))
+            return
+        if parsed.path == "/docs":
+            if not user:
+                self.send_redirect("/")
+                return
+            self.respond(*server_docs_page(user))
             return
         if parsed.path in {"/players/suggestions", "/audit/source-suggestions"}:
             if not user:
