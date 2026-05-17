@@ -87,24 +87,47 @@ SERVER_LOG_PATH = env("XICEMC_SERVER_LOG_PATH", os.path.join(RUNTIME_DIR, "logs"
 BLACKLIST_PATH = env("XICEMC_BLACKLIST_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceTextArranger", "blacklist.tsv"))
 SERVER_DOCS_HOME_PATH = env("XICEMC_DOCS_HOME_PATH", os.path.join(RUNTIME_DIR, "web", "server-docs.md"))
 SERVER_DOCS_MAX_LENGTH = int(env("XICEMC_DOCS_MAX_LENGTH", "100000"))
-DEFAULT_SERVER_DOCS_MARKDOWN = f"""# XiceMCServer 服务器文档
+DEFAULT_SERVER_DOCS_MARKDOWN = f"""# 欢迎来到 XiceMCServer
 
-## 基础信息
+XiceMCServer 是一个以朋友间长期游玩为核心的 Minecraft Java 版服务器。当前服务器版本为 Minecraft Java 版 {MINECRAFT_VERSION}，主世界不会随意重置，适合慢慢生存、建设基地、推进工程和留下真正属于大家的痕迹。
 
-- 游戏版本：Minecraft Java 版 {MINECRAFT_VERSION}
-- 服务器定位：原版生存与建筑优先的朋友服
-- 主要世界：main、main_nether、main_the_end
+服务器目前以原版生存和建筑体验为主，后续会逐步加入更完整的社区工具、自制插件和轻量玩法内容。这里不是速通服，也不是无规则混乱服；更像是一片可以安心建设、互相参观、偶尔一起冒险的小世界。
 
-## 基本准则
+## 服务器特色
 
-未经允许偷东西、炸图、恶意破坏会被封禁。
+- 长期主世界：main、main_nether、main_the_end 是当前核心世界，主世界默认不重置。
+- 白名单准入：玩家需要先注册白名单，减少陌生破坏和恶意进入。
+- 玩家身份卡：登录 Web 后可以查看个人资料、身份、游玩记录和玩家列表。
+- 操作审计：服务器会记录方块放置、破坏、容器存取等关键操作，便于处理争议。
+- 举报与黑名单：玩家可以在 Web 端提交举报，管理员和服主可以受理并执行封禁。
+- 自制插件优先：服务器会尽量通过自制插件实现权限、审计、领地和消息等功能。
 
-## 常用入口
+## 服务器规则
 
-- [服务器状态](/status)
-- [玩家列表](/players)
-- [黑名单列表](/blacklist)
-- [举报](/report)
+1. 禁止未经允许拿取他人物品，包括箱子、木桶、潜影盒和公共区域中明显属于他人的物资。
+2. 禁止恶意破坏建筑、农场、红石机器、道路、公共设施和自然景观。
+3. 禁止未经允许引爆 TNT、苦力怕或其他会造成破坏的内容。
+4. PVP 仅允许在双方同意或特殊规则明确允许的情况下进行。
+5. 建筑和领地规划请尽量尊重他人空间，避免贴脸圈地、堵路或影响他人工程。
+6. 发现问题请优先沟通；沟通无果时，可以在 Web 端提交举报。
+7. 服主和管理员会根据审计记录、举报内容和实际影响处理争议。
+
+严重偷窃、炸图、恶意破坏、绕过规则或反复制造冲突的玩家，可能会被直接加入黑名单。
+
+## 如何加入服务器
+
+1. 使用 Minecraft Java 版 {MINECRAFT_VERSION} 客户端连接服务器。
+2. 如果你还不在白名单中，服务器会拒绝登录并给出白名单验证码。
+3. 打开 Web 页面，在登录页填写游戏 ID 和白名单验证码完成注册。
+4. 注册成功后，你会获得默认 Web 密码 `123456`。
+5. 使用游戏 ID 和默认密码登录 Web，进入首页后请尽快修改密码。
+6. 加入服务器后，可以先查看玩家列表、服务器状态和这份服务器文档。
+
+## 欢迎你
+
+欢迎来到 XiceMCServer。你可以在这里慢慢生存、认真建造、和朋友一起推进工程，也可以只是找个安静的地方挖矿、种田、搭一座小屋。
+
+希望这个服务器能成为大家愿意反复回来的地方。祝你玩得开心，也欢迎把你的想法、问题和建议告诉服主或管理员。
 """
 DOCS_LOCK = threading.Lock()
 
@@ -966,6 +989,10 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       gap: 18px;
       align-items: start;
     }}
+    .auth-docs-link {{
+      justify-content: center;
+      margin-top: 18px;
+    }}
     .login-card {{
       width: 100%;
       padding: 28px;
@@ -1499,6 +1526,9 @@ def auth_page(login_message="", register_message="", status=HTTPStatus.OK):
     </div>
   </form>
 </section>
+</div>
+<div class="actions auth-docs-link">
+  <a class="button secondary" href="/docs">查看服务器文档</a>
 </div>
 """
     return page("XiceMCServer 登录与注册", body, status)
@@ -3257,9 +3287,6 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(*status_page(user))
             return
         if parsed.path == "/docs":
-            if not user:
-                self.send_redirect("/")
-                return
             self.respond(*server_docs_page(user))
             return
         if parsed.path == "/docs/edit":
