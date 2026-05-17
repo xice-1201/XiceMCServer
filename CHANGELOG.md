@@ -1,5 +1,20 @@
 # 更新记录
 
+## 0.0.7
+
+类型：个人测试版本，尚未正式上线的第七个更新。
+
+### 新增
+
+1. Web 页面预留 Microsoft 身份验证框架，默认关闭。
+2. 新增 `/auth/microsoft/start` 和 `/auth/microsoft/callback`，用于 Microsoft OAuth 登录回调。
+3. Microsoft 登录流程预留 PKCE state 校验，并继续换取 Xbox Live、XSTS 和 Minecraft Java Profile。
+4. Microsoft 注册白名单流程保留邀请码限制，通过正版 Java Profile 得到玩家名和 UUID 后再加入白名单。
+
+### 说明
+
+该能力需要域名、HTTPS、Microsoft 应用注册和服务器私密环境变量配置完成后再启用。
+
 ## 0.0.6
 
 类型：个人测试版本，尚未正式上线的第六个更新。
