@@ -51,9 +51,9 @@ if compgen -G "${REPO_DIR}/plugins/*/pom.xml" > /dev/null; then
     plugin_name="$(basename "${plugin_dir}")"
     echo "Building plugin: ${plugin_name}"
     if [[ -d "${BUILD_JAVA_HOME}" ]]; then
-      run_as_server_user env JAVA_HOME="${BUILD_JAVA_HOME}" PATH="${BUILD_JAVA_HOME}/bin:${PATH}" mvn -q -f "${pom}" package
+      run_as_server_user env JAVA_HOME="${BUILD_JAVA_HOME}" PATH="${BUILD_JAVA_HOME}/bin:${PATH}" mvn -q -f "${pom}" clean package
     else
-      run_as_server_user mvn -q -f "${pom}" package
+      run_as_server_user mvn -q -f "${pom}" clean package
     fi
     jar_path="$(find "${plugin_dir}/target" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
     if [[ -z "${jar_path}" ]]; then
