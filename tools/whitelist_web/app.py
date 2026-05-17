@@ -874,7 +874,6 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
         management_links = ""
         if can_manage_players(user):
             management_links = f"""
-    <a class="{ 'active' if active == 'blacklist' else '' }" href="/blacklist">黑名单管理</a>
 """
         nav = f"""
 <aside class="sidebar">
@@ -885,6 +884,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     <a class="{ 'active' if active == 'status' else '' }" href="/status">服务器状态</a>
     <a class="{ 'active' if active == 'audit' else '' }" href="/audit">操作查询</a>
     <a class="{ 'active' if active == 'players' else '' }" href="/players">玩家列表</a>
+    <a class="{ 'active' if active == 'blacklist' else '' }" href="/blacklist">黑名单列表</a>
     <a class="{ 'active' if active == 'report' else '' }" href="/report">举报</a>
     {report_admin_link}
     {management_links}
@@ -1266,6 +1266,20 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     }}
     textarea {{ min-height: 140px; resize: vertical; }}
     .inline-form {{ display: grid; gap: 8px; min-width: 280px; }}
+    .role-form {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 260px;
+    }}
+    .role-form select {{ min-width: 110px; }}
+    .role-form button {{ white-space: nowrap; }}
+    .ban-time-row {{
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr);
+      gap: 12px;
+      align-items: end;
+    }}
     .small-input {{ max-width: 110px; }}
     .checkbox-inline {{ display: inline-flex; align-items: center; gap: 6px; margin: 0; }}
     .checkbox-inline input {{ width: auto; }}
@@ -1844,8 +1858,10 @@ def render_player_row(player, viewer):
         controls = f"""
 <form method="post" action="/players/role" class="inline-form">
   <input type="hidden" name="player_uuid" value="{esc(player["uuid"])}">
-  <select name="role">{role_options}</select>
-  <button type="submit">修改身份</button>
+  <div class="role-form">
+    <select name="role">{role_options}</select>
+    <button type="submit">修改身份</button>
+  </div>
 </form>
 """
     elif can_change_player_roles(viewer):
@@ -1911,36 +1927,172 @@ def render_player_card_dialog(player):
 
 def blacklist_page(user, message=""):
     try:
-        rows = "".join(render_blacklist_row(entry) for entry in all_blacklist_entries())
+        rows = "".join(render_blacklist_row(entry, user) for entry in all_blacklist_entries())
     except Exception as exc:
         rows = ""
         message = f"黑名单列表暂不可用：{exc}"
     if not rows:
         rows = '<tr><td colspan="7" class="message">暂无黑名单记录</td></tr>'
     safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
-    body = f"""
-<h1>黑名单管理</h1>
+    manual_section = ""
+    if can_manage_players(user):
+        manual_section = f"""
 <section class="panel">
-  {safe_message}
   <h2>手动添加黑名单</h2>
   <form method="post" action="/blacklist/add">
     <label for="player_name">玩家游戏 ID</label>
-    <input id="player_name" name="player_name" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
+    <div class="autocomplete-field">
+      <input id="player_name" name="player_name" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+" autocomplete="off" aria-autocomplete="list" aria-controls="blacklist-player-suggestions">
+      <div id="blacklist-player-suggestions" class="autocomplete-menu" role="listbox"></div>
+    </div>
     <label for="reason">原因</label>
     <textarea id="reason" name="reason" required minlength="2" maxlength="2000"></textarea>
-    <label for="ban_duration">封禁时间</label>
-    <input id="ban_duration" name="ban_duration" type="number" min="1" step="1">
-    <label for="ban_unit">单位</label>
-    <select id="ban_unit" name="ban_unit">
-      <option value="hours">小时</option>
-      <option value="days">天</option>
-      <option value="months">月</option>
-      <option value="years">年</option>
-    </select>
-    <label class="checkbox-inline"><input type="checkbox" name="permanent" value="true"> 永久</label>
+    <div id="blacklist-ban-time-row" class="ban-time-row">
+      <div>
+        <label for="ban_duration">封禁时间</label>
+        <input id="ban_duration" name="ban_duration" type="number" min="1" step="1">
+      </div>
+      <div>
+        <label for="ban_unit">单位</label>
+        <select id="ban_unit" name="ban_unit">
+          <option value="hours">小时</option>
+          <option value="days">天</option>
+          <option value="months">月</option>
+          <option value="years">年</option>
+        </select>
+      </div>
+    </div>
+    <label class="checkbox-inline"><input id="blacklist_permanent" type="checkbox" name="permanent" value="true"> 永久</label>
     <div class="actions"><button type="submit">加入黑名单</button></div>
   </form>
 </section>
+"""
+    script = ""
+    if can_manage_players(user):
+        script = """
+<script>
+  const blacklistPlayerInput = document.getElementById("player_name");
+  const blacklistPlayerSuggestions = document.getElementById("blacklist-player-suggestions");
+  const blacklistPermanent = document.getElementById("blacklist_permanent");
+  const blacklistBanTimeRow = document.getElementById("blacklist-ban-time-row");
+  let blacklistSuggestionItems = [];
+  let activeBlacklistSuggestionIndex = -1;
+  let blacklistSuggestionTimer = null;
+
+  function closeBlacklistSuggestions() {
+    blacklistPlayerSuggestions.classList.remove("is-open");
+    blacklistPlayerSuggestions.innerHTML = "";
+    blacklistSuggestionItems = [];
+    activeBlacklistSuggestionIndex = -1;
+  }
+
+  function setActiveBlacklistSuggestion(index) {
+    const options = Array.from(blacklistPlayerSuggestions.querySelectorAll(".autocomplete-option"));
+    options.forEach((option, optionIndex) => {
+      option.classList.toggle("is-active", optionIndex === index);
+    });
+    activeBlacklistSuggestionIndex = index;
+  }
+
+  function chooseBlacklistSuggestion(item) {
+    blacklistPlayerInput.value = item.label;
+    closeBlacklistSuggestions();
+    blacklistPlayerInput.focus();
+  }
+
+  function renderBlacklistSuggestions(items) {
+    blacklistPlayerSuggestions.innerHTML = "";
+    blacklistSuggestionItems = items;
+    if (!items.length) {
+      closeBlacklistSuggestions();
+      return;
+    }
+    items.forEach((item, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "autocomplete-option";
+      option.setAttribute("role", "option");
+      const name = document.createElement("span");
+      name.className = "autocomplete-name";
+      name.textContent = item.label;
+      const detail = document.createElement("span");
+      detail.className = "autocomplete-detail";
+      detail.textContent = item.match + " 匹配 · " + item.source + " · " + item.uuid;
+      option.appendChild(name);
+      option.appendChild(detail);
+      option.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        chooseBlacklistSuggestion(item);
+      });
+      option.addEventListener("mouseenter", () => setActiveBlacklistSuggestion(index));
+      blacklistPlayerSuggestions.appendChild(option);
+    });
+    blacklistPlayerSuggestions.classList.add("is-open");
+    setActiveBlacklistSuggestion(0);
+  }
+
+  async function loadBlacklistSuggestions() {
+    const query = blacklistPlayerInput.value.trim();
+    if (!query) {
+      closeBlacklistSuggestions();
+      return;
+    }
+    try {
+      const response = await fetch("/players/suggestions?q=" + encodeURIComponent(query), {
+        headers: { "Accept": "application/json" }
+      });
+      if (!response.ok) {
+        closeBlacklistSuggestions();
+        return;
+      }
+      const data = await response.json();
+      renderBlacklistSuggestions(data.items || []);
+    } catch (error) {
+      closeBlacklistSuggestions();
+    }
+  }
+
+  function refreshBlacklistBanTime() {
+    blacklistBanTimeRow.classList.toggle("is-hidden", blacklistPermanent.checked);
+  }
+
+  blacklistPlayerInput.addEventListener("input", () => {
+    clearTimeout(blacklistSuggestionTimer);
+    blacklistSuggestionTimer = setTimeout(loadBlacklistSuggestions, 140);
+  });
+
+  blacklistPlayerInput.addEventListener("keydown", (event) => {
+    if (!blacklistPlayerSuggestions.classList.contains("is-open")) {
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveBlacklistSuggestion((activeBlacklistSuggestionIndex + 1) % blacklistSuggestionItems.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveBlacklistSuggestion((activeBlacklistSuggestionIndex - 1 + blacklistSuggestionItems.length) % blacklistSuggestionItems.length);
+    } else if (event.key === "Enter" && activeBlacklistSuggestionIndex >= 0) {
+      event.preventDefault();
+      chooseBlacklistSuggestion(blacklistSuggestionItems[activeBlacklistSuggestionIndex]);
+    } else if (event.key === "Escape") {
+      closeBlacklistSuggestions();
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!blacklistPlayerInput.contains(event.target) && !blacklistPlayerSuggestions.contains(event.target)) {
+      closeBlacklistSuggestions();
+    }
+  });
+
+  blacklistPermanent.addEventListener("change", refreshBlacklistBanTime);
+  refreshBlacklistBanTime();
+</script>
+"""
+    body = f"""
+<h1>黑名单列表</h1>
+{safe_message}
+{manual_section}
 <section class="panel">
   <h2>黑名单列表</h2>
   <div class="table-wrap">
@@ -1950,16 +2102,17 @@ def blacklist_page(user, message=""):
     </table>
   </div>
 </section>
+{script}
 """
-    return page("黑名单管理", body, user=user, active="blacklist")
+    return page("黑名单列表", body, user=user, active="blacklist")
 
 
-def render_blacklist_row(entry):
+def render_blacklist_row(entry, viewer):
     status = "生效" if entry["active"] and (entry["permanent"] or int(entry["expires_at"] or 0) > int(time.time() * 1000)) else "失效"
     expires = "永久" if entry["permanent"] else format_time_ms(entry["expires_at"])
     report = f'#{entry["report_id"]}' if entry["report_id"] else "-"
     action = "-"
-    if status == "生效":
+    if status == "生效" and can_manage_players(viewer):
         action = f"""
 <form method="post" action="/blacklist/remove" class="inline-form">
   <input type="hidden" name="player_uuid" value="{esc(entry["player_uuid"])}">
@@ -2694,9 +2847,6 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/blacklist":
             if not user:
                 self.send_redirect("/")
-                return
-            if not can_manage_players(user):
-                self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
                 return
             self.respond(*blacklist_page(user))
             return
