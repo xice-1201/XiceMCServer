@@ -8,6 +8,19 @@ whitelist-denied:
     - '&bhttp://150.158.93.80/'
     - '&7填写 Minecraft ID 和邀请码后，再重新连接服务器。'
 
+# 正版验证失败提示。
+# 仅当服务端可捕获到认证失败拒绝消息，并且原始拒绝消息匹配 match-messages 时生效。
+auth-denied:
+  enabled: true
+  match-messages:
+    - 'failed to verify username'
+    - 'failed to authenticate your connection'
+    - 'invalid session'
+  message:
+    - '&c你的登录未通过 Minecraft 正版验证。'
+    - '&f请使用正版启动器登录 Microsoft 账号后重新进入。'
+    - '&7如果你刚刚登录过账号，请重启启动器后再试。'
+
 # 玩家加入消息。
 # mode 可选：keep、delete、rewrite、add。
 join:

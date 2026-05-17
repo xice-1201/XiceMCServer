@@ -21,22 +21,39 @@ public final class XiceTextArrangerPlugin extends JavaPlugin implements Listener
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onAsyncPlayerPreLogin(AsyncPlayerPreLoginEvent event) {
-        if (!getConfig().getBoolean("whitelist-denied.enabled", true)) {
+        if (event.getLoginResult() == AsyncPlayerPreLoginEvent.Result.ALLOWED) {
             return;
         }
-        if (event.getLoginResult() == AsyncPlayerPreLoginEvent.Result.KICK_WHITELIST) {
+
+        if (event.getLoginResult() == AsyncPlayerPreLoginEvent.Result.KICK_WHITELIST
+                && getConfig().getBoolean("whitelist-denied.enabled", true)) {
             event.setKickMessage(configuredMessage("whitelist-denied.message", event.getName(), event.getName()));
+            return;
+        }
+
+        if (shouldRewriteAuthDenied(event.getKickMessage())) {
+            event.setKickMessage(configuredMessage("auth-denied.message", event.getName(), event.getName()));
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerLogin(PlayerLoginEvent event) {
-        if (!getConfig().getBoolean("whitelist-denied.enabled", true)) {
+        if (event.getResult() == PlayerLoginEvent.Result.ALLOWED) {
             return;
         }
-        if (event.getResult() == PlayerLoginEvent.Result.KICK_WHITELIST) {
+
+        if (event.getResult() == PlayerLoginEvent.Result.KICK_WHITELIST
+                && getConfig().getBoolean("whitelist-denied.enabled", true)) {
             event.disallow(event.getResult(), configuredMessage(
                     "whitelist-denied.message",
+                    event.getPlayer().getName(),
+                    event.getPlayer().getDisplayName()));
+            return;
+        }
+
+        if (shouldRewriteAuthDenied(event.getKickMessage())) {
+            event.disallow(event.getResult(), configuredMessage(
+                    "auth-denied.message",
                     event.getPlayer().getName(),
                     event.getPlayer().getDisplayName()));
         }
@@ -58,6 +75,20 @@ public final class XiceTextArrangerPlugin extends JavaPlugin implements Listener
                 event.getQuitMessage(),
                 event.getPlayer().getName(),
                 event.getPlayer().getDisplayName()));
+    }
+
+    private boolean shouldRewriteAuthDenied(String originalMessage) {
+        if (!getConfig().getBoolean("auth-denied.enabled", true) || originalMessage == null) {
+            return false;
+        }
+
+        String normalized = stripColor(originalMessage).toLowerCase(Locale.ROOT);
+        for (String fragment : getConfig().getStringList("auth-denied.match-messages")) {
+            if (!fragment.isBlank() && normalized.contains(fragment.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String arrangeMessage(String section, String original, String playerName, String displayName) {
@@ -91,5 +122,9 @@ public final class XiceTextArrangerPlugin extends JavaPlugin implements Listener
 
     private String color(String value) {
         return value.replace('&', '\u00A7');
+    }
+
+    private String stripColor(String value) {
+        return value.replaceAll("(?i)\u00A7[0-9A-FK-OR]", "");
     }
 }
