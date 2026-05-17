@@ -1927,12 +1927,17 @@ def render_metric_card(label, metric):
 
 def server_docs_page(user, message=""):
     markdown = read_server_docs_markdown()
-    edit_button = '<a class="button secondary" href="/docs/edit">编辑</a>' if can_edit_server_docs(user) else ""
+    if can_edit_server_docs(user):
+        page_action = '<a class="button secondary" href="/docs/edit">编辑</a>'
+    elif user is None:
+        page_action = '<a class="button secondary" href="/">返回登录</a>'
+    else:
+        page_action = ""
     safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
     body = f"""
 <div class="page-heading">
   <h1>服务器文档</h1>
-  {edit_button}
+  {page_action}
 </div>
 {safe_message}
 <section class="panel">
