@@ -917,6 +917,14 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     .actions {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }}
     .divider {{ border-top: 1px solid var(--line); margin: 18px 0; }}
     .message {{ color: var(--muted); }}
+    .register-message {{
+      color: var(--danger);
+      font-weight: 700;
+      border: 1px solid #f1b7b7;
+      background: #fff1f1;
+      border-radius: 6px;
+      padding: 10px 12px;
+    }}
     .help-text {{
       margin: 0 0 16px;
       color: var(--muted);
@@ -979,7 +987,7 @@ def login_page(message="", status=HTTPStatus.OK):
 
 
 def register_page(message="", status=HTTPStatus.OK):
-    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
+    safe_message = f'<p class="register-message">{esc(message)}</p>' if message else ""
     body = f"""
 <section class="login-card">
   <h1>注册白名单</h1>
@@ -1998,9 +2006,7 @@ class Handler(BaseHTTPRequestHandler):
         body = f"""
 <section class="login-card">
   <h1>已提交白名单</h1>
-  <p>玩家 <strong>{esc(verified_entry["name"])}</strong> 已提交加入白名单。</p>
-  <p>{esc("已加入白名单。" if added else "该玩家已在白名单内，已刷新白名单。")}</p>
-  <p>Web 默认登录密码为 <strong>123456</strong>，登录后请在首页修改密码。</p>
+  <p class="register-message">玩家 <strong>{esc(verified_entry["name"])}</strong> 已提交加入白名单。{esc("已加入白名单。" if added else "该玩家已在白名单内，已刷新白名单。")} Web 默认登录密码为 <strong>123456</strong>，登录后请在首页修改密码。</p>
   <p>{esc(result or "白名单已刷新。")}</p>
   <div class="actions"><a class="button" href="/">返回登录</a></div>
 </section>
