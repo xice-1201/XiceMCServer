@@ -36,6 +36,7 @@ secrets/
 # Plugin generated data that should be backed up, not versioned
 target/
 plugins/*/target/
+plugins/*/dependency-reduced-pom.xml
 server/plugins/*/data/
 server/plugins/*/database/
 server/plugins/*/logs/
