@@ -2,10 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SERVER_DIR="$ROOT/server/runtime"
+SERVER_DIR="${XICEMC_RUNTIME_DIR:-$ROOT/server/runtime}"
 JAR_PATH="$SERVER_DIR/paper.jar"
 TEMPLATE_PROPERTIES="$ROOT/server/config/server.properties.template"
 TEMPLATE_EULA="$ROOT/server/config/eula.txt.template"
+XMS="${XICEMC_XMS:-1G}"
+XMX="${XICEMC_XMX:-3G}"
 
 if [[ ! -f "$JAR_PATH" ]]; then
   echo "Paper jar not found. Run scripts/download-paper.sh first." >&2
@@ -26,4 +28,4 @@ if [[ ! -f "$SERVER_DIR/eula.txt" && -f "$TEMPLATE_EULA" ]]; then
 fi
 
 cd "$SERVER_DIR"
-exec java -Xms1G -Xmx4G -jar paper.jar --nogui
+exec java -Xms"$XMS" -Xmx"$XMX" -jar paper.jar --nogui

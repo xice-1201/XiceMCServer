@@ -1,0 +1,21 @@
+[Unit]
+Description=XiceMCServer Paper Minecraft Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=minecraft
+Group=minecraft
+WorkingDirectory=/opt/xicemc/repo
+Environment=XICEMC_RUNTIME_DIR=/opt/xicemc/runtime
+Environment=XICEMC_XMS=1G
+Environment=XICEMC_XMX=3G
+ExecStart=/opt/xicemc/repo/scripts/start-server.sh
+Restart=on-failure
+RestartSec=15
+SuccessExitStatus=0 130 143
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

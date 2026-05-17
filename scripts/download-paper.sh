@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/server/core/paper.json"
-RUNTIME_DIR="$ROOT/server/runtime"
+RUNTIME_DIR="${XICEMC_RUNTIME_DIR:-$ROOT/server/runtime}"
 JAR_PATH="$RUNTIME_DIR/paper.jar"
 
 if [[ ! -f "$MANIFEST" ]]; then
