@@ -1,20 +1,72 @@
-# Operations Notes
+# 运维说明
 
-## Maintenance Rhythm
+## 维护节奏
 
-The server is designed for low-maintenance operation, with routine admin work grouped into a weekly maintenance window.
+服务器按低维护成本设计，日常管理工作尽量集中到每周一次的固定维护窗口。
 
-Weekly checklist:
+每周检查清单：
 
-1. Confirm backups completed successfully.
-2. Check disk usage.
-3. Review crash reports and recent console errors.
-4. Review moderation reports and CoreProtect evidence if needed.
-5. Apply tested configuration changes.
-6. Update plugins only after reading changelogs and testing when possible.
+1. 确认每日备份和每周备份是否成功。
+2. 检查磁盘空间。
+3. 查看崩溃报告和近期控制台错误。
+4. 如有争议，检查 CoreProtect 等审计记录。
+5. 应用已经测试过的配置变更。
+6. 插件更新前先阅读更新日志，重要插件尽量先在测试环境验证。
 
-## Deployment Principle
+## 部署原则
 
-Configuration should be changed locally, committed to Git, pushed to GitHub, then deployed to the cloud server through a script or controlled workflow.
+配置变更应遵循以下流程：
 
-World data, player data, logs, backups, databases, and secrets are not managed by Git.
+1. 在本地修改配置或文档。
+2. 提交到 Git。
+3. 推送到 GitHub 远程仓库。
+4. 通过部署脚本或受控工作流同步到云服务器。
+5. 部署前自动备份，部署后重启并检查日志。
+
+正式服不建议每次 `git push` 后立刻自动重启。更稳妥的方式是手动触发部署，或在固定维护窗口部署。
+
+## Git 管理边界
+
+由 Git 管理：
+
+1. 服务端配置模板。
+2. 插件配置。
+3. 数据包和资源包。
+4. 权限配置。
+5. 部署、备份和重启脚本。
+6. 规则、世界规划和运维文档。
+
+不由 Git 管理：
+
+1. 世界存档。
+2. 玩家数据。
+3. 日志和崩溃报告。
+4. 备份文件。
+5. 数据库。
+6. 密钥、Token、密码和 RCON 凭据。
+
+## 备份原则
+
+建议备份策略：
+
+1. 每日自动备份一次。
+2. 每周保留一份完整备份。
+3. 部署、插件升级、世界重置前手动或自动创建额外备份。
+4. 备份至少同步到服务器外部的位置，例如对象存储、另一台机器或网盘。
+5. 每月至少测试一次恢复流程。
+
+未测试过恢复的备份不能视为可靠备份。
+
+## 重启与更新
+
+常规更新流程：
+
+1. 提前通知玩家。
+2. 执行 `save-all`。
+3. 停止服务器。
+4. 创建备份。
+5. 同步配置、插件或数据包变更。
+6. 启动服务器。
+7. 检查控制台日志、端口状态和基础功能。
+
+服务端核心、Java 版本和重要插件升级应单独测试，不应和大量玩法配置变更混在同一次部署中。

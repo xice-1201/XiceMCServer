@@ -1,15 +1,42 @@
-# Server Rules
+# 服务器规则
 
-## Core Rules
+## 核心规则
 
-1. Do not steal from other players without permission.
-2. Do not destroy, grief, burn, explode, flood, or otherwise damage player builds without permission.
-3. PVP is only allowed in explicitly marked PVP areas, events, or worlds.
-4. Do not use cheats, hacked clients, dupes, exploit abuse, or automation that harms server balance.
-5. Respect public builds, roads, spawn areas, RPG areas, and shared infrastructure.
+1. 未经允许禁止偷取其他玩家物品。
+2. 未经允许禁止破坏、焚烧、爆破、淹没或以任何方式损坏其他玩家建筑。
+3. PVP 仅允许在明确标记的 PVP 区域、活动或世界中进行。
+4. 禁止使用作弊客户端、外挂、复制漏洞、恶意漏洞利用或破坏平衡的自动化工具。
+5. 尊重公共建筑、道路、出生点、RPG 区域和共享设施。
 
-## Enforcement
+## PVP 规则
 
-Stealing, griefing, and map destruction are direct ban offenses unless a specific event rule says otherwise.
+服务器默认不鼓励随意 PVP。
 
-Disputes should be resolved through logs and rollback tools instead of argument. The server should prefer clear evidence from audit plugins such as CoreProtect.
+允许 PVP 的情况：
+
+1. 标记清楚的竞技场。
+2. 预先公告的活动。
+3. 明确写出规则的 RPG 区域。
+4. 未来若加入决斗系统，可允许双方同意的决斗。
+
+禁止借 PVP 进行抢劫、恶意蹲守、反复击杀、引诱玩家进入陷阱或规避偷窃规则。
+
+## 建筑与资源
+
+1. 永久主世界用于长期生存和建筑，应尽量保持地形与公共环境美观。
+2. 大量采集沙子、泥土、木材、矿物等资源时，优先使用资源世界。
+3. 公共建筑、道路、传送设施和活动区域不得擅自拆改。
+4. 大型红石机器、刷怪塔、区块加载装置等设施应提前沟通，避免影响性能。
+
+## 处罚原则
+
+偷窃、恶意破坏、炸图等行为原则上直接封禁，除非活动规则另有明确说明。
+
+争议处理应优先依据日志、审计插件和回滚记录，而不是只靠口头争论。服务器应优先使用 CoreProtect 等工具确认事实。
+
+## 管理原则
+
+1. 管理员不应随意使用 OP 权限干预正常生存。
+2. 管理功能应尽量通过具体权限授予，而不是直接给 OP。
+3. 处罚、回滚、世界重置和重大配置变更应有记录。
+4. 对朋友服也要保持规则一致，避免临时口头例外积累成混乱。

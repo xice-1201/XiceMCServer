@@ -1,109 +1,109 @@
-# World Plan v0.1
+# 世界规划 v0.1
 
-## Server Identity
+## 服务器定位
 
-XiceMCServer is a private-first Java Edition Minecraft server combining survival, building, and RPG progression. The default experience should feel close to vanilla survival, while selected worlds and regions provide RPG quests, dungeons, events, and structured combat.
+XiceMCServer 是一个朋友私下游玩优先的 Java 版 Minecraft 服务器，核心体验结合原版生存、长期建筑和轻 RPG 进程。默认玩法应尽量接近原版生存，但在指定世界和区域中加入任务、副本、事件、Boss 和结构化战斗。
 
-The server is designed for friends first, with enough structure to support a future public opening.
+服务器当前以熟人白名单为主，同时保留未来公开开放的可能。因此，世界结构、权限、规则和备份策略需要从一开始就清楚。
 
-## World List
+## 世界列表
 
-| World | Persistence | Main Purpose | PVP | Reset Policy |
+| 世界 | 持久性 | 主要用途 | PVP | 重置策略 |
 | --- | --- | --- | --- | --- |
-| `main` | Permanent | Survival, homes, towns, long-term builds | Off by default | Never reset unless catastrophic |
-| `main_nether` | Permanent | Long-term Nether infrastructure | Off by default | Avoid reset |
-| `main_the_end` | Semi-permanent | Dragon, End builds, long-term End access | Off by default | Reset only after announcement |
-| `resource` | Temporary | Mining, wood, sand, exploration resources | Off by default | Monthly or as needed |
-| `resource_nether` | Temporary | Nether resources | Off by default | Monthly or tied to `resource` |
-| `resource_end` | Temporary | Elytra, shulkers, End resources | Off by default | Monthly or event-based |
-| `rpg` | Mixed | Quests, NPC areas, dungeons, bosses, story zones | Region-controlled | Reset per dungeon or season |
-| `pvp` | Temporary or arena-based | Duels, arenas, events, battlegrounds | On in marked regions | Reset or rebuild freely |
-| `build_test` | Temporary | Creative planning, build prototypes, staff testing | Off | Reset freely |
+| `main` | 永久 | 生存、家园、城镇、长期建筑 | 默认关闭 | 除灾难性事故外不重置 |
+| `main_nether` | 永久 | 长期下界交通和公共设施 | 默认关闭 | 尽量不重置 |
+| `main_the_end` | 半永久 | 龙战、末地建筑、长期末地访问 | 默认关闭 | 仅公告后重置 |
+| `resource` | 临时 | 挖矿、砍树、沙子、探索资源 | 默认关闭 | 每月或按需重置 |
+| `resource_nether` | 临时 | 下界资源采集 | 默认关闭 | 每月或跟随 `resource` 重置 |
+| `resource_end` | 临时 | 鞘翅、潜影壳、末地资源 | 默认关闭 | 每月或按活动重置 |
+| `rpg` | 混合 | 任务、NPC 区、副本、Boss、剧情区域 | 按区域控制 | 按副本或赛季维护 |
+| `pvp` | 临时或竞技场制 | 决斗、竞技场、活动战场 | 标记区域开启 | 可按活动自由重建 |
+| `build_test` | 临时 | 创造测试、建筑原型、管理测试 | 关闭 | 可自由重置 |
 
-## Permanent World Rules
+## 永久世界规则
 
-`main` is the heart of the server. It should preserve player history, bases, towns, roads, landmarks, farms, and public works.
+`main` 是服务器的核心世界，应保留玩家历史、基地、城镇、道路、地标、农场和公共工程。
 
-Rules for permanent worlds:
+永久世界规则：
 
-1. No stealing.
-2. No griefing.
-3. No TNT, fire, lava, water, or entity-based destruction of other builds.
-4. No PVP unless a clearly marked event or region enables it.
-5. Public infrastructure should be protected with region permissions.
-6. Major community builds should be documented before construction.
+1. 禁止偷窃。
+2. 禁止恶意破坏。
+3. 禁止未经允许使用 TNT、火、岩浆、水流、实体或机器破坏他人建筑。
+4. 默认禁止 PVP，除非活动或区域明确开启。
+5. 公共设施应使用区域权限保护。
+6. 大型公共建筑建议在施工前记录用途和范围。
 
-## Resource World Rules
+## 资源世界规则
 
-Resource worlds exist so the permanent world can stay beautiful and stable.
+资源世界用于承接高消耗采集，让永久世界保持美观和稳定。
 
-Rules for resource worlds:
+资源世界规则：
 
-1. Players may mine aggressively and gather terrain-heavy resources.
-2. No permanent homes or important builds should be placed here.
-3. Reset dates must be announced in advance.
-4. Valuable items left in resource worlds are the player's responsibility after reset announcements.
-5. Reset cadence starts as monthly, then adjusts based on player activity.
+1. 玩家可以高强度采矿、伐木和采集地形资源。
+2. 不建议在资源世界建造永久住宅或重要建筑。
+3. 重置日期必须提前公告。
+4. 重置公告发出后，留在资源世界的重要物品由玩家自行负责。
+5. 初始重置周期为每月一次，后续根据玩家活跃度调整。
 
-## RPG Design
+## RPG 设计
 
-RPG gameplay should be added in layers, without overwhelming the vanilla survival base.
+RPG 内容应分层加入，不应压过原版生存和建筑体验。
 
-Initial RPG scope:
+第一阶段 RPG 范围：
 
-1. A protected spawn hub with lore, shops, portals, and notices.
-2. Small quest areas near spawn or in the `rpg` world.
-3. Repeatable dungeons with controlled loot.
-4. Event bosses during scheduled sessions.
-5. Region-specific PVP only when the event clearly requires it.
+1. 一个受保护的出生点枢纽，包含基础叙事、公告、传送门和公共设施。
+2. 出生点附近或 `rpg` 世界中的小型任务区域。
+3. 可重复挑战的副本，掉落受控奖励。
+4. 需要人工组织或定期开启的活动 Boss。
+5. 仅在规则明确的 RPG 区域中开启区域 PVP。
 
-RPG progression should avoid invalidating vanilla survival. Rewards should be useful, cosmetic, collectible, or convenience-oriented before they become raw power.
+RPG 奖励应避免直接摧毁原版生存平衡。早期奖励优先考虑实用、外观、收藏、声望或便利性，不应过早提供压倒性的数值强度。
 
-## PVP Policy
+## PVP 政策
 
-PVP is disabled by default. PVP is allowed only in:
+服务器默认关闭 PVP。PVP 仅允许出现在：
 
-1. Marked arenas.
-2. Scheduled events.
-3. RPG regions that explicitly state combat rules.
-4. Mutually agreed duels if a duel plugin is later added.
+1. 明确标记的竞技场。
+2. 预先公告的活动。
+3. 明确写出战斗规则的 RPG 区域。
+4. 未来若加入决斗插件，可允许双方同意的决斗。
 
-Unauthorized killing, trap abuse, spawn camping, or using PVP rules to steal items should be treated as rule abuse.
+未经允许击杀、诱导陷阱、复活点压制、利用 PVP 规则偷取物品等行为均视为规则滥用。
 
-## Protection Strategy
+## 保护策略
 
-Recommended protection layers:
+建议保护层级：
 
-1. Use whitelist and online-mode authentication.
-2. Use LuckPerms for granular permissions.
-3. Use CoreProtect for audit and rollback.
-4. Use WorldGuard for spawn, public builds, RPG regions, and PVP zones.
-5. Use a claims or land plugin for player builds if the group grows.
+1. 使用白名单和正版验证。
+2. 使用 LuckPerms 做细粒度权限管理。
+3. 使用 CoreProtect 做行为审计和回滚。
+4. 使用 WorldGuard 保护出生点、公共建筑、RPG 区域和 PVP 区域。
+5. 如果玩家规模扩大，再加入领地或城镇插件保护玩家建筑。
 
-OP should not be used for normal administration. Administrative features should be granted through specific permissions.
+日常管理不应依赖 OP。管理功能应通过具体权限单独授予。
 
-## Reset and Announcement Policy
+## 重置与公告政策
 
-Permanent worlds are not reset.
+永久世界不重置。
 
-Temporary worlds can reset only after:
+临时世界重置前必须满足：
 
-1. The reset target is named clearly.
-2. The reset date and time are announced.
-3. Players are reminded which worlds are permanent and which are temporary.
-4. A backup is created before reset.
+1. 明确说明要重置的世界。
+2. 公告重置日期和时间。
+3. 提醒玩家哪些世界永久保存，哪些世界会周期性重置。
+4. 重置前创建备份。
 
-Suggested initial schedule:
+建议初始周期：
 
-1. `resource` and `resource_nether`: reset monthly.
-2. `resource_end`: reset monthly or after major End events.
-3. `rpg` dungeon regions: reset per dungeon cycle.
-4. `pvp`: reset whenever arenas or events change.
+1. `resource` 和 `resource_nether`：每月重置。
+2. `resource_end`：每月或大型末地活动后重置。
+3. `rpg` 副本区域：按副本周期重置。
+4. `pvp`：按竞技场或活动需求重建。
 
-## Open Questions
+## 待确认问题
 
-1. Should player claims be available from day one, or only after the friend group grows?
-2. Should the economy be purely player trade, or should shops and currency exist?
-3. Should the `rpg` world use custom mobs and items, or stay close to vanilla at first?
-4. Should the End be permanent, resource-based, or split into both?
-5. What is the preferred maintenance window day and time?
+1. 玩家领地是否从第一天就开启，还是等玩家数量增加后再开启？
+2. 经济系统采用纯玩家交易，还是加入商店和货币？
+3. `rpg` 世界是否使用自定义怪物和物品，还是第一阶段尽量保持接近原版？
+4. 末地采用永久、资源化，还是拆分为永久末地和资源末地？
+5. 每周固定维护窗口定在哪一天、哪个时间段？

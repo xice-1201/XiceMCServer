@@ -1,15 +1,38 @@
 # XiceMCServer
 
-Configuration and operations repository for the Xice Minecraft server.
+这是 Xice Minecraft 服务器的配置与运维仓库。
 
-This repository is intended to track server configuration, plugin configuration, datapacks, resource packs, deployment scripts, and operational notes.
+本仓库用于管理服务器配置、插件配置、数据包、资源包、部署脚本和运维文档。它的目标是让服务器更新可以通过 Git 记录、审查、回滚，并在未来接入自动化部署流程。
 
-Runtime data such as worlds, logs, backups, databases, credentials, and generated plugin data should not be committed. Those files belong to the server host and backup system.
+世界存档、日志、备份、数据库、凭据、玩家运行时数据和插件生成数据不应提交到本仓库。这些内容属于服务器主机和备份系统管理范围。
 
-## First Milestones
+## 当前定位
 
-1. Finalize the world plan in `docs/world-plan.md`.
-2. Choose the server core, likely Paper or Purpur.
-3. Add baseline plugin configuration.
-4. Prepare backup and deployment scripts.
-5. Test locally before deploying to a cloud server.
+XiceMCServer 是一个朋友私下游玩优先的 Java 版 Minecraft 服务器，计划结合原版生存、建筑和轻 RPG 内容。服务器会尽量保持低维护成本，并为未来可能公开开放预留结构。
+
+## 第一阶段目标
+
+1. 完成 `docs/world-plan.md` 中的世界规划。
+2. 选择服务端核心，优先考虑 Paper 或 Purpur。
+3. 加入基础插件配置。
+4. 准备备份、部署和重启脚本。
+5. 先在本地或测试环境验证，再部署到云服务器。
+
+## Git 管理范围
+
+适合提交到 Git 的内容：
+
+1. 服务器配置模板。
+2. 插件配置。
+3. 数据包和资源包。
+4. 权限配置。
+5. 世界规划、规则和运维文档。
+6. 部署、备份和重启脚本。
+
+不应提交到 Git 的内容：
+
+1. `world/`、`world_nether/`、`world_the_end/` 等世界存档。
+2. 日志、崩溃报告和备份文件。
+3. 数据库文件。
+4. 密码、Token、RCON 密钥和 SSH 密钥。
+5. 玩家数据和插件运行时生成的大量数据。
