@@ -1,0 +1,6 @@
+# XiceMCServer Paper world default configuration overrides.
+# Merge these values into runtime/config/paper-world-defaults.yml on the server.
+
+anticheat:
+  anti-xray:
+    enabled: true

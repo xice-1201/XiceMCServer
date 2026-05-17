@@ -1,0 +1,6 @@
+# XiceMCServer Paper global configuration overrides.
+# Merge these values into runtime/config/paper-global.yml on the server.
+
+unsupported-settings:
+  allow-permanent-block-break-exploits: true
+  allow-piston-duplication: true

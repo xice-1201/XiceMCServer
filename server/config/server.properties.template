@@ -13,7 +13,7 @@ prevent-proxy-connections=false
 
 # Worlds
 level-name=main
-level-seed=
+level-seed=20021201
 level-type=minecraft:normal
 generate-structures=true
 allow-nether=true
@@ -21,19 +21,19 @@ allow-nether=true
 # Gameplay
 gamemode=survival
 force-gamemode=false
-difficulty=normal
+difficulty=hard
 hardcore=false
 pvp=false
-spawn-protection=16
-allow-flight=false
-enable-command-block=false
+spawn-protection=0
+allow-flight=true
+enable-command-block=true
 
 # Network
 server-ip=
 server-port=25565
 enable-status=true
 hide-online-players=false
-max-players=20
+max-players=6
 
 # Performance baseline
 view-distance=10
