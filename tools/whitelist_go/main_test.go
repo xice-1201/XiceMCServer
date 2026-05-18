@@ -171,6 +171,20 @@ func TestAuthenticatedTemplatesExecute(t *testing.T) {
 	}
 }
 
+func TestPublicTemplatesExecute(t *testing.T) {
+	templates := mustTemplates()
+	data := pageData{
+		Title:  "test",
+		Active: "public-home",
+		Public: publicData{SiteBaseURL: "http://127.0.0.1", SiteDomain: "xicemc.site"},
+	}
+	for _, name := range []string{"public", "publicTech", "publicPlugins", "publicOps", "publicChangelog"} {
+		if err := templates.ExecuteTemplate(&bytes.Buffer{}, name, data); err != nil {
+			t.Fatalf("ExecuteTemplate(%s) error = %v", name, err)
+		}
+	}
+}
+
 func replaceLast(value, old string, newValue string) string {
 	index := -1
 	for i := 0; i+len(old) <= len(value); i++ {

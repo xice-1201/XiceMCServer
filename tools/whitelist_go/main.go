@@ -313,6 +313,10 @@ func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /favicon.ico", a.fileHandler(a.cfg.WebFaviconPath, "image/x-icon"))
 	mux.HandleFunc("GET /resourcepacks/xiceclaim.zip", a.fileHandler(a.cfg.ResourcePackPath, "application/zip"))
 	mux.HandleFunc("GET /", a.handlePublicHome)
+	mux.HandleFunc("GET /tech", a.handlePublicStatic("publicTech", "技术实现", "public-tech"))
+	mux.HandleFunc("GET /plugins", a.handlePublicStatic("publicPlugins", "插件动态", "public-plugins"))
+	mux.HandleFunc("GET /ops", a.handlePublicStatic("publicOps", "运维记录", "public-ops"))
+	mux.HandleFunc("GET /changelog", a.handlePublicStatic("publicChangelog", "更新日志", "public-changelog"))
 	mux.HandleFunc("GET /register", a.handleRegisterPage)
 	mux.HandleFunc("POST /login", a.handleLogin)
 	mux.HandleFunc("POST /register", a.handleRegister)
@@ -362,13 +366,24 @@ func (a *app) handlePublicHome(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/home", http.StatusSeeOther)
 		return
 	}
-	a.render(w, http.StatusOK, "public", pageData{Title: "个人技术开发随记", Public: a.publicData()})
+	a.render(w, http.StatusOK, "public", pageData{Title: "个人技术开发随记", Public: a.publicData(), Active: "public-home"})
+}
+
+func (a *app) handlePublicStatic(templateName, title, active string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		a.render(w, http.StatusOK, templateName, pageData{
+			Title:  title,
+			Public: a.publicData(),
+			Active: active,
+		})
+	}
 }
 
 func (a *app) handleRegisterPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, http.StatusOK, "public", pageData{
 		Title:        "个人技术开发随记",
 		Public:       a.publicData(),
+		Active:       "public-home",
 		RegisterOpen: true,
 	})
 }
@@ -588,7 +603,7 @@ func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) renderPublicError(w http.ResponseWriter, message string, register bool) {
-	data := pageData{Title: "个人技术开发随记", Public: a.publicData(), Error: message}
+	data := pageData{Title: "个人技术开发随记", Public: a.publicData(), Active: "public-home", Error: message}
 	if register {
 		data.RegisterOpen = true
 	} else {
@@ -1567,6 +1582,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .public-brand { color:var(--text); font-weight:800; }
     .public-nav { display:flex; gap:6px; justify-content:center; }
     .public-nav a { display:inline-flex; align-items:center; min-height:34px; padding:6px 10px; border-radius:6px; color:var(--muted); font-size:14px; }
+    .public-nav a.active,.public-nav a:hover { background:#eaf1ff; color:var(--text); }
     .public-auth { display:flex; gap:8px; justify-content:flex-end; position:relative; }
     .auth-popover { position:relative; }
     .auth-popover summary { list-style:none; display:inline-flex; align-items:center; min-height:36px; padding:7px 11px; border-radius:6px; background:#e7edf5; color:var(--text); font-size:14px; cursor:pointer; user-select:none; }
@@ -1580,6 +1596,9 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .public-directory { border-left:3px solid #d8e0ea; padding-left:18px; }
     .public-directory a { display:block; padding:7px 0; color:var(--muted); }
     .public-section { width:min(100% - 48px,1120px); margin:0 auto; padding:42px 0; border-top:1px solid var(--line); }
+    .public-page { width:min(100% - 48px,980px); margin:0 auto; padding:54px 0; }
+    .public-page h1 { font-size:34px; margin-bottom:12px; }
+    .public-lead { max-width:760px; font-size:18px; color:#405169; }
     .section-heading { margin-bottom:18px; }
     .article-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
     .article-card { min-width:0; min-height:178px; padding:18px; border:1px solid var(--line); border-radius:8px; background:#fff; }
@@ -1767,12 +1786,15 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 
 {{define "pageEnd"}}{{template "footer" .}}</main></div></body></html>{{end}}
 
-{{define "public"}}{{template "pageStart" .}}{{template "publicContent" .}}{{template "pageEnd" .}}{{end}}
-{{define "publicContent"}}
+{{define "publicHeader"}}
 <header class="public-header">
   <a class="public-brand" href="/">个人技术开发随记</a>
-  <nav class="public-nav" aria-label="首页目录">
-    <a href="#overview">首页介绍</a><a href="#stack">技术实现</a><a href="#plugins">插件动态</a><a href="#log">更新日志</a>
+  <nav class="public-nav" aria-label="公开页面目录">
+    <a class="{{if eq .Active "public-home"}}active{{end}}" href="/">首页介绍</a>
+    <a class="{{if eq .Active "public-tech"}}active{{end}}" href="/tech">技术实现</a>
+    <a class="{{if eq .Active "public-plugins"}}active{{end}}" href="/plugins">插件动态</a>
+    <a class="{{if eq .Active "public-ops"}}active{{end}}" href="/ops">运维记录</a>
+    <a class="{{if eq .Active "public-changelog"}}active{{end}}" href="/changelog">更新日志</a>
   </nav>
   <div class="public-auth">
     <details class="auth-popover" {{if .LoginOpen}}open{{end}}>
@@ -1815,18 +1837,39 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     });
   });
 </script>
+{{end}}
+
+{{define "public"}}{{template "pageStart" .}}{{template "publicContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "publicContent"}}
+{{template "publicHeader" .}}
 <section class="public-hero" id="overview">
   <div>
     <p class="public-kicker">Java / Linux / Web / Personal Project Notes</p>
     <h1>个人技术开发随记</h1>
     <p>这里记录我的个人技术学习、开发实验和项目维护过程，内容以 Java 插件开发、Linux 运维、Web 页面开发、自动化部署和项目更新日志为主。</p>
+    <div class="actions">
+      <a class="button" href="/tech">查看技术实现</a>
+      <a class="button secondary" href="/changelog">查看更新日志</a>
+    </div>
   </div>
   <aside class="public-directory" aria-label="内容目录">
-    <h2>目录</h2>
-    <a href="#stack">技术实现</a><a href="#plugins">插件动态</a><a href="#ops">运维记录</a><a href="#log">更新日志</a>
+    <h2>最近关注</h2>
+    <a href="/plugins">领地插件交互 UI</a><a href="/tech">Go Web 后端迁移</a><a href="/ops">公网访问与备案准备</a>
   </aside>
 </section>
-<section class="public-section" id="stack">
+<section class="public-section">
+  <div class="section-heading"><p class="public-kicker">Overview</p><h2>站点说明</h2></div>
+  <p>这个站点的公开部分只展示个人技术记录和项目开发状态；登录后的后台入口用于非公开的服务器维护、白名单登记、权限管理和审计查询。</p>
+</section>
+{{end}}
+
+{{define "publicTech"}}{{template "pageStart" .}}{{template "publicTechContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "publicTechContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  <p class="public-kicker">Implementation</p>
+  <h1>技术实现</h1>
+  <p class="public-lead">这里整理项目中的实现路线、技术取舍和后端维护经验，重点记录可复用的开发过程，而不是展示玩家后台数据。</p>
   <div class="section-heading"><p class="public-kicker">Implementation</p><h2>技术实现</h2></div>
   <div class="article-grid">
     <article class="article-card"><h3>Java 插件开发</h3><p>围绕权限、领地、审计和文本交互等模块整理实现思路，记录事件监听、配置持久化、命令控制和用户界面迭代。</p></article>
@@ -1834,18 +1877,33 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     <article class="article-card"><h3>自动化部署</h3><p>整理从代码提交、构建、备份到服务重启的部署流程，保留每次调整背后的取舍与问题复盘。</p></article>
   </div>
 </section>
-<section class="public-section" id="plugins">
+{{end}}
+
+{{define "publicPlugins"}}{{template "pageStart" .}}{{template "publicPluginsContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "publicPluginsContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
   <div class="section-heading"><p class="public-kicker">Plugin Notes</p><h2>插件动态</h2></div>
   <div class="note-list">
     <article><span>2026-05</span><div><h3>领地交互 UI 调整</h3><p>通过虚拟容器界面组织坐标选择、范围预览、权限状态和授权成员管理，减少命令依赖。</p></div></article>
     <article><span>2026-05</span><div><h3>Go Web 迁移完成</h3><p>Web 端已经完成 Go 化，后台页面、白名单注册、权限管理、举报和审计查询统一由 Go 服务承载。</p></div></article>
   </div>
 </section>
-<section class="public-section" id="ops">
+{{end}}
+
+{{define "publicOps"}}{{template "pageStart" .}}{{template "publicOpsContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "publicOpsContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
   <div class="section-heading"><p class="public-kicker">Operations</p><h2>运维记录</h2></div>
   <p>项目运行在个人云主机环境中，维护记录会关注系统服务、备份策略、访问控制、日志排查和资源配置。当前公开页面仅展示技术笔记，非公开后台入口用于个人项目维护。</p>
 </section>
-<section class="public-section" id="log">
+{{end}}
+
+{{define "publicChangelog"}}{{template "pageStart" .}}{{template "publicChangelogContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "publicChangelogContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
   <div class="section-heading"><p class="public-kicker">Changelog</p><h2>更新日志</h2></div>
   <ol><li><strong>技术栈迁移：</strong>Web 端已从 Python 标准库服务迁移至 Go net/http。</li><li><strong>部署策略：</strong>systemd 继续沿用 xicemc-whitelist.service 服务名，实际运行 /opt/xicemc/bin/xicemc-web-go。</li></ol>
 </section>
