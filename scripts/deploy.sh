@@ -88,7 +88,7 @@ if ! command -v go > /dev/null 2>&1; then
   exit 1
 fi
 install -d -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0755 /opt/xicemc/bin
-run_as_server_user go build -o "${REPO_DIR}/tools/whitelist_go/xicemc-web-go" "${REPO_DIR}/tools/whitelist_go"
+run_as_server_user bash -lc "cd '${REPO_DIR}/tools/whitelist_go' && go build -o xicemc-web-go ."
 install -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0755 \
   "${REPO_DIR}/tools/whitelist_go/xicemc-web-go" \
   /opt/xicemc/bin/xicemc-web-go
