@@ -34,6 +34,12 @@ PLAYER_ROLE = "玩家"
 ADMIN_ROLE = "管理员"
 OWNER_ROLE = "服主"
 MINECRAFT_VERSION = "1.21.11"
+PUBLIC_SITE_BASE_URL = os.environ.get("XICEMC_PUBLIC_SITE_BASE_URL", "http://150.158.93.80").rstrip("/")
+PUBLIC_SITE_DOMAIN = os.environ.get("XICEMC_PUBLIC_SITE_DOMAIN", "xicemc.site").strip()
+ICP_RECORD_NO = os.environ.get("XICEMC_ICP_RECORD_NO", "").strip()
+ICP_RECORD_URL = os.environ.get("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/").strip()
+PUBLIC_SECURITY_RECORD_NO = os.environ.get("XICEMC_PUBLIC_SECURITY_RECORD_NO", "").strip()
+PUBLIC_SECURITY_RECORD_URL = os.environ.get("XICEMC_PUBLIC_SECURITY_RECORD_URL", "").strip()
 DEFAULT_PROFILE_BIO = "一名普通的Minecraft玩家"
 PROFILE_BIO_MAX_LENGTH = 120
 AUDIT_ACTION_LABELS = {
@@ -1074,9 +1080,42 @@ def esc(value):
     return html.escape(str(value), quote=True)
 
 
+def render_compliance_footer():
+    icp_label = ICP_RECORD_NO or "ICP备案号待下发"
+    if ICP_RECORD_NO:
+        icp_html = (
+            f'<a href="{esc(ICP_RECORD_URL)}" target="_blank" '
+            f'rel="noopener noreferrer">{esc(icp_label)}</a>'
+        )
+    else:
+        icp_html = f"<span>{esc(icp_label)}</span>"
+
+    police_label = PUBLIC_SECURITY_RECORD_NO or "公安联网备案号待下发"
+    if PUBLIC_SECURITY_RECORD_NO and PUBLIC_SECURITY_RECORD_URL:
+        police_html = (
+            f'<a href="{esc(PUBLIC_SECURITY_RECORD_URL)}" target="_blank" '
+            f'rel="noopener noreferrer">{esc(police_label)}</a>'
+        )
+    else:
+        police_html = f"<span>{esc(police_label)}</span>"
+
+    domain_hint = (
+        f'<span class="compliance-domain">域名通道：{esc(PUBLIC_SITE_DOMAIN)}</span>'
+        if PUBLIC_SITE_DOMAIN else ""
+    )
+    return f"""
+<footer class="compliance-footer" aria-label="备案信息">
+  <span>访问入口：{esc(PUBLIC_SITE_BASE_URL)}</span>
+  <span>ICP：{icp_html}</span>
+  <span>公安联网备案：{police_html}</span>
+  {domain_hint}
+</footer>"""
+
+
 def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     escaped_title = esc(title)
     nav = ""
+    compliance_footer = render_compliance_footer()
     shell_class = "login-shell" if user is None else "app-shell"
     if user:
         report_admin_link = (
@@ -1667,6 +1706,25 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     th, td {{ padding: 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }}
     th {{ color: var(--muted); font-weight: 600; }}
     .nowrap {{ white-space: nowrap; }}
+    .compliance-footer {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      margin-top: 26px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }}
+    .compliance-footer a {{
+      color: var(--muted);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }}
+    .compliance-domain {{
+      overflow-wrap: anywhere;
+    }}
     @media (max-width: 760px) {{
       .auth-grid {{ grid-template-columns: 1fr; }}
       .app-shell {{ grid-template-columns: 1fr; }}
@@ -1685,7 +1743,10 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
 <body>
   <div class="{shell_class}">
     {nav}
-    <main>{body}</main>
+    <main>
+      {body}
+      {compliance_footer}
+    </main>
   </div>
 </body>
 </html>"""
