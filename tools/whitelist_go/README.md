@@ -25,18 +25,12 @@
 11. 编辑简介 `/profile`。
 12. 首页领地列表读取 `XiceClaim/claims.yml`。
 13. 服务器状态 `/status`。
-
-## 暂未迁移
-
-以下页面已有路由占位，但不能替换线上 Python 服务：
-
-1. `/players`
-2. `/permissions`
-3. `/report`
-4. `/reports`
-5. `/blacklist`
-6. `/audit`
-7. `/docs/edit`
+14. 玩家列表 `/players`、身份管理与密码重置。
+15. 权限管理 `/permissions`。
+16. 举报提交 `/report` 与举报受理 `/reports`。
+17. 黑名单 `/blacklist`。
+18. 操作查询 `/audit`。
+19. 文档编辑 `/docs/edit`。
 
 ## 本地运行
 
@@ -67,4 +61,4 @@ go build -o /opt/xicemc/bin/xicemc-web-go /opt/xicemc/repo/tools/whitelist_go
 
 ## 切换原则
 
-只有当所有现有后台页面迁移完成并通过对照验证后，才修改 `deploy/systemd/xicemc-whitelist.service` 的 `ExecStart` 指向 Go 二进制。
+现有后台页面已经迁移到 Go。`deploy/systemd/xicemc-whitelist.service` 的 `ExecStart` 指向 `/opt/xicemc/bin/xicemc-web-go`，`scripts/deploy.sh` 会在部署时构建并安装该二进制。

@@ -77,5 +77,17 @@ if compgen -G "${REPO_DIR}/plugins/*/pom.xml" > /dev/null; then
   done
 fi
 
+echo "Building Go web portal..."
+if ! command -v go > /dev/null 2>&1; then
+  echo "Go is required to build the web portal, but go was not found." >&2
+  exit 1
+fi
+install -d -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0755 /opt/xicemc/bin
+run_as_server_user go build -o "${REPO_DIR}/tools/whitelist_go/xicemc-web-go" "${REPO_DIR}/tools/whitelist_go"
+install -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0755 \
+  "${REPO_DIR}/tools/whitelist_go/xicemc-web-go" \
+  /opt/xicemc/bin/xicemc-web-go
+rm -f "${REPO_DIR}/tools/whitelist_go/xicemc-web-go"
+
 chown -R "${SERVER_USER}:${SERVER_USER}" "${RUNTIME_DIR}"
 echo "Deployment completed."
