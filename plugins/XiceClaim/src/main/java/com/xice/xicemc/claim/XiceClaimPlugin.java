@@ -460,6 +460,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if (toClaim != null) {
             send(event.getPlayer(), message("claim-entered"), "claim", toClaim.name, "owner", toClaim.ownerName);
+            showClaimParticles(event.getPlayer(), toClaim);
         }
     }
 
@@ -914,6 +915,15 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private void renderManageRingMenu(RingMenu menu, ClaimRegion claim) {
+        switch (menu.session.manageView) {
+            case MAIN -> renderManageMainMenu(menu, claim);
+            case MEMBERS -> renderManageMembersMenu(menu, claim);
+            case FEATURES -> renderManageFeaturesMenu(menu, claim);
+            case DELETE_CONFIRM -> renderDeleteConfirmMenu(menu, claim);
+        }
+    }
+
+    private void renderManageMainMenu(RingMenu menu, ClaimRegion claim) {
         menu.actions.clear();
         Inventory inventory = menu.inventory;
         inventory.clear();
@@ -921,12 +931,19 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 "&7所有者：&f" + claim.ownerName,
                 "&7世界：&f" + claim.world,
                 "&7坐标：&f" + claim.minX + "," + claim.minY + "," + claim.minZ + " 到 " + claim.maxX + "," + claim.maxY + "," + claim.maxZ)));
-        setAction(menu, 49, "preview", menuItem(Material.ENDER_EYE, "&e显示领地边界", List.of("&7仅自己可见。")));
-        if (menu.session.confirmingDelete) {
-            setAction(menu, 53, "delete-claim", menuItem(Material.RED_CONCRETE, "&c确认删除领地", List.of("&7再次点击将永久删除该领地。", "&7删除后戒指会恢复为空戒指。")));
-        } else {
-            setAction(menu, 53, "delete-claim", menuItem(Material.TNT, "&c删除领地", List.of("&7需要二次确认。")));
-        }
+        setAction(menu, 20, "view:members", menuItem(Material.PLAYER_HEAD, "&a管理授权玩家", List.of("&7添加或移除可以使用该领地的玩家。")));
+        setAction(menu, 22, "view:features", menuItem(Material.COMPARATOR, "&e管理领地功能", List.of("&7预览范围、删除领地等功能。")));
+        setAction(menu, 24, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
+        setAction(menu, 40, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
+    }
+
+    private void renderManageMembersMenu(RingMenu menu, ClaimRegion claim) {
+        menu.actions.clear();
+        Inventory inventory = menu.inventory;
+        inventory.clear();
+        inventory.setItem(4, menuItem(Material.PLAYER_HEAD, "&a管理授权玩家", List.of(
+                "&7领地：&f" + claim.name,
+                "&7左侧添加在线玩家，右侧移除已授权玩家。")));
         int addSlot = 10;
         for (Player target : Bukkit.getOnlinePlayers().stream()
                 .filter(target -> !target.getUniqueId().equals(claim.ownerUuid))
@@ -943,6 +960,30 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         inventory.setItem(9, menuItem(Material.OAK_SIGN, "&a可授权的在线玩家", List.of("&7只展示当前在线且未授权的玩家。")));
         inventory.setItem(27, menuItem(Material.OAK_SIGN, "&c已授权成员", List.of("&7点击成员可移除授权。")));
+        setAction(menu, 49, "view:main", menuItem(Material.ARROW, "&e返回主菜单", List.of("&7回到领地管理菜单。")));
+    }
+
+    private void renderManageFeaturesMenu(RingMenu menu, ClaimRegion claim) {
+        menu.actions.clear();
+        Inventory inventory = menu.inventory;
+        inventory.clear();
+        inventory.setItem(4, menuItem(Material.COMPARATOR, "&e管理领地功能", List.of(
+                "&7领地：&f" + claim.name,
+                "&7选择要执行的领地功能。")));
+        setAction(menu, 20, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
+        setAction(menu, 24, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
+        setAction(menu, 49, "view:main", menuItem(Material.ARROW, "&e返回主菜单", List.of("&7回到领地管理菜单。")));
+    }
+
+    private void renderDeleteConfirmMenu(RingMenu menu, ClaimRegion claim) {
+        menu.actions.clear();
+        Inventory inventory = menu.inventory;
+        inventory.clear();
+        inventory.setItem(4, menuItem(Material.TNT, "&c删除领地", List.of(
+                "&7领地：&f" + claim.name,
+                "&7删除后该戒指会恢复为空戒指，但保留当前名称。")));
+        setAction(menu, 22, "delete-confirm", menuItem(Material.RED_CONCRETE, "&c确认删除", List.of("&7点击后永久删除该领地。")));
+        setAction(menu, 49, "view:features", menuItem(Material.ARROW, "&e取消", List.of("&7返回领地功能页面。")));
     }
 
     private void handleRingMenuClick(Player player, RingMenu menu, int slot) {
@@ -1022,6 +1063,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(player, message("no-permission"));
             return;
         }
+        if (action.startsWith("view:")) {
+            menu.session.manageView = ManageView.valueOf(action.substring("view:".length()).toUpperCase(Locale.ROOT));
+            renderManageRingMenu(menu, claim);
+            return;
+        }
         if ("preview".equals(action)) {
             showClaimParticles(player, claim);
             menu.session.discardOnClose = true;
@@ -1029,12 +1075,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             player.closeInventory();
             return;
         }
-        if ("delete-claim".equals(action)) {
-            if (!menu.session.confirmingDelete) {
-                menu.session.confirmingDelete = true;
-                renderManageRingMenu(menu, claim);
-                return;
-            }
+        if ("delete-confirm".equals(action)) {
             claims.remove(claim.id);
             saveClaims();
             unbindRing(menu.session.ring);
@@ -1046,7 +1087,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (action.startsWith("add:")) {
-            menu.session.confirmingDelete = false;
             UUID targetUuid = UUID.fromString(action.substring("add:".length()));
             Player target = Bukkit.getPlayer(targetUuid);
             if (target != null) {
@@ -1058,7 +1098,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (action.startsWith("remove:")) {
-            menu.session.confirmingDelete = false;
             UUID targetUuid = UUID.fromString(action.substring("remove:".length()));
             claim.members.remove(targetUuid);
             claim.memberNames.remove(targetUuid);
@@ -1149,7 +1188,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private void unbindRing(ItemStack ring) {
         ItemMeta meta = ring.getItemMeta();
-        meta.setDisplayName(color("&b领地戒指"));
         meta.setLore(List.of(color("&7右键打开领地创建界面。"), color("&7可用铁砧改名，戒指名即领地名。")));
         meta.setEnchantmentGlintOverride(false);
         meta.getPersistentDataContainer().remove(ringClaimIdKey);
@@ -1412,6 +1450,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         MANAGE
     }
 
+    private enum ManageView {
+        MAIN,
+        MEMBERS,
+        FEATURES,
+        DELETE_CONFIRM
+    }
+
     private enum DraftField {
         X1,
         Y1,
@@ -1430,9 +1475,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private final String playerName;
         private final List<String> statusLines = new ArrayList<>();
         private DraftField selectedField = DraftField.X1;
+        private ManageView manageView = ManageView.MAIN;
         private String claimId = "";
         private boolean discardOnClose;
-        private boolean confirmingDelete;
 
         private RingSession(RingMenuMode mode, ItemStack ring, RingDraft draft, EquipmentSlot hand, UUID playerUuid, String playerName) {
             this.mode = mode;
