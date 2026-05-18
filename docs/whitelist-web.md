@@ -25,13 +25,14 @@ Web 图标来自仓库内 `server/assets/xicemc-logo.png`，浏览器会通过 `
 
 ## Web 后端结构
 
-Web 后端仍使用 Python 标准库 HTTP 服务，但已从单文件开始拆分：
+Web 后端已经全面迁移到 Go，旧 Python 页面服务已从仓库中移除。
 
-1. `tools/whitelist_web/app.py`：路由、页面渲染、会话和业务编排入口。
-2. `tools/whitelist_web/rcon.py`：Minecraft RCON 客户端。
-3. `tools/whitelist_web/command_permissions.py`：指令权限配置读取、写入和 YAML 块更新逻辑。
+1. `tools/whitelist_go/main.go`：服务启动、配置、会话、公开首页、注册登录、状态页和通用工具。
+2. `tools/whitelist_go/admin.go`：玩家、权限、举报、黑名单、审计和文档编辑等后台业务逻辑。
+3. `tools/whitelist_go/admin_templates.go`：后台管理页面模板。
+4. `tools/whitelist_go/README.md`：Go Web 本地运行和构建说明。
 
-当前不切换 Go 后端。现有 Python 服务与 PostgreSQL、运行时文件和 RCON 已稳定集成，先拆分模块能更低风险地改善后续开发体验；如果未来页面和接口继续增长，再以这些模块边界为基础评估迁移到 Go 或更完整的 Web 框架。
+线上 systemd 服务 `xicemc-whitelist.service` 仍沿用原服务名，但实际运行 `/opt/xicemc/bin/xicemc-web-go`。部署脚本 `scripts/deploy.sh` 会构建 Go 二进制并安装到该路径。
 
 ## 域名与反向代理
 

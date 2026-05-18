@@ -498,18 +498,6 @@ func (a *app) handleDocs(w http.ResponseWriter, r *http.Request, user *userSessi
 	})
 }
 
-func (a *app) handleMigrationPlaceholder(title string) func(http.ResponseWriter, *http.Request, *userSession) {
-	return func(w http.ResponseWriter, r *http.Request, user *userSession) {
-		a.render(w, http.StatusOK, "placeholder", pageData{
-			Title:   title,
-			User:    user,
-			Active:  strings.TrimPrefix(r.URL.Path, "/"),
-			Public:  a.publicData(),
-			Message: "该页面的 Go 迁移骨架已接入，完整后台交互将在后续迁移批次中补齐。线上切换前仍由 Python 版本承载完整功能。",
-		})
-	}
-}
-
 func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		a.renderPublicError(w, "请求格式不正确。", false)
@@ -1850,7 +1838,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <div class="section-heading"><p class="public-kicker">Plugin Notes</p><h2>插件动态</h2></div>
   <div class="note-list">
     <article><span>2026-05</span><div><h3>领地交互 UI 调整</h3><p>通过虚拟容器界面组织坐标选择、范围预览、权限状态和授权成员管理，减少命令依赖。</p></div></article>
-    <article><span>2026-05</span><div><h3>Go Web 迁移启动</h3><p>先迁移公开首页、登录、注册和文档访问控制，为后续后台页面迁移打基础。</p></div></article>
+    <article><span>2026-05</span><div><h3>Go Web 迁移完成</h3><p>Web 端已经完成 Go 化，后台页面、白名单注册、权限管理、举报和审计查询统一由 Go 服务承载。</p></div></article>
   </div>
 </section>
 <section class="public-section" id="ops">
@@ -1859,7 +1847,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 </section>
 <section class="public-section" id="log">
   <div class="section-heading"><p class="public-kicker">Changelog</p><h2>更新日志</h2></div>
-  <ol><li><strong>技术栈迁移：</strong>新增 Go Web 骨架，先覆盖公开首页和白名单注册入口。</li><li><strong>部署策略：</strong>Go 服务暂不替换线上 Python，待后台页面迁移完成后再切换。</li></ol>
+  <ol><li><strong>技术栈迁移：</strong>Web 端已从 Python 标准库服务迁移至 Go net/http。</li><li><strong>部署策略：</strong>systemd 继续沿用 xicemc-whitelist.service 服务名，实际运行 /opt/xicemc/bin/xicemc-web-go。</li></ol>
 </section>
 {{end}}
 
@@ -2005,9 +1993,4 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 <section class="panel"><div class="pre">{{.Message}}</div></section>
 {{end}}
 
-{{define "placeholder"}}{{template "pageStart" .}}{{template "placeholderContent" .}}{{template "pageEnd" .}}{{end}}
-{{define "placeholderContent"}}
-<h1>{{.Title}}</h1>
-<section class="panel"><p>{{.Message}}</p></section>
-{{end}}
 `
