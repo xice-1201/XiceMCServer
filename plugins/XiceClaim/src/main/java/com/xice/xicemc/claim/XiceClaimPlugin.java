@@ -16,6 +16,7 @@ import java.util.regex.Pattern;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Color;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -24,6 +25,8 @@ import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.TileState;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -46,6 +49,7 @@ import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
+import org.bukkit.event.block.BlockPhysicsEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
@@ -96,6 +100,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey ringZ2Key;
     private NamespacedKey ringRecipeKey;
     private NamespacedKey ringItemModelKey;
+    private NamespacedKey totemKey;
+    private NamespacedKey totemIdKey;
+    private NamespacedKey totemPartKey;
+    private NamespacedKey totemOwnerUuidKey;
+    private NamespacedKey totemOwnerNameKey;
+    private NamespacedKey totemPlacedAtKey;
 
     @Override
     public void onEnable() {
@@ -124,6 +134,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ringZ2Key = new NamespacedKey(this, "claim_ring_z2");
         ringRecipeKey = new NamespacedKey(this, "claim_ring_recipe");
         ringItemModelKey = new NamespacedKey(this, "claim_ring");
+        totemKey = new NamespacedKey(this, "claim_totem");
+        totemIdKey = new NamespacedKey(this, "claim_totem_id");
+        totemPartKey = new NamespacedKey(this, "claim_totem_part");
+        totemOwnerUuidKey = new NamespacedKey(this, "claim_totem_owner_uuid");
+        totemOwnerNameKey = new NamespacedKey(this, "claim_totem_owner_name");
+        totemPlacedAtKey = new NamespacedKey(this, "claim_totem_placed_at");
     }
 
     @Override
@@ -161,16 +177,27 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(player, message("no-permission"));
             return;
         }
-        if (args.length < 2 || !"ring".equalsIgnoreCase(args[1])) {
+        if (args.length < 2) {
             send(player, message("give-usage"));
             return;
         }
-        ItemStack ring = createEmptyRing(ClaimPoint.from(player.getLocation()));
-        Map<Integer, ItemStack> leftover = player.getInventory().addItem(ring);
-        for (ItemStack item : leftover.values()) {
-            player.getWorld().dropItemNaturally(player.getLocation(), item);
+        ItemStack item;
+        String messageKey;
+        if ("ring".equalsIgnoreCase(args[1])) {
+            item = createEmptyRing(ClaimPoint.from(player.getLocation()));
+            messageKey = "ring-given";
+        } else if ("totem".equalsIgnoreCase(args[1])) {
+            item = createClaimTotem();
+            messageKey = "totem-given";
+        } else {
+            send(player, message("give-usage"));
+            return;
         }
-        send(player, message("ring-given"));
+        Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
+        for (ItemStack leftoverItem : leftover.values()) {
+            player.getWorld().dropItemNaturally(player.getLocation(), leftoverItem);
+        }
+        send(player, message(messageKey));
     }
 
     private boolean canUseAction(Player player, String action) {
@@ -421,8 +448,26 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
+        if (isClaimTotemBlock(event.getBlock())) {
+            if (getConfig().getBoolean("protection.block-break", true) && isProtectedFrom(event.getPlayer(), event.getBlock(), ClaimFeature.BLOCK_BREAK)) {
+                ClaimRegion claim = claimAt(event.getBlock().getLocation());
+                event.setCancelled(true);
+                send(event.getPlayer(), message("protected"), "claim", claim == null ? "" : claim.name);
+                return;
+            }
+            event.setCancelled(true);
+            collapseTotem(event.getBlock(), event.getPlayer().getGameMode() != GameMode.CREATIVE);
+            return;
+        }
         if (getConfig().getBoolean("protection.block-break", true)) {
             protect(event.getPlayer(), event.getBlock(), event, ClaimFeature.BLOCK_BREAK);
+            if (event.isCancelled()) {
+                return;
+            }
+        }
+        Block possibleBottom = event.getBlock().getRelative(BlockFace.UP);
+        if (isClaimTotemBottom(possibleBottom)) {
+            collapseTotem(possibleBottom, true);
         }
     }
 
@@ -438,6 +483,15 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (event.getItem() != null && isClaimRing(event.getItem()) && isRightClick(event.getAction())) {
             event.setCancelled(true);
             openRingMenu(event.getPlayer(), event.getItem(), event.getHand());
+            return;
+        }
+        if (event.getItem() != null && isClaimTotemItem(event.getItem()) && isRightClick(event.getAction())) {
+            event.setCancelled(true);
+            placeClaimTotem(event);
+            return;
+        }
+        if (event.getClickedBlock() != null && isClaimTotemBlock(event.getClickedBlock()) && isRightClick(event.getAction())) {
+            event.setCancelled(true);
             return;
         }
         if (event.isCancelled()) {
@@ -548,7 +602,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH)
     public void onPrepareItemCraft(PrepareItemCraftEvent event) {
         for (ItemStack item : event.getInventory().getMatrix()) {
-            if (isClaimRing(item)) {
+            if (isClaimRing(item) || isClaimTotemItem(item)) {
                 event.getInventory().setResult(null);
                 return;
             }
@@ -558,7 +612,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onCraftItem(CraftItemEvent event) {
         for (ItemStack item : event.getInventory().getMatrix()) {
-            if (isClaimRing(item)) {
+            if (isClaimRing(item) || isClaimTotemItem(item)) {
                 event.setCancelled(true);
                 return;
             }
@@ -573,6 +627,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (isClaimRing(item)) {
             event.setCancelled(true);
             openRingMenu(event.getPlayer(), item, event.getHand());
+            return;
+        }
+        if (isClaimTotemItem(item)) {
+            event.setCancelled(true);
             return;
         }
         if (getConfig().getBoolean("protection.entity-interact", true)) {
@@ -683,6 +741,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 return claim != null && claim.blocksActorless(ClaimFeature.EXPLOSION);
             });
         }
+        collapseTotemsAffectedBy(event.blockList(), true);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -693,6 +752,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 return claim != null && claim.blocksActorless(ClaimFeature.EXPLOSION);
             });
         }
+        collapseTotemsAffectedBy(event.blockList(), true);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockPhysics(BlockPhysicsEvent event) {
+        scheduleTotemSupportCheck(event.getBlock());
+        scheduleTotemSupportCheck(event.getBlock().getRelative(BlockFace.UP));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -700,7 +766,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (getConfig().getBoolean("protection.piston", true)
                 && (pistonUseProtected(event.getBlock()) || pistonCrossesClaimBoundary(event.getBlock(), event.getBlocks(), event.getDirection()))) {
             event.setCancelled(true);
+            return;
         }
+        collapseTotemsAffectedBy(event.getBlocks(), true);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -708,7 +776,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (getConfig().getBoolean("protection.piston", true)
                 && (pistonUseProtected(event.getBlock()) || pistonCrossesClaimBoundary(event.getBlock(), event.getBlocks(), event.getDirection()))) {
             event.setCancelled(true);
+            return;
         }
+        collapseTotemsAffectedBy(event.getBlocks(), true);
     }
 
     private boolean pistonUseProtected(Block piston) {
@@ -790,6 +860,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         event.setCancelled(true);
         send(player, message("protected"), "claim", claim.name);
+    }
+
+    private boolean isProtectedFrom(Player player, Block block, ClaimFeature feature) {
+        ClaimRegion claim = claimAt(block.getLocation());
+        return claim != null && claim.blocks(feature, player);
     }
 
     private void protectEntity(Player player, Entity entity, org.bukkit.event.Cancellable event, ClaimFeature feature) {
@@ -912,11 +987,198 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         getServer().addRecipe(recipe);
     }
 
+    private ItemStack createClaimTotem() {
+        ItemStack totem = new ItemStack(Material.BEACON);
+        ItemMeta meta = totem.getItemMeta();
+        meta.setDisplayName(color("&b领地图腾"));
+        meta.setLore(List.of(color("&7右键方块上表面放置。"), color("&7放置后占用 1 x 1 x 2 空间。")));
+        meta.getPersistentDataContainer().set(totemKey, PersistentDataType.BYTE, (byte) 1);
+        totem.setItemMeta(meta);
+        return totem;
+    }
+
     private boolean isClaimRing(ItemStack item) {
         if (item == null || item.getType() != Material.FLINT || !item.hasItemMeta()) {
             return false;
         }
         return item.getItemMeta().getPersistentDataContainer().has(ringKey, PersistentDataType.BYTE);
+    }
+
+    private boolean isClaimTotemItem(ItemStack item) {
+        if (item == null || item.getType() != Material.BEACON || !item.hasItemMeta()) {
+            return false;
+        }
+        return item.getItemMeta().getPersistentDataContainer().has(totemKey, PersistentDataType.BYTE);
+    }
+
+    private void placeClaimTotem(PlayerInteractEvent event) {
+        Player player = event.getPlayer();
+        Block support = event.getClickedBlock();
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || support == null || event.getBlockFace() != BlockFace.UP) {
+            send(player, message("totem-place-surface-only"));
+            return;
+        }
+        if (support.isReplaceable()) {
+            send(player, message("totem-place-surface-only"));
+            return;
+        }
+        Block bottom = support.getRelative(BlockFace.UP);
+        Block top = bottom.getRelative(BlockFace.UP);
+        World world = bottom.getWorld();
+        if (top.getY() >= world.getMaxHeight()) {
+            send(player, message("totem-place-no-space"));
+            return;
+        }
+        if (!bottom.isReplaceable() || !top.isReplaceable()) {
+            send(player, message("totem-place-no-space"));
+            return;
+        }
+        if (getConfig().getBoolean("protection.block-place", true)) {
+            ClaimRegion bottomClaim = claimAt(bottom.getLocation());
+            if (bottomClaim != null && bottomClaim.blocks(ClaimFeature.BLOCK_PLACE, player)) {
+                send(player, message("protected"), "claim", bottomClaim.name);
+                return;
+            }
+            ClaimRegion topClaim = claimAt(top.getLocation());
+            if (topClaim != null && topClaim.blocks(ClaimFeature.BLOCK_PLACE, player)) {
+                send(player, message("protected"), "claim", topClaim.name);
+                return;
+            }
+        }
+
+        String totemId = UUID.randomUUID().toString();
+        long placedAt = System.currentTimeMillis();
+        bottom.setType(Material.BEACON, false);
+        top.setType(Material.BEACON, false);
+        markTotemBlock(bottom, totemId, "bottom", player, placedAt);
+        markTotemBlock(top, totemId, "top", player, placedAt);
+        if (player.getGameMode() != GameMode.CREATIVE) {
+            consumeOneTotem(player, event.getHand());
+        }
+        send(player, message("totem-placed"));
+    }
+
+    private void consumeOneTotem(Player player, EquipmentSlot hand) {
+        ItemStack item = hand == EquipmentSlot.OFF_HAND
+                ? player.getInventory().getItemInOffHand()
+                : player.getInventory().getItemInMainHand();
+        if (item.getAmount() <= 1) {
+            if (hand == EquipmentSlot.OFF_HAND) {
+                player.getInventory().setItemInOffHand(null);
+            } else {
+                player.getInventory().setItemInMainHand(null);
+            }
+            return;
+        }
+        item.setAmount(item.getAmount() - 1);
+    }
+
+    private void markTotemBlock(Block block, String totemId, String part, Player owner, long placedAt) {
+        BlockState state = block.getState();
+        if (!(state instanceof TileState tileState)) {
+            return;
+        }
+        PersistentDataContainer data = tileState.getPersistentDataContainer();
+        data.set(totemKey, PersistentDataType.BYTE, (byte) 1);
+        data.set(totemIdKey, PersistentDataType.STRING, totemId);
+        data.set(totemPartKey, PersistentDataType.STRING, part);
+        data.set(totemOwnerUuidKey, PersistentDataType.STRING, owner.getUniqueId().toString());
+        data.set(totemOwnerNameKey, PersistentDataType.STRING, owner.getName());
+        data.set(totemPlacedAtKey, PersistentDataType.LONG, placedAt);
+        tileState.update(true, false);
+    }
+
+    private boolean isClaimTotemBlock(Block block) {
+        if (block == null || block.getType() != Material.BEACON) {
+            return false;
+        }
+        BlockState state = block.getState();
+        return state instanceof TileState tileState
+                && tileState.getPersistentDataContainer().has(totemKey, PersistentDataType.BYTE);
+    }
+
+    private boolean isClaimTotemBottom(Block block) {
+        return isClaimTotemBlock(block) && "bottom".equals(totemPart(block));
+    }
+
+    private String totemPart(Block block) {
+        if (block == null || block.getType() != Material.BEACON || !(block.getState() instanceof TileState tileState)) {
+            return "";
+        }
+        return tileState.getPersistentDataContainer().getOrDefault(totemPartKey, PersistentDataType.STRING, "");
+    }
+
+    private String totemId(Block block) {
+        if (block == null || block.getType() != Material.BEACON || !(block.getState() instanceof TileState tileState)) {
+            return "";
+        }
+        return tileState.getPersistentDataContainer().getOrDefault(totemIdKey, PersistentDataType.STRING, "");
+    }
+
+    private Block totemBottom(Block block) {
+        if (!isClaimTotemBlock(block)) {
+            return block;
+        }
+        if ("top".equals(totemPart(block))) {
+            Block bottom = block.getRelative(BlockFace.DOWN);
+            if (isClaimTotemBlock(bottom) && totemId(block).equals(totemId(bottom))) {
+                return bottom;
+            }
+        }
+        return block;
+    }
+
+    private void collapseTotem(Block block, boolean dropItem) {
+        Block bottom = totemBottom(block);
+        String id = totemId(bottom);
+        Block top = bottom.getRelative(BlockFace.UP);
+        Location dropLocation = bottom.getLocation().add(0.5, 0.5, 0.5);
+        if (isClaimTotemBlock(top) && id.equals(totemId(top))) {
+            top.setType(Material.AIR, false);
+        }
+        if (isClaimTotemBlock(bottom)) {
+            bottom.setType(Material.AIR, false);
+        }
+        if (dropItem) {
+            bottom.getWorld().dropItemNaturally(dropLocation, createClaimTotem());
+        }
+    }
+
+    private void collapseTotemsAffectedBy(List<Block> blocks, boolean dropItem) {
+        Set<String> collapsed = new HashSet<>();
+        for (Block block : List.copyOf(blocks)) {
+            collapseAffectedTotem(block, dropItem, collapsed);
+            collapseAffectedTotem(block.getRelative(BlockFace.UP), dropItem, collapsed);
+        }
+        blocks.removeIf(block -> isClaimTotemBlock(block) || isClaimTotemBlock(block.getRelative(BlockFace.DOWN)));
+    }
+
+    private void collapseAffectedTotem(Block block, boolean dropItem, Set<String> collapsed) {
+        if (!isClaimTotemBlock(block)) {
+            return;
+        }
+        Block bottom = totemBottom(block);
+        String id = totemId(bottom);
+        String key = bottom.getWorld().getName() + ":" + bottom.getX() + ":" + bottom.getY() + ":" + bottom.getZ() + ":" + id;
+        if (collapsed.add(key)) {
+            collapseTotem(bottom, dropItem);
+        }
+    }
+
+    private void scheduleTotemSupportCheck(Block possibleBottom) {
+        if (!isClaimTotemBottom(possibleBottom)) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (isClaimTotemBottom(possibleBottom) && !hasTotemSupport(possibleBottom)) {
+                collapseTotem(possibleBottom, true);
+            }
+        });
+    }
+
+    private boolean hasTotemSupport(Block bottom) {
+        Block support = bottom.getRelative(BlockFace.DOWN);
+        return !support.isEmpty() && !support.isReplaceable();
     }
 
     private boolean isBoundRing(ItemStack item) {
@@ -1732,7 +1994,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if (args.length == 2 && "give".equalsIgnoreCase(args[0])) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
-            return List.of("ring").stream()
+            return List.of("ring", "totem").stream()
                     .filter(value -> value.startsWith(prefix))
                     .toList();
         }
