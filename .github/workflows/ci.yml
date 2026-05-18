@@ -1,0 +1,55 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  go-web:
+    name: go-web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/whitelist_go/go.mod
+          cache-dependency-path: tools/whitelist_go/go.sum
+
+      - name: Test and build
+        working-directory: tools/whitelist_go
+        run: |
+          go test ./...
+          go build -o xicemc-web-go .
+
+  java-plugins:
+    name: java-plugins
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin:
+          - XiceAuditLog
+          - XiceClaim
+          - XiceCommandControl
+          - XiceTextArranger
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build plugin
+        run: mvn -B -f "plugins/${{ matrix.plugin }}/pom.xml" package
