@@ -36,6 +36,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
@@ -424,17 +425,24 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerInteract(PlayerInteractEvent event) {
-        if (event.getItem() != null && isClaimRing(event.getItem())) {
+        if (event.getItem() != null && isClaimRing(event.getItem()) && isRightClick(event.getAction())) {
             event.setCancelled(true);
             openRingMenu(event.getPlayer(), event.getItem(), event.getHand());
+            return;
+        }
+        if (event.isCancelled()) {
             return;
         }
         if (!getConfig().getBoolean("protection.block-interact", true) || event.getClickedBlock() == null) {
             return;
         }
         protect(event.getPlayer(), event.getClickedBlock(), event);
+    }
+
+    private boolean isRightClick(Action action) {
+        return action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -775,7 +783,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private void openCreateRingMenu(Player player, ItemStack ring, EquipmentSlot hand) {
         RingDraft draft = loadDraftFromRing(ring, player);
-        RingSession session = new RingSession(RingMenuMode.CREATE, ring, draft, normalizeHand(hand));
+        RingSession session = new RingSession(RingMenuMode.CREATE, ring, draft, normalizeHand(hand), player.getUniqueId(), player.getName());
         ringSessions.put(player.getUniqueId(), session);
         RingMenu menu = new RingMenu(session);
         Inventory inventory = Bukkit.createInventory(menu, 54, "领地戒指 · 创建领地");
@@ -799,7 +807,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         claim = synchronizeRingName(player, ring, claim);
         writeRingToHand(player, ring, normalizeHand(hand));
-        RingSession session = new RingSession(RingMenuMode.MANAGE, ring, null, normalizeHand(hand));
+        RingSession session = new RingSession(RingMenuMode.MANAGE, ring, null, normalizeHand(hand), player.getUniqueId(), player.getName());
         session.claimId = claim.id;
         ringSessions.put(player.getUniqueId(), session);
         RingMenu menu = new RingMenu(session);
@@ -824,20 +832,55 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         setFieldItem(menu, 14, DraftField.X2, "坐标2 X", draft.x2);
         setFieldItem(menu, 15, DraftField.Y2, "坐标2 Y", draft.y2);
         setFieldItem(menu, 16, DraftField.Z2, "坐标2 Z", draft.z2);
-        setAction(menu, 28, "use-pos1", menuItem(Material.COMPASS, "&a使用当前位置作为坐标1", List.of("&7把当前位置写入第一个角点。")));
-        setAction(menu, 30, "use-pos2", menuItem(Material.COMPASS, "&a使用当前位置作为坐标2", List.of("&7把当前位置写入第二个角点。")));
-        setAction(menu, 37, "adjust:-10", menuItem(Material.REDSTONE, "&c-10", List.of("&7调整当前选中的坐标。")));
+        setAction(menu, 20, "use-pos1", menuItem(Material.COMPASS, "&a使用当前位置作为坐标1", List.of("&7把当前位置写入第一个角点。")));
+        setAction(menu, 24, "use-pos2", menuItem(Material.COMPASS, "&a使用当前位置作为坐标2", List.of("&7把当前位置写入第二个角点。")));
+        setAction(menu, 36, "adjust:-10", menuItem(Material.REDSTONE, "&c-10", List.of("&7调整当前选中的坐标。")));
         setAction(menu, 38, "adjust:-1", menuItem(Material.REDSTONE_TORCH, "&c-1", List.of("&7调整当前选中的坐标。")));
-        setAction(menu, 39, "adjust:1", menuItem(Material.LIME_DYE, "&a+1", List.of("&7调整当前选中的坐标。")));
-        setAction(menu, 40, "adjust:10", menuItem(Material.EMERALD, "&a+10", List.of("&7调整当前选中的坐标。")));
-        setAction(menu, 42, "preview", menuItem(Material.ENDER_EYE, "&e预览边界", List.of("&7显示当前草稿范围。")));
-        setAction(menu, 43, "confirm", menuItem(Material.LIME_CONCRETE, "&a确认创建", List.of("&7使用戒指名称和当前坐标创建领地。")));
-        setAction(menu, 44, "cancel", menuItem(Material.BARRIER, "&c取消", List.of("&7关闭界面，不保存本次改动。")));
+        inventory.setItem(40, createDraftStatusItem(menu));
+        setAction(menu, 42, "adjust:1", menuItem(Material.LIME_DYE, "&a+1", List.of("&7调整当前选中的坐标。")));
+        setAction(menu, 44, "adjust:10", menuItem(Material.EMERALD, "&a+10", List.of("&7调整当前选中的坐标。")));
+        setAction(menu, 48, "confirm", menuItem(Material.LIME_CONCRETE, "&a确认创建", List.of("&7使用戒指名称和当前坐标创建领地。")));
+        setAction(menu, 49, "preview", menuItem(Material.ENDER_EYE, "&e预览并关闭", List.of("&7保存当前草稿，关闭界面并显示范围。")));
+        setAction(menu, 50, "cancel", menuItem(Material.BARRIER, "&c取消", List.of("&7关闭界面，不保存本次改动。")));
     }
 
     private void setFieldItem(RingMenu menu, int slot, DraftField field, String label, int value) {
         Material material = menu.session.selectedField == field ? Material.LIME_STAINED_GLASS_PANE : Material.LIGHT_BLUE_STAINED_GLASS_PANE;
         setAction(menu, slot, "field:" + field.name(), menuItem(material, "&e" + label + "：&f" + value, List.of("&7点击选中后使用下方按钮微调。")));
+    }
+
+    private ItemStack createDraftStatusItem(RingMenu menu) {
+        RingDraft draft = menu.session.draft;
+        ClaimRegion preview = previewClaim(menu.session, ringDisplayName(menu.session.ring));
+        List<String> lore = new ArrayList<>();
+        lore.add("&7世界：&f" + draft.world);
+        lore.add("&7大小：&e" + preview.sizeX() + " x " + preview.sizeY() + " x " + preview.sizeZ());
+        lore.add("&7体积：&e" + preview.volume());
+        List<String> errors = validateClaimShape(preview);
+        if (errors.isEmpty()) {
+            lore.add("&a当前框选合规。");
+        } else {
+            lore.add("&c当前框选不合规：");
+            for (String error : errors) {
+                lore.add("&c" + error);
+            }
+        }
+        if (!menu.session.statusLines.isEmpty()) {
+            lore.add("&8----------------");
+            lore.addAll(menu.session.statusLines);
+        }
+        return menuItem(Material.OAK_SIGN, "&e框选状态", lore);
+    }
+
+    private ClaimRegion previewClaim(RingSession session, String claimName) {
+        RingDraft draft = session.draft;
+        return ClaimRegion.fromSelection(
+                "__preview__",
+                claimName,
+                session.playerUuid,
+                session.playerName,
+                new ClaimPoint(draft.world, draft.x1, draft.y1, draft.z1),
+                new ClaimPoint(draft.world, draft.x2, draft.y2, draft.z2));
     }
 
     private void renderManageRingMenu(RingMenu menu, ClaimRegion claim) {
@@ -884,11 +927,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         RingDraft draft = menu.session.draft;
         if (action.startsWith("field:")) {
             menu.session.selectedField = DraftField.valueOf(action.substring("field:".length()));
+            menu.session.statusLines.clear();
             renderCreateRingMenu(menu);
             return;
         }
         if (action.startsWith("adjust:")) {
             draft.adjust(menu.session.selectedField, Integer.parseInt(action.substring("adjust:".length())));
+            menu.session.statusLines.clear();
             renderCreateRingMenu(menu);
             return;
         }
@@ -904,11 +949,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 draft.y2 = point.y;
                 draft.z2 = point.z;
             }
+            menu.session.statusLines.clear();
             renderCreateRingMenu(menu);
             return;
         }
         if ("preview".equals(action)) {
-            showDraftStatus(player, draft, ringDisplayName(menu.session.ring));
+            saveDraftToRing(menu.session.ring, draft);
+            writeRingToHand(player, menu.session);
+            showDraftStatus(player, menu.session);
+            menu.session.discardOnClose = true;
+            ringSessions.remove(player.getUniqueId());
+            player.closeInventory();
             return;
         }
         if ("confirm".equals(action)) {
@@ -976,17 +1027,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         RingDraft draft = menu.session.draft;
         String claimName = ringDisplayName(menu.session.ring);
         if (!isValidClaimName(claimName)) {
-            send(player, message("invalid-name"));
+            setCreateStatus(menu, List.of("&c领地名称不合规。", "&7仅允许文字、数字、下划线和短横线，长度 1-24。"));
             return;
         }
         if (claimByName(claimName) != null) {
-            send(player, message("duplicate-name"), "claim", claimName);
+            setCreateStatus(menu, List.of("&c已存在同名领地：&f" + claimName));
             return;
         }
         int maxClaims = getConfig().getInt("limits.max-claims-per-player", 3);
         long ownedCount = claims.values().stream().filter(claim -> claim.ownerUuid.equals(player.getUniqueId())).count();
         if (!player.hasPermission("xiceclaim.admin") && ownedCount >= maxClaims) {
-            send(player, message("too-many-claims"), "limit", maxClaims);
+            setCreateStatus(menu, List.of("&c领地数量已达上限：&f" + maxClaims));
             return;
         }
         ClaimRegion claim = ClaimRegion.fromSelection(
@@ -998,7 +1049,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 new ClaimPoint(draft.world, draft.x2, draft.y2, draft.z2));
         List<String> errors = validateClaimShape(claim);
         if (!errors.isEmpty()) {
-            send(player, message("invalid-selection"), "reason", String.join("；", errors));
+            setCreateStatus(menu, errors.stream().map(error -> "&c" + error).toList());
             return;
         }
         claims.put(claim.id, claim);
@@ -1012,21 +1063,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         player.closeInventory();
     }
 
-    private void showDraftStatus(Player player, RingDraft draft, String claimName) {
-        ClaimRegion preview = ClaimRegion.fromSelection(
-                "__preview__",
-                claimName,
-                player.getUniqueId(),
-                player.getName(),
-                new ClaimPoint(draft.world, draft.x1, draft.y1, draft.z1),
-                new ClaimPoint(draft.world, draft.x2, draft.y2, draft.z2));
-        send(player, message("selection-size"), "sizeX", preview.sizeX(), "sizeY", preview.sizeY(), "sizeZ", preview.sizeZ(), "volume", preview.volume());
-        List<String> errors = validateClaimShape(preview);
-        if (errors.isEmpty()) {
-            send(player, message("selection-valid"));
-        } else {
-            send(player, message("selection-invalid"), "reason", String.join("；", errors));
-        }
+    private void setCreateStatus(RingMenu menu, List<String> statusLines) {
+        menu.session.statusLines.clear();
+        menu.session.statusLines.addAll(statusLines);
+        renderCreateRingMenu(menu);
+    }
+
+    private void showDraftStatus(Player player, RingSession session) {
+        ClaimRegion preview = previewClaim(session, ringDisplayName(session.ring));
         showClaimParticles(player, preview);
     }
 
@@ -1372,15 +1416,20 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private final ItemStack ring;
         private final RingDraft draft;
         private final EquipmentSlot hand;
+        private final UUID playerUuid;
+        private final String playerName;
+        private final List<String> statusLines = new ArrayList<>();
         private DraftField selectedField = DraftField.X1;
         private String claimId = "";
         private boolean discardOnClose;
 
-        private RingSession(RingMenuMode mode, ItemStack ring, RingDraft draft, EquipmentSlot hand) {
+        private RingSession(RingMenuMode mode, ItemStack ring, RingDraft draft, EquipmentSlot hand, UUID playerUuid, String playerName) {
             this.mode = mode;
             this.ring = ring;
             this.draft = draft;
             this.hand = hand;
+            this.playerUuid = playerUuid;
+            this.playerName = playerName;
         }
     }
 
