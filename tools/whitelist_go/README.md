@@ -20,6 +20,10 @@
 6. 会话 Cookie `xicemc_session`。
 7. 图标与资源包静态文件。
 8. 未登录访问 `/docs` 返回公开首页。
+9. 登录后首页 `/home` 的个人资料展示。
+10. 修改密码 `/password`。
+11. 编辑简介 `/profile`。
+12. 首页领地列表读取 `XiceClaim/claims.yml`。
 
 ## 暂未迁移
 
@@ -33,7 +37,6 @@
 6. `/blacklist`
 7. `/audit`
 8. `/docs/edit`
-9. 个人简介和密码修改 POST 流程
 
 ## 本地运行
 

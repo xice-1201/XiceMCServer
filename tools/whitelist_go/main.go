@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -97,6 +98,7 @@ type webPlayer struct {
 	PasswordHash string
 	Role         string
 	ProfileBio   string
+	RegisteredAt int64
 }
 
 type verificationCode struct {
@@ -117,6 +119,31 @@ type pageData struct {
 	LoginOpen    bool
 	RegisterOpen bool
 	Profile      webPlayer
+	Claims       claimGroups
+}
+
+type claimGroups struct {
+	Owned   []claim
+	Trusted []claim
+}
+
+type claim struct {
+	ID         string
+	Name       string
+	OwnerUUID  string
+	OwnerName  string
+	World      string
+	MinX       int
+	MaxX       int
+	MinY       int
+	MaxY       int
+	MinZ       int
+	MaxZ       int
+	SizeX      int
+	SizeY      int
+	SizeZ      int
+	Members    []string
+	MemberName map[string]string
 }
 
 type publicData struct {
@@ -224,6 +251,9 @@ func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /register", a.handleRegister)
 	mux.HandleFunc("POST /logout", a.handleLogout)
 	mux.HandleFunc("GET /home", a.requireUser(a.handleHome))
+	mux.HandleFunc("GET /password", a.requireUser(a.handlePasswordPage))
+	mux.HandleFunc("POST /password", a.requireUser(a.handlePasswordUpdate))
+	mux.HandleFunc("POST /profile", a.requireUser(a.handleProfileUpdate))
 	mux.HandleFunc("GET /docs", a.requireUser(a.handleDocs))
 	mux.HandleFunc("GET /status", a.requireUser(a.handleMigrationPlaceholder("服务器状态")))
 	mux.HandleFunc("GET /players", a.requireUser(a.handleMigrationPlaceholder("玩家列表")))
@@ -266,12 +296,102 @@ func (a *app) handleRegisterPage(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) handleHome(w http.ResponseWriter, r *http.Request, user *userSession) {
 	profile, _ := a.webPlayerByUUID(r.Context(), user.UUID)
+	claims := a.playerClaims(user)
 	a.render(w, http.StatusOK, "home", pageData{
 		Title:   "首页",
 		User:    user,
 		Active:  "home",
 		Public:  a.publicData(),
 		Profile: profile,
+		Claims:  claims,
+	})
+}
+
+func (a *app) handlePasswordPage(w http.ResponseWriter, r *http.Request, user *userSession) {
+	a.render(w, http.StatusOK, "password", pageData{
+		Title:  "修改密码",
+		User:   user,
+		Active: "home",
+		Public: a.publicData(),
+	})
+}
+
+func (a *app) handlePasswordUpdate(w http.ResponseWriter, r *http.Request, user *userSession) {
+	if err := r.ParseForm(); err != nil {
+		a.renderPassword(w, user, "请求格式不正确。", http.StatusBadRequest)
+		return
+	}
+	oldPassword := strings.TrimSpace(r.FormValue("old_password"))
+	newPassword := strings.TrimSpace(r.FormValue("new_password"))
+	confirmPassword := strings.TrimSpace(r.FormValue("confirm_password"))
+	if !passwordRE.MatchString(oldPassword) {
+		a.renderPassword(w, user, "原密码格式不正确。", http.StatusBadRequest)
+		return
+	}
+	if !passwordRE.MatchString(newPassword) {
+		a.renderPassword(w, user, "新密码长度不得低于 6 位，且只能包含英文、数字和下划线。", http.StatusBadRequest)
+		return
+	}
+	if newPassword != confirmPassword {
+		a.renderPassword(w, user, "两次输入的新密码不一致。", http.StatusBadRequest)
+		return
+	}
+	player, err := a.webPlayerByUUID(r.Context(), user.UUID)
+	if err != nil {
+		a.renderPassword(w, user, "密码服务暂时不可用。", http.StatusInternalServerError)
+		return
+	}
+	if !hmac.Equal([]byte(player.PasswordHash), []byte(passwordHash(oldPassword))) {
+		a.renderPassword(w, user, "原密码不正确。", http.StatusForbidden)
+		return
+	}
+	if err := a.updatePlayerPassword(r.Context(), user.UUID, newPassword); err != nil {
+		a.renderPassword(w, user, "密码更新失败。", http.StatusInternalServerError)
+		return
+	}
+	a.renderPassword(w, user, "密码已更新。", http.StatusOK)
+}
+
+func (a *app) renderPassword(w http.ResponseWriter, user *userSession, message string, status int) {
+	a.render(w, status, "password", pageData{
+		Title:   "修改密码",
+		User:    user,
+		Active:  "home",
+		Public:  a.publicData(),
+		Message: message,
+	})
+}
+
+func (a *app) handleProfileUpdate(w http.ResponseWriter, r *http.Request, user *userSession) {
+	if err := r.ParseForm(); err != nil {
+		a.renderHomeMessage(w, r, user, "请求格式不正确。", http.StatusBadRequest)
+		return
+	}
+	value := strings.TrimSpace(r.FormValue("profile_bio"))
+	if value == "" {
+		value = defaultProfileBio
+	}
+	if len([]rune(value)) > 120 {
+		a.renderHomeMessage(w, r, user, "个人简介不能超过 120 个字符。", http.StatusBadRequest)
+		return
+	}
+	if err := a.updateProfileBio(r.Context(), user.UUID, value); err != nil {
+		a.renderHomeMessage(w, r, user, "简介更新失败。", http.StatusInternalServerError)
+		return
+	}
+	a.renderHomeMessage(w, r, user, "简介已更新。", http.StatusOK)
+}
+
+func (a *app) renderHomeMessage(w http.ResponseWriter, r *http.Request, user *userSession, message string, status int) {
+	profile, _ := a.webPlayerByUUID(r.Context(), user.UUID)
+	a.render(w, status, "home", pageData{
+		Title:   "首页",
+		User:    user,
+		Active:  "home",
+		Public:  a.publicData(),
+		Profile: profile,
+		Claims:  a.playerClaims(user),
+		Message: message,
 	})
 }
 
@@ -520,6 +640,13 @@ func canonicalUUID(value string) string {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", compact[0:8], compact[8:12], compact[12:16], compact[16:20], compact[20:32])
 }
 
+func formatTimeMillis(value int64) string {
+	if value <= 0 {
+		return "暂无记录"
+	}
+	return time.UnixMilli(value).Local().Format("2006-01-02 15:04:05")
+}
+
 func (a *app) readWhitelistEntries() ([]whitelistEntry, error) {
 	data, err := os.ReadFile(a.cfg.WhitelistPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -669,6 +796,175 @@ func (a *app) consumeVerificationCode(username, code string) error {
 	return os.Rename(tmp, a.cfg.VerifyCodesPath)
 }
 
+func (a *app) playerClaims(user *userSession) claimGroups {
+	playerUUID := strings.ToLower(canonicalUUID(user.UUID))
+	var groups claimGroups
+	for _, current := range a.readClaims() {
+		ownerUUID := strings.ToLower(canonicalUUID(current.OwnerUUID))
+		if ownerUUID == playerUUID {
+			groups.Owned = append(groups.Owned, current)
+			continue
+		}
+		for _, member := range current.Members {
+			if strings.ToLower(canonicalUUID(member)) == playerUUID {
+				groups.Trusted = append(groups.Trusted, current)
+				break
+			}
+		}
+	}
+	sortClaims(groups.Owned)
+	sortClaims(groups.Trusted)
+	return groups
+}
+
+func sortClaims(claims []claim) {
+	sort.SliceStable(claims, func(i, j int) bool {
+		if strings.EqualFold(claims[i].OwnerName, claims[j].OwnerName) {
+			return strings.ToLower(claims[i].Name) < strings.ToLower(claims[j].Name)
+		}
+		return strings.ToLower(claims[i].OwnerName) < strings.ToLower(claims[j].OwnerName)
+	})
+}
+
+func (a *app) readClaims() []claim {
+	data, err := os.ReadFile(a.cfg.ClaimsPath)
+	if err != nil {
+		return nil
+	}
+	return parseClaimsYAML(string(data))
+}
+
+func parseClaimsYAML(text string) []claim {
+	var claims []claim
+	var current *claim
+	currentList := ""
+	currentMap := ""
+	for _, raw := range strings.Split(text, "\n") {
+		if strings.TrimSpace(raw) == "" || strings.HasPrefix(strings.TrimLeft(raw, " "), "#") {
+			continue
+		}
+		indent := len(raw) - len(strings.TrimLeft(raw, " "))
+		line := strings.TrimSpace(raw)
+		if indent == 0 {
+			current = nil
+			currentList = ""
+			currentMap = ""
+			continue
+		}
+		if indent == 2 && strings.HasSuffix(line, ":") {
+			if current != nil && current.Name != "" {
+				normalizeClaim(current)
+				claims = append(claims, *current)
+			}
+			current = &claim{ID: strings.TrimSuffix(line, ":"), MemberName: map[string]string{}}
+			currentList = ""
+			currentMap = ""
+			continue
+		}
+		if current == nil {
+			continue
+		}
+		if strings.HasPrefix(line, "- ") && currentList == "members" {
+			current.Members = append(current.Members, yamlScalar(strings.TrimPrefix(line, "- ")))
+			continue
+		}
+		if !strings.Contains(line, ":") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if indent == 4 {
+			currentMap = ""
+			currentList = ""
+			switch key {
+			case "members":
+				currentList = "members"
+				if value != "" && value != "[]" {
+					for _, item := range strings.Split(strings.Trim(value, "[]"), ",") {
+						item = strings.TrimSpace(item)
+						if item != "" {
+							current.Members = append(current.Members, yamlScalar(item))
+						}
+					}
+				}
+			case "member-names":
+				currentMap = "member-names"
+			default:
+				setClaimScalar(current, key, yamlScalar(value))
+			}
+			continue
+		}
+		if indent >= 6 && currentMap == "member-names" {
+			current.MemberName[canonicalUUID(key)] = yamlScalar(value)
+		}
+	}
+	if current != nil && current.Name != "" {
+		normalizeClaim(current)
+		claims = append(claims, *current)
+	}
+	return claims
+}
+
+func setClaimScalar(c *claim, key, value string) {
+	switch strings.ReplaceAll(key, "-", "_") {
+	case "name":
+		c.Name = value
+	case "owner_uuid":
+		c.OwnerUUID = value
+	case "owner_name":
+		c.OwnerName = value
+	case "world":
+		c.World = value
+	case "min_x":
+		c.MinX = atoi(value)
+	case "max_x":
+		c.MaxX = atoi(value)
+	case "min_y":
+		c.MinY = atoi(value)
+	case "max_y":
+		c.MaxY = atoi(value)
+	case "min_z":
+		c.MinZ = atoi(value)
+	case "max_z":
+		c.MaxZ = atoi(value)
+	}
+}
+
+func normalizeClaim(c *claim) {
+	if c.OwnerName == "" {
+		c.OwnerName = "unknown"
+	}
+	if c.World == "" {
+		c.World = "main"
+	}
+	c.OwnerUUID = canonicalUUID(c.OwnerUUID)
+	c.SizeX = c.MaxX - c.MinX + 1
+	c.SizeY = c.MaxY - c.MinY + 1
+	c.SizeZ = c.MaxZ - c.MinZ + 1
+	if c.MemberName == nil {
+		c.MemberName = map[string]string{}
+	}
+}
+
+func yamlScalar(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) >= 2 {
+		first := value[0]
+		last := value[len(value)-1]
+		if (first == '\'' || first == '"') && last == first {
+			return value[1 : len(value)-1]
+		}
+	}
+	return value
+}
+
+func atoi(value string) int {
+	var result int
+	_, _ = fmt.Sscanf(value, "%d", &result)
+	return result
+}
+
 func (a *app) initWebTables(ctx context.Context) error {
 	if a.db == nil {
 		return nil
@@ -732,14 +1028,58 @@ func (a *app) webPlayerByUUID(ctx context.Context, uuid string) (webPlayer, erro
 	}
 	row := a.db.QueryRowContext(
 		ctx,
-		`SELECT player_uuid, player_name, password_hash, role, profile_bio FROM web_players WHERE player_uuid = $1`,
+		`SELECT player_uuid, player_name, password_hash, role, profile_bio, registered_at FROM web_players WHERE player_uuid = $1`,
 		canonicalUUID(uuid),
 	)
 	var player webPlayer
-	if err := row.Scan(&player.UUID, &player.Name, &player.PasswordHash, &player.Role, &player.ProfileBio); err != nil {
+	if err := row.Scan(&player.UUID, &player.Name, &player.PasswordHash, &player.Role, &player.ProfileBio, &player.RegisteredAt); err != nil {
 		return webPlayer{}, err
 	}
 	return player, nil
+}
+
+func (a *app) updatePlayerPassword(ctx context.Context, uuid string, newPassword string) error {
+	if a.db == nil {
+		return errors.New("database unavailable")
+	}
+	result, err := a.db.ExecContext(
+		ctx,
+		`UPDATE web_players SET password_hash = $1, updated_at = $2 WHERE player_uuid = $3`,
+		passwordHash(newPassword), time.Now().UnixMilli(), canonicalUUID(uuid),
+	)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return errors.New("player not found")
+	}
+	return nil
+}
+
+func (a *app) updateProfileBio(ctx context.Context, uuid string, bio string) error {
+	if a.db == nil {
+		return errors.New("database unavailable")
+	}
+	result, err := a.db.ExecContext(
+		ctx,
+		`UPDATE web_players SET profile_bio = $1, updated_at = $2 WHERE player_uuid = $3`,
+		bio, time.Now().UnixMilli(), canonicalUUID(uuid),
+	)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return errors.New("player not found")
+	}
+	return nil
 }
 
 func (a *app) rcon(command string) (string, error) {
@@ -817,6 +1157,7 @@ func mustTemplates() *template.Template {
 				return "player"
 			}
 		},
+		"formatTimeMillis": formatTimeMillis,
 	}
 	return template.Must(template.New("root").Funcs(funcs).Parse(templatesHTML))
 }
@@ -1100,15 +1441,86 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 {{define "home"}}{{template "pageStart" .}}{{template "homeContent" .}}{{template "pageEnd" .}}{{end}}
 {{define "homeContent"}}
 <h1>首页</h1>
+{{if .Message}}<p class="message">{{.Message}}</p>{{end}}
 <section class="identity-card">
   <div><span class="identity-role {{roleClass .User.Role}}">{{.User.Role}}</span></div>
   <div>
     <h2>{{.User.Name}}</h2>
     <p>{{.User.UUID}}</p>
     <p>{{if .Profile.ProfileBio}}{{.Profile.ProfileBio}}{{else}}一名普通的Minecraft玩家{{end}}</p>
+    <p>注册时间：{{formatTimeMillis .Profile.RegisteredAt}}</p>
   </div>
 </section>
-<section class="panel"><h2>Go 迁移状态</h2><p>当前 Go 版本已接管公开首页、登录会话、注册入口和文档访问控制的第一阶段实现；完整玩家服务仍在迁移中。</p></section>
+<div class="actions">
+  <a class="button secondary" href="/password">修改密码</a>
+  <button class="secondary" type="button" id="open-profile-dialog">编辑简介</button>
+</div>
+<section class="panel">
+  <h2>领地列表</h2>
+  <div class="article-grid">
+    <div>
+      <h3>我拥有的领地</h3>
+      {{if .Claims.Owned}}{{range .Claims.Owned}}{{template "claimCard" .}}{{end}}{{else}}<p>暂无自己创建的领地。</p>{{end}}
+    </div>
+    <div>
+      <h3>授权给我的领地</h3>
+      {{if .Claims.Trusted}}{{range .Claims.Trusted}}{{template "claimCard" .}}{{end}}{{else}}<p>暂无被授权的领地。</p>{{end}}
+    </div>
+  </div>
+</section>
+<dialog id="profile-dialog">
+  <div class="panel">
+    <h2>编辑简介</h2>
+    <form method="post" action="/profile">
+      <label for="profile_bio">个人简介</label>
+      <textarea id="profile_bio" name="profile_bio" maxlength="120">{{.Profile.ProfileBio}}</textarea>
+      <p class="field-hint">最多 120 个字符。留空保存时会恢复默认简介。</p>
+      <div class="actions">
+        <button class="secondary" type="button" id="close-profile-dialog">取消</button>
+        <button type="submit">保存简介</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+<script>
+  const profileDialog = document.getElementById("profile-dialog");
+  document.getElementById("open-profile-dialog").addEventListener("click", () => {
+    if (typeof profileDialog.showModal === "function") profileDialog.showModal();
+    else profileDialog.setAttribute("open", "");
+  });
+  document.getElementById("close-profile-dialog").addEventListener("click", () => profileDialog.close());
+</script>
+<section class="panel"><h2>Go 迁移状态</h2><p>当前 Go 版本已接管公开首页、登录会话、注册入口、个人首页、修改密码、编辑简介、领地列表和文档访问控制；复杂后台页面仍在迁移中。</p></section>
+{{end}}
+
+{{define "claimCard"}}
+<article class="article-card">
+  <h3>{{.Name}}</h3>
+  <p>所有者：{{.OwnerName}}</p>
+  <p>世界：{{.World}}</p>
+  <p>坐标：{{.MinX}},{{.MinY}},{{.MinZ}} 到 {{.MaxX}},{{.MaxY}},{{.MaxZ}}</p>
+  <p>大小：{{.SizeX}} x {{.SizeY}} x {{.SizeZ}}</p>
+</article>
+{{end}}
+
+{{define "password"}}{{template "pageStart" .}}{{template "passwordContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "passwordContent"}}
+<h1>修改密码</h1>
+<section class="panel">
+  {{if .Message}}<p class="message">{{.Message}}</p>{{end}}
+  <form method="post" action="/password">
+    <label for="old_password">原密码</label>
+    <input id="old_password" name="old_password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
+    <label for="new_password">新密码</label>
+    <input id="new_password" name="new_password" type="password" autocomplete="new-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
+    <label for="confirm_password">再次输入新密码</label>
+    <input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
+    <div class="actions">
+      <button type="submit">保存密码</button>
+      <a class="button secondary" href="/home">返回首页</a>
+    </div>
+  </form>
+</section>
 {{end}}
 
 {{define "docs"}}{{template "pageStart" .}}{{template "docsContent" .}}{{template "pageEnd" .}}{{end}}

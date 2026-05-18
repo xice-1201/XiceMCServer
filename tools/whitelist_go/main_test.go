@@ -78,6 +78,41 @@ func TestVerificationCodeConsume(t *testing.T) {
 	}
 }
 
+func TestParseClaimsYAML(t *testing.T) {
+	text := `
+claims:
+  home:
+    name: Home
+    owner-uuid: 12345678-90ab-cdef-1234-567890abcdef
+    owner-name: ExamplePlayer
+    world: main
+    min-x: 1
+    min-y: 2
+    min-z: 3
+    max-x: 5
+    max-y: 6
+    max-z: 7
+    members:
+      - 12345678-90ab-cdef-1234-567890abcdee
+    member-names:
+      12345678-90ab-cdef-1234-567890abcdee: Other
+`
+	claims := parseClaimsYAML(text)
+	if len(claims) != 1 {
+		t.Fatalf("len(claims) = %d, want 1", len(claims))
+	}
+	claim := claims[0]
+	if claim.Name != "Home" || claim.OwnerName != "ExamplePlayer" || claim.World != "main" {
+		t.Fatalf("unexpected claim: %#v", claim)
+	}
+	if claim.SizeX != 5 || claim.SizeY != 5 || claim.SizeZ != 5 {
+		t.Fatalf("unexpected size: %#v", claim)
+	}
+	if len(claim.Members) != 1 || claim.MemberName["12345678-90ab-cdef-1234-567890abcdee"] != "Other" {
+		t.Fatalf("unexpected members: %#v", claim)
+	}
+}
+
 func replaceLast(value, old string, newValue string) string {
 	index := -1
 	for i := 0; i+len(old) <= len(value); i++ {
