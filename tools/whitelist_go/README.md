@@ -24,19 +24,19 @@
 10. 修改密码 `/password`。
 11. 编辑简介 `/profile`。
 12. 首页领地列表读取 `XiceClaim/claims.yml`。
+13. 服务器状态 `/status`。
 
 ## 暂未迁移
 
 以下页面已有路由占位，但不能替换线上 Python 服务：
 
-1. `/status`
-2. `/players`
-3. `/permissions`
-4. `/report`
-5. `/reports`
-6. `/blacklist`
-7. `/audit`
-8. `/docs/edit`
+1. `/players`
+2. `/permissions`
+3. `/report`
+4. `/reports`
+5. `/blacklist`
+6. `/audit`
+7. `/docs/edit`
 
 ## 本地运行
 

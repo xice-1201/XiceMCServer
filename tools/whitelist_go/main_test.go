@@ -113,6 +113,35 @@ claims:
 	}
 }
 
+func TestParseOnlinePlayerSummary(t *testing.T) {
+	metric := parseOnlinePlayerSummary("There are 3 of a max of 20 players online: ExamplePlayer, Other")
+	if metric.Value != "3 / 20 (15.0%)" {
+		t.Fatalf("metric.Value = %q", metric.Value)
+	}
+	if metric.Level != "low" {
+		t.Fatalf("metric.Level = %q", metric.Level)
+	}
+}
+
+func TestFormatBytes(t *testing.T) {
+	cases := map[int64]string{
+		12:         "12 B",
+		1536:       "1.5 KB",
+		1073741824: "1.0 GB",
+	}
+	for input, want := range cases {
+		if got := formatBytes(input); got != want {
+			t.Fatalf("formatBytes(%d) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestTemplatesParse(t *testing.T) {
+	if mustTemplates() == nil {
+		t.Fatal("mustTemplates() = nil")
+	}
+}
+
 func replaceLast(value, old string, newValue string) string {
 	index := -1
 	for i := 0; i+len(old) <= len(value); i++ {

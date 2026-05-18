@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -41,8 +42,9 @@ const (
 )
 
 var (
-	usernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{3,16}$`)
-	passwordRE = regexp.MustCompile(`^[A-Za-z0-9_]{6,64}$`)
+	usernameRE   = regexp.MustCompile(`^[A-Za-z0-9_]{3,16}$`)
+	passwordRE   = regexp.MustCompile(`^[A-Za-z0-9_]{6,64}$`)
+	onlineListRE = regexp.MustCompile(`There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online`)
 )
 
 type config struct {
@@ -52,9 +54,12 @@ type config struct {
 	RconPort                string
 	RconPassword            string
 	RuntimeDir              string
+	BackupDir               string
 	WhitelistPath           string
 	VerifyCodesPath         string
 	ClaimsPath              string
+	ServerLogPath           string
+	ServiceName             string
 	WebIconPath             string
 	WebFaviconPath          string
 	ResourcePackPath        string
@@ -120,6 +125,7 @@ type pageData struct {
 	RegisterOpen bool
 	Profile      webPlayer
 	Claims       claimGroups
+	Status       serverStatus
 }
 
 type claimGroups struct {
@@ -155,6 +161,36 @@ type publicData struct {
 	PublicSecurityRecordURL string
 }
 
+type serverStatus struct {
+	ServerState   statusState
+	OnlinePlayers statusMetric
+	Disk          statusMetric
+	Memory        statusMetric
+	Backups       []backupFile
+	LogErrors     []string
+	LogErrorCount int
+	LogScanLines  int
+}
+
+type statusState struct {
+	Label  string
+	Class  string
+	Detail string
+}
+
+type statusMetric struct {
+	Value   string
+	Detail  string
+	Percent float64
+	Level   string
+}
+
+type backupFile struct {
+	Name  string
+	Size  string
+	MTime string
+}
+
 func main() {
 	cfg := loadConfig()
 	db, err := openDB(cfg)
@@ -188,9 +224,12 @@ func loadConfig() config {
 		RconPort:                env("XICEMC_RCON_PORT", "25575"),
 		RconPassword:            rconPassword,
 		RuntimeDir:              runtimeDir,
+		BackupDir:               env("XICEMC_BACKUP_DIR", "/opt/xicemc/backups"),
 		WhitelistPath:           env("XICEMC_WHITELIST_PATH", filepath.Join(runtimeDir, "whitelist.json")),
 		VerifyCodesPath:         env("XICEMC_VERIFY_CODES_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "verification-codes.tsv")),
 		ClaimsPath:              env("XICEMC_CLAIMS_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "claims.yml")),
+		ServerLogPath:           env("XICEMC_SERVER_LOG_PATH", filepath.Join(runtimeDir, "logs", "latest.log")),
+		ServiceName:             env("XICEMC_SERVICE_NAME", "xicemc.service"),
 		WebIconPath:             env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
 		WebFaviconPath:          env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
 		ResourcePackPath:        env("XICEMC_RESOURCE_PACK_PATH", filepath.Join(repoRoot, "server", "resourcepacks", "xiceclaim.zip")),
@@ -255,7 +294,7 @@ func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /password", a.requireUser(a.handlePasswordUpdate))
 	mux.HandleFunc("POST /profile", a.requireUser(a.handleProfileUpdate))
 	mux.HandleFunc("GET /docs", a.requireUser(a.handleDocs))
-	mux.HandleFunc("GET /status", a.requireUser(a.handleMigrationPlaceholder("服务器状态")))
+	mux.HandleFunc("GET /status", a.requireUser(a.handleStatus))
 	mux.HandleFunc("GET /players", a.requireUser(a.handleMigrationPlaceholder("玩家列表")))
 	mux.HandleFunc("GET /audit", a.requireUser(a.handleMigrationPlaceholder("操作查询")))
 	mux.HandleFunc("GET /report", a.requireUser(a.handleMigrationPlaceholder("举报")))
@@ -392,6 +431,16 @@ func (a *app) renderHomeMessage(w http.ResponseWriter, r *http.Request, user *us
 		Profile: profile,
 		Claims:  a.playerClaims(user),
 		Message: message,
+	})
+}
+
+func (a *app) handleStatus(w http.ResponseWriter, r *http.Request, user *userSession) {
+	a.render(w, http.StatusOK, "status", pageData{
+		Title:  "服务器状态",
+		User:   user,
+		Active: "status",
+		Public: a.publicData(),
+		Status: a.loadServerStatus(r.Context()),
 	})
 }
 
@@ -796,6 +845,259 @@ func (a *app) consumeVerificationCode(username, code string) error {
 	return os.Rename(tmp, a.cfg.VerifyCodesPath)
 }
 
+func (a *app) loadServerStatus(ctx context.Context) serverStatus {
+	const logScanLines = 500
+	errors := logErrorLines(a.cfg.ServerLogPath, logScanLines)
+	if len(errors) > 10 {
+		errors = errors[len(errors)-10:]
+	}
+	return serverStatus{
+		ServerState:   a.serverState(ctx),
+		OnlinePlayers: a.onlinePlayerSummary(),
+		Disk:          diskSummary(a.cfg.RuntimeDir),
+		Memory:        memorySummary(),
+		Backups:       backupFiles(a.cfg.BackupDir, 20),
+		LogErrors:     errors,
+		LogErrorCount: len(logErrorLines(a.cfg.ServerLogPath, logScanLines)),
+		LogScanLines:  logScanLines,
+	}
+}
+
+func (a *app) serverState(ctx context.Context) statusState {
+	result := runCommand(ctx, 3*time.Second, "systemctl", "is-active", a.cfg.ServiceName)
+	if result.ok {
+		state := strings.TrimSpace(result.stdout)
+		switch state {
+		case "active":
+			return statusState{Label: "运行中", Class: "state-running", Detail: a.cfg.ServiceName}
+		case "activating", "reloading":
+			return statusState{Label: "启动中", Class: "state-warning", Detail: state}
+		case "inactive", "failed", "deactivating":
+			return statusState{Label: "未运行", Class: "state-stopped", Detail: state}
+		default:
+			if state == "" {
+				state = "未知"
+			}
+			return statusState{Label: state, Class: "state-unknown", Detail: a.cfg.ServiceName}
+		}
+	}
+	if _, err := a.rcon("list"); err == nil {
+		return statusState{Label: "运行中", Class: "state-running", Detail: "RCON 可连接"}
+	}
+	return statusState{Label: "无法连接", Class: "state-stopped", Detail: "systemd 与 RCON 均不可用"}
+}
+
+func (a *app) onlinePlayerSummary() statusMetric {
+	output, err := a.rcon("list")
+	if err != nil {
+		return metricUnknown("无法读取", err.Error())
+	}
+	return parseOnlinePlayerSummary(output)
+}
+
+func parseOnlinePlayerSummary(output string) statusMetric {
+	match := onlineListRE.FindStringSubmatch(output)
+	if match == nil {
+		if output == "" {
+			output = "RCON 未返回玩家列表"
+		}
+		return metricUnknown("无法解析在线人数", output)
+	}
+	current := atoi(match[1])
+	maximum := atoi(match[2])
+	percent := 0.0
+	if maximum > 0 {
+		percent = float64(current) / float64(maximum) * 100
+	}
+	return statusMetric{
+		Value:   fmt.Sprintf("%d / %d (%.1f%%)", current, maximum, percent),
+		Detail:  "当前在线 / 最大人数",
+		Percent: percent,
+		Level:   usageLevel(percent),
+	}
+}
+
+type commandResult struct {
+	ok     bool
+	stdout string
+	stderr string
+}
+
+func runCommand(ctx context.Context, timeout time.Duration, name string, args ...string) commandResult {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	output, err := cmd.Output()
+	if err == nil {
+		return commandResult{ok: true, stdout: string(output)}
+	}
+	detail := err.Error()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		detail = string(exitErr.Stderr)
+	}
+	return commandResult{ok: false, stderr: strings.TrimSpace(detail)}
+}
+
+func diskSummary(path string) statusMetric {
+	if path == "" {
+		path = "/"
+	}
+	if _, err := os.Stat(path); err != nil {
+		path = "/"
+	}
+	result := runCommand(context.Background(), 3*time.Second, "df", "-Pk", path)
+	if !result.ok {
+		return metricUnknown("无法读取", result.stderr)
+	}
+	lines := strings.Fields(result.stdout)
+	if len(lines) < 12 {
+		return metricUnknown("无法解析磁盘空间", result.stdout)
+	}
+	total := int64(atoi(lines[len(lines)-5])) * 1024
+	used := int64(atoi(lines[len(lines)-4])) * 1024
+	percent := 0.0
+	if total > 0 {
+		percent = float64(used) / float64(total) * 100
+	}
+	return statusMetric{
+		Value:   fmt.Sprintf("%s / %s (%.1f%%)", formatBytes(used), formatBytes(total), percent),
+		Detail:  "已用 / 总量",
+		Percent: percent,
+		Level:   usageLevel(percent),
+	}
+}
+
+func memorySummary() statusMetric {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return metricUnknown("无法读取", "当前系统不支持 /proc/meminfo")
+	}
+	meminfo := map[string]int64{}
+	for _, line := range strings.Split(string(data), "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		fields := strings.Fields(parts[1])
+		if len(fields) == 0 {
+			continue
+		}
+		meminfo[parts[0]] = int64(atoi(fields[0])) * 1024
+	}
+	total := meminfo["MemTotal"]
+	available := meminfo["MemAvailable"]
+	used := total - available
+	percent := 0.0
+	if total > 0 {
+		percent = float64(used) / float64(total) * 100
+	}
+	return statusMetric{
+		Value:   fmt.Sprintf("%s / %s (%.1f%%)", formatBytes(used), formatBytes(total), percent),
+		Detail:  "已用 / 总量",
+		Percent: percent,
+		Level:   usageLevel(percent),
+	}
+}
+
+func usageLevel(percent float64) string {
+	switch {
+	case percent < 50:
+		return "low"
+	case percent < 75:
+		return "medium"
+	case percent < 90:
+		return "high"
+	default:
+		return "critical"
+	}
+}
+
+func metricUnknown(value, detail string) statusMetric {
+	return statusMetric{Value: value, Detail: detail, Level: "unknown"}
+}
+
+func backupFiles(dir string, limit int) []backupFile {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	files := make([]backupFile, 0, len(entries))
+	type backupEntry struct {
+		info backupFile
+		time time.Time
+	}
+	raw := []backupEntry{}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tar.gz") {
+			continue
+		}
+		stat, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		raw = append(raw, backupEntry{
+			info: backupFile{
+				Name:  entry.Name(),
+				Size:  formatBytes(stat.Size()),
+				MTime: stat.ModTime().Local().Format("2006-01-02 15:04:05"),
+			},
+			time: stat.ModTime(),
+		})
+	}
+	sort.SliceStable(raw, func(i, j int) bool {
+		return raw[i].time.After(raw[j].time)
+	})
+	for i, item := range raw {
+		if limit > 0 && i >= limit {
+			break
+		}
+		files = append(files, item.info)
+	}
+	return files
+}
+
+func logErrorLines(path string, scanLines int) []string {
+	lines := tailLines(path, scanLines)
+	matched := []string{}
+	for _, line := range lines {
+		upper := strings.ToUpper(line)
+		if strings.Contains(upper, "ERROR") || strings.Contains(upper, "EXCEPTION") || strings.Contains(upper, "SEVERE") {
+			matched = append(matched, line)
+		}
+	}
+	return matched
+}
+
+func tailLines(path string, limit int) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if limit > 0 && len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	return lines
+}
+
+func formatBytes(value int64) string {
+	units := []string{"B", "KB", "MB", "GB", "TB"}
+	current := float64(value)
+	for i, unit := range units {
+		if current < 1024 || i == len(units)-1 {
+			if unit == "B" {
+				return fmt.Sprintf("%d B", value)
+			}
+			return fmt.Sprintf("%.1f %s", current, unit)
+		}
+		current /= 1024
+	}
+	return "0 B"
+}
+
 func (a *app) playerClaims(user *userSession) claimGroups {
 	playerUUID := strings.ToLower(canonicalUUID(user.UUID))
 	var groups claimGroups
@@ -1158,6 +1460,16 @@ func mustTemplates() *template.Template {
 			}
 		},
 		"formatTimeMillis": formatTimeMillis,
+		"dict": func(values ...any) map[string]any {
+			result := map[string]any{}
+			for i := 0; i+1 < len(values); i += 2 {
+				key, ok := values[i].(string)
+				if ok {
+					result[key] = values[i+1]
+				}
+			}
+			return result
+		},
 	}
 	return template.Must(template.New("root").Funcs(funcs).Parse(templatesHTML))
 }
@@ -1316,6 +1628,34 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .article-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
     .article-card,.panel { border:1px solid var(--line); border-radius:8px; background:#fff; padding:18px; }
     .panel { padding:20px; margin-bottom:18px; }
+    .status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+    .status-card { min-width:0; padding:18px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    .label { color:var(--muted); font-size:13px; margin-bottom:8px; }
+    .status-value { font-size:20px; font-weight:800; overflow-wrap:anywhere; }
+    .status-subtext { margin-top:8px; color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
+    .status-pill { display:inline-flex; align-items:center; min-height:30px; padding:5px 10px; border-radius:999px; font-size:14px; }
+    .state-running { background:#eafaf2; color:#176f48; }
+    .state-warning { background:#fff4d6; color:#a15c00; }
+    .state-stopped { background:#fff1f1; color:#b42318; }
+    .state-unknown { background:#e7edf5; color:#405169; }
+    .level-low { color:#176f48; }
+    .level-medium { color:#986a00; }
+    .level-high { color:#b45309; }
+    .level-critical { color:#b42318; }
+    .level-unknown { color:var(--muted); }
+    .meter { height:8px; overflow:hidden; margin-top:12px; border-radius:999px; background:#e7edf5; }
+    .meter-fill { height:100%; border-radius:999px; background:#6b7a90; }
+    .level-low-bg { background:#2eaf73; }
+    .level-medium-bg { background:#d19a1d; }
+    .level-high-bg { background:#e67e22; }
+    .level-critical-bg { background:#c24141; }
+    .level-unknown-bg { background:#9aa8b8; }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; }
+    th { color:var(--muted); font-size:13px; font-weight:700; }
+    .mono { font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; }
+    .log-lines { max-height:320px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:14px; border:1px solid var(--line); border-radius:8px; background:#f8fafc; color:#405169; }
     .note-list { display:grid; border-top:1px solid var(--line); }
     .note-list article { display:grid; grid-template-columns:120px minmax(0,1fr); gap:18px; padding:18px 0; border-bottom:1px solid var(--line); }
     .identity-card { display:grid; grid-template-columns:minmax(170px,240px) 1fr; gap:24px; width:min(100%,860px); border:1px solid var(--line); border-radius:8px; background:#fff; padding:22px; margin-bottom:18px; }
@@ -1343,6 +1683,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
       .public-hero { grid-template-columns:1fr; min-height:0; width:min(100% - 36px,1120px); padding:48px 0 34px; }
       .public-hero h1 { font-size:34px; }
       .article-grid { grid-template-columns:1fr; }
+      .status-grid { grid-template-columns:1fr; }
       .note-list article { grid-template-columns:1fr; gap:6px; }
     }
   </style>
@@ -1521,6 +1862,57 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     </div>
   </form>
 </section>
+{{end}}
+
+{{define "status"}}{{template "pageStart" .}}{{template "statusContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "statusContent"}}
+<h1>服务器状态</h1>
+<section class="panel">
+  <div class="status-grid">
+    {{template "stateCard" .Status.ServerState}}
+    {{template "metricCard" dict "Label" "在线玩家" "Metric" .Status.OnlinePlayers}}
+    {{template "metricCard" dict "Label" "磁盘空间" "Metric" .Status.Disk}}
+    {{template "metricCard" dict "Label" "内存占用" "Metric" .Status.Memory}}
+  </div>
+</section>
+<section class="panel">
+  <h2>备份记录</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>备份时间</th><th>文件</th><th>大小</th></tr></thead>
+      <tbody>
+        {{if .Status.Backups}}
+          {{range .Status.Backups}}<tr><td>{{.MTime}}</td><td>{{.Name}}</td><td>{{.Size}}</td></tr>{{end}}
+        {{else}}
+          <tr><td colspan="3" class="message">暂无备份文件</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="panel">
+  <h2>日志 ERROR 情况</h2>
+  <p class="message">最近 {{.Status.LogScanLines}} 行日志，匹配 ERROR / Exception / SEVERE 共 {{.Status.LogErrorCount}} 行。</p>
+  <div class="mono log-lines">{{if .Status.LogErrors}}{{range .Status.LogErrors}}{{.}}
+{{end}}{{else}}最近日志未发现 ERROR / Exception / SEVERE。{{end}}</div>
+</section>
+{{end}}
+
+{{define "stateCard"}}
+<div class="status-card">
+  <div class="label">开服状态</div>
+  <div class="status-value"><span class="status-pill {{.Class}}">{{.Label}}</span></div>
+  <div class="status-subtext">{{.Detail}}</div>
+</div>
+{{end}}
+
+{{define "metricCard"}}
+<div class="status-card">
+  <div class="label">{{.Label}}</div>
+  <div class="status-value level-{{.Metric.Level}}">{{.Metric.Value}}</div>
+  <div class="status-subtext">{{.Metric.Detail}}</div>
+  <div class="meter"><div class="meter-fill level-{{.Metric.Level}}-bg" style="width:{{printf "%.1f" .Metric.Percent}}%"></div></div>
+</div>
 {{end}}
 
 {{define "docs"}}{{template "pageStart" .}}{{template "docsContent" .}}{{template "pageEnd" .}}{{end}}
