@@ -741,7 +741,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 return claim != null && claim.blocksActorless(ClaimFeature.EXPLOSION);
             });
         }
-        collapseTotemsAffectedBy(event.blockList(), true);
+        protectTotemsFromExplosion(event.blockList());
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -752,7 +752,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 return claim != null && claim.blocksActorless(ClaimFeature.EXPLOSION);
             });
         }
-        collapseTotemsAffectedBy(event.blockList(), true);
+        protectTotemsFromExplosion(event.blockList());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -1013,24 +1013,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private void placeClaimTotem(PlayerInteractEvent event) {
         Player player = event.getPlayer();
-        Block support = event.getClickedBlock();
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || support == null || event.getBlockFace() != BlockFace.UP) {
-            send(player, message("totem-place-surface-only"));
+        Block clicked = event.getClickedBlock();
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || clicked == null) {
             return;
         }
-        if (support.isReplaceable()) {
-            send(player, message("totem-place-surface-only"));
-            return;
-        }
-        Block bottom = support.getRelative(BlockFace.UP);
+        Block bottom = clicked.isReplaceable() ? clicked : clicked.getRelative(event.getBlockFace());
         Block top = bottom.getRelative(BlockFace.UP);
         World world = bottom.getWorld();
         if (top.getY() >= world.getMaxHeight()) {
-            send(player, message("totem-place-no-space"));
             return;
         }
-        if (!bottom.isReplaceable() || !top.isReplaceable()) {
-            send(player, message("totem-place-no-space"));
+        if (!bottom.isReplaceable() || !top.isReplaceable() || !hasTotemSupport(bottom)) {
             return;
         }
         if (getConfig().getBoolean("protection.block-place", true)) {
@@ -1055,7 +1048,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (player.getGameMode() != GameMode.CREATIVE) {
             consumeOneTotem(player, event.getHand());
         }
-        send(player, message("totem-placed"));
     }
 
     private void consumeOneTotem(Player player, EquipmentSlot hand) {
@@ -1151,6 +1143,29 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             collapseAffectedTotem(block.getRelative(BlockFace.UP), dropItem, collapsed);
         }
         blocks.removeIf(block -> isClaimTotemBlock(block) || isClaimTotemBlock(block.getRelative(BlockFace.DOWN)));
+    }
+
+    private void protectTotemsFromExplosion(List<Block> blocks) {
+        List<Block> possibleBottoms = new ArrayList<>();
+        for (Block block : List.copyOf(blocks)) {
+            if (isClaimTotemBlock(block)) {
+                possibleBottoms.add(totemBottom(block));
+            }
+            Block above = block.getRelative(BlockFace.UP);
+            if (isClaimTotemBottom(above)) {
+                possibleBottoms.add(above);
+            }
+        }
+        blocks.removeIf(this::isClaimTotemBlock);
+        Bukkit.getScheduler().runTask(this, () -> {
+            Set<String> checked = new HashSet<>();
+            for (Block bottom : possibleBottoms) {
+                String key = bottom.getWorld().getName() + ":" + bottom.getX() + ":" + bottom.getY() + ":" + bottom.getZ();
+                if (checked.add(key) && isClaimTotemBottom(bottom) && !hasTotemSupport(bottom)) {
+                    collapseTotem(bottom, true);
+                }
+            }
+        });
     }
 
     private void collapseAffectedTotem(Block block, boolean dropItem, Set<String> collapsed) {
