@@ -30,7 +30,7 @@ jobs:
           go build -o xicemc-web-go .
 
   java-plugins:
-    name: java-plugins
+    name: java-${{ matrix.plugin }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
