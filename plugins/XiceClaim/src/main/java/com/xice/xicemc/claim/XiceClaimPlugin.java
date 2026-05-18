@@ -62,6 +62,7 @@ import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.InventoryHolder;
@@ -483,6 +484,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         ringSessions.remove(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        event.getPlayer().discoverRecipe(ringRecipeKey);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -946,7 +952,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(player, message("ring-claim-missing"));
             return;
         }
-        if (!canManage(player, claim)) {
+        if (!claim.canUse(player)) {
             send(player, message("no-permission"));
             return;
         }
@@ -983,12 +989,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         setFieldItem(menu, 16, DraftField.Z2, "坐标2 Z", draft.z2);
         setAction(menu, 20, "use-pos1", menuItem(Material.COMPASS, "&a使用当前位置作为坐标1", List.of("&7把当前位置写入第一个角点。")));
         setAction(menu, 24, "use-pos2", menuItem(Material.COMPASS, "&a使用当前位置作为坐标2", List.of("&7把当前位置写入第二个角点。")));
-        setAction(menu, 36, "adjust:-10", menuItem(Material.REDSTONE, "&c-10", List.of("&7调整当前选中的坐标。")));
-        setAction(menu, 38, "adjust:-1", menuItem(Material.REDSTONE_TORCH, "&c-1", List.of("&7调整当前选中的坐标。")));
+        setAction(menu, 36, "adjust:-50", adjustItem(false, 50));
+        setAction(menu, 37, "adjust:-10", adjustItem(false, 10));
+        setAction(menu, 38, "adjust:-1", adjustItem(false, 1));
         inventory.setItem(40, createDraftStatusItem(menu));
-        setAction(menu, 42, "adjust:1", menuItem(Material.LIME_DYE, "&a+1", List.of("&7调整当前选中的坐标。")));
-        setAction(menu, 44, "adjust:10", menuItem(Material.EMERALD, "&a+10", List.of("&7调整当前选中的坐标。")));
-        setAction(menu, 46, "bind-menu", menuItem(Material.MAP, "&b绑定至领地", List.of("&7将这枚戒指绑定到自己拥有或被授权的领地。")));
+        setAction(menu, 42, "adjust:1", adjustItem(true, 1));
+        setAction(menu, 43, "adjust:10", adjustItem(true, 10));
+        setAction(menu, 44, "adjust:50", adjustItem(true, 50));
+        setAction(menu, 45, "bind-menu", menuItem(Material.MAP, "&b绑定至领地", List.of("&7将这枚戒指绑定到自己拥有或被授权的领地。")));
         setAction(menu, 48, "confirm", menuItem(Material.LIME_CONCRETE, "&a确认创建", List.of("&7使用戒指名称和当前坐标创建领地。")));
         setAction(menu, 49, "preview", menuItem(Material.ENDER_EYE, "&e预览并关闭", List.of("&7保存当前草稿，关闭界面并显示范围。")));
         setAction(menu, 50, "cancel", menuItem(Material.BARRIER, "&c取消", List.of("&7关闭界面，不保存本次改动。")));
@@ -997,6 +1005,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private void setFieldItem(RingMenu menu, int slot, DraftField field, String label, int value) {
         Material material = menu.session.selectedField == field ? Material.LIME_STAINED_GLASS_PANE : Material.LIGHT_BLUE_STAINED_GLASS_PANE;
         setAction(menu, slot, "field:" + field.name(), menuItem(material, "&e" + label + "：&f" + value, List.of("&7点击选中后使用下方按钮微调。")));
+    }
+
+    private ItemStack adjustItem(boolean positive, int amount) {
+        String sign = positive ? "+" : "-";
+        Material material = positive ? Material.LIME_DYE : Material.RED_DYE;
+        String color = positive ? "&a" : "&c";
+        return menuItem(material, color + sign + amount, List.of("&7调整当前选中的坐标。"));
     }
 
     private void renderBindRingMenu(RingMenu menu) {
@@ -1727,21 +1742,21 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private enum ClaimFeature {
-        BLOCK_PLACE("block-place", Material.GRASS_BLOCK, "&e未授权玩家放置方块", PermissionState.DENY_UNTRUSTED),
-        BLOCK_BREAK("block-break", Material.IRON_PICKAXE, "&e未授权玩家破坏方块", PermissionState.DENY_UNTRUSTED),
-        BLOCK_INTERACT("block-interact", Material.OAK_BUTTON, "&e未授权玩家交互方块", PermissionState.DENY_UNTRUSTED),
-        CONTAINER_OPEN("container-open", Material.CHEST, "&e未授权玩家打开容器", PermissionState.DENY_UNTRUSTED),
-        ENTITY_INTERACT("entity-interact", Material.ARMOR_STAND, "&e未授权玩家交互实体", PermissionState.DENY_UNTRUSTED),
-        WATER_BUCKET("water-bucket", Material.WATER_BUCKET, "&e未授权玩家使用水桶", PermissionState.DENY_UNTRUSTED),
-        LAVA_BUCKET("lava-bucket", Material.LAVA_BUCKET, "&e未授权玩家使用岩浆桶", PermissionState.DENY_UNTRUSTED),
+        BLOCK_PLACE("block-place", Material.GRASS_BLOCK, "&e放置方块", PermissionState.DENY_UNTRUSTED),
+        BLOCK_BREAK("block-break", Material.IRON_PICKAXE, "&e破坏方块", PermissionState.DENY_UNTRUSTED),
+        BLOCK_INTERACT("block-interact", Material.OAK_BUTTON, "&e交互方块", PermissionState.DENY_UNTRUSTED),
+        CONTAINER_OPEN("container-open", Material.CHEST, "&e打开容器", PermissionState.DENY_UNTRUSTED),
+        ENTITY_INTERACT("entity-interact", Material.ARMOR_STAND, "&e交互实体", PermissionState.DENY_UNTRUSTED),
+        WATER_BUCKET("water-bucket", Material.WATER_BUCKET, "&e使用水桶", PermissionState.DENY_UNTRUSTED),
+        LAVA_BUCKET("lava-bucket", Material.LAVA_BUCKET, "&e使用岩浆桶", PermissionState.DENY_UNTRUSTED),
         FIRE("fire", Material.FLINT_AND_STEEL, "&e火焰蔓延和燃烧破坏", PermissionState.DENY_UNTRUSTED),
         EXPLOSION("explosion", Material.TNT, "&e爆炸破坏方块", PermissionState.DENY_UNTRUSTED),
         PISTON_USE("piston-use", Material.PISTON, "&e领地内使用活塞", PermissionState.ALLOW_ALL),
         PISTON("piston", Material.STICKY_PISTON, "&e活塞跨越领地边界", PermissionState.DENY_UNTRUSTED),
         ANIMAL_SPAWN("animal-spawn", Material.WHEAT, "&e领地内刷新动物", PermissionState.ALLOW_ALL),
-        ANIMAL_DAMAGE("animal-damage", Material.LEATHER, "&e未授权玩家伤害动物", PermissionState.DENY_UNTRUSTED),
+        ANIMAL_DAMAGE("animal-damage", Material.LEATHER, "&e伤害动物", PermissionState.DENY_UNTRUSTED),
         MONSTER_SPAWN("monster-spawn", Material.ROTTEN_FLESH, "&e领地内刷新怪物", PermissionState.ALLOW_ALL),
-        MONSTER_DAMAGE("monster-damage", Material.IRON_SWORD, "&e未授权玩家伤害怪物", PermissionState.DENY_UNTRUSTED);
+        MONSTER_DAMAGE("monster-damage", Material.IRON_SWORD, "&e伤害怪物", PermissionState.DENY_UNTRUSTED);
 
         private final String id;
         private final Material material;
