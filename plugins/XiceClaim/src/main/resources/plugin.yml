@@ -1,5 +1,5 @@
 name: XiceClaim
-version: 0.0.2
+version: 0.0.3
 main: com.xice.xicemc.claim.XiceClaimPlugin
 api-version: '1.21'
 author: Xice
@@ -7,7 +7,7 @@ description: Lightweight claim protection for XiceMCServer.
 commands:
   claim:
     description: Manage land claims.
-    usage: /claim <help|pos1 [X Y Z]|pos2 [X Y Z]|create|info [name]|list [player]|trust|untrust|delete [name]|reload>
+    usage: /claim <help|pos1 [X Y Z]|pos2 [X Y Z]|create|info [name]|list [player]|trust|untrust|delete [name]|give <item>|reload>
     aliases: [xiceclaim]
 permissions:
   xiceclaim.admin:

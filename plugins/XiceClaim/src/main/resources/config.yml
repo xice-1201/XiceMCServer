@@ -11,6 +11,14 @@ visualization:
   interval-ticks: 10
   edge-step: 1
 
+access:
+  default-allowed-actions: []
+  players:
+    00000000-0000-0000-0000-000000000000:
+      name: ExamplePlayer
+      actions:
+        - give
+
 protection:
   block-break: true
   block-place: true
@@ -35,6 +43,7 @@ messages:
     - '&e/claim trust <玩家> &7授权当前位置领地'
     - '&e/claim untrust <玩家> &7移除当前位置领地授权'
     - '&e/claim delete [名称] &7删除当前位置或指定的自己的领地'
+    - '&e/claim give ring &7获取领地戒指'
   invalid-position: '&c坐标格式错误，请使用 /claim pos1 [X Y Z] 或 /claim pos2 [X Y Z]。'
   pos1-set: '&a已设置第一个角点：{world} {x}, {y}, {z}'
   pos2-set: '&a已设置第二个角点：{world} {x}, {y}, {z}'
@@ -43,7 +52,12 @@ messages:
   selection-invalid: '&c当前框选不合规：{reason}'
   selection-missing: '&c请先使用 /claim pos1 和 /claim pos2 选择两个角点。'
   selection-world-mismatch: '&c两个角点必须在同一个世界。'
-  invalid-name: '&c领地名称只能包含英文、数字、下划线和短横线，长度 1-24。'
+  invalid-name: '&c领地名称只能包含文字、数字、下划线和短横线，长度 1-24。'
+  give-usage: '&c用法：/claim give ring'
+  ring-given: '&a已获得领地戒指。'
+  ring-created: '&a领地 {claim} 创建成功，领地戒指已绑定。'
+  ring-claim-missing: '&c该领地戒指绑定的领地不存在，已恢复为空戒指。'
+  ring-claim-deleted: '&a已删除领地 {claim}，领地戒指已恢复为空戒指。'
   duplicate-name: '&c已存在名为 {claim} 的领地。'
   invalid-selection: '&c无法创建领地：{reason}'
   invalid-size-small: '长宽高均不得小于 {min} 格，当前为 {sizeX} x {sizeY} x {sizeZ}'
