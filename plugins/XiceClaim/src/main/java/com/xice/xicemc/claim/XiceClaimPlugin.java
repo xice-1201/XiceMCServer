@@ -31,8 +31,11 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Animals;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -46,6 +49,7 @@ import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.hanging.HangingPlaceEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
@@ -566,10 +570,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
-        if (!getConfig().getBoolean("protection.entity-interact", true) || !(event.getDamager() instanceof Player player)) {
+        if (!getConfig().getBoolean("protection.entity-interact", true)) {
             return;
         }
-        protectEntity(player, event.getEntity(), event, ClaimFeature.ENTITY_INTERACT);
+        Player player = damagingPlayer(event.getDamager());
+        if (player == null) {
+            return;
+        }
+        protectEntity(player, event.getEntity(), event, damageFeature(event.getEntity()));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -597,14 +605,35 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBucketEmpty(PlayerBucketEmptyEvent event) {
         if (getConfig().getBoolean("protection.bucket", true)) {
-            protect(event.getPlayer(), event.getBlock(), event, ClaimFeature.BUCKET);
+            ClaimFeature feature = bucketFeature(event.getBucket());
+            if (feature != null) {
+                protect(event.getPlayer(), event.getBlock(), event, feature);
+            }
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBucketFill(PlayerBucketFillEvent event) {
         if (getConfig().getBoolean("protection.bucket", true)) {
-            protect(event.getPlayer(), event.getBlock(), event, ClaimFeature.BUCKET);
+            ClaimFeature feature = bucketFeature(event.getBlock().getType());
+            if (feature != null) {
+                protect(event.getPlayer(), event.getBlock(), event, feature);
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onCreatureSpawn(CreatureSpawnEvent event) {
+        if (!getConfig().getBoolean("protection.entity-spawn", true)) {
+            return;
+        }
+        ClaimFeature feature = spawnFeature(event.getEntity());
+        if (feature == null) {
+            return;
+        }
+        ClaimRegion claim = claimAt(event.getLocation());
+        if (claim != null && !claim.allowsFeature(feature)) {
+            event.setCancelled(true);
         }
     }
 
@@ -660,7 +689,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPistonExtend(BlockPistonExtendEvent event) {
         if (getConfig().getBoolean("protection.piston", true)
-                && pistonCrossesClaimBoundary(event.getBlock(), event.getBlocks(), event.getDirection())) {
+                && (pistonUseProtected(event.getBlock()) || pistonCrossesClaimBoundary(event.getBlock(), event.getBlocks(), event.getDirection()))) {
             event.setCancelled(true);
         }
     }
@@ -668,9 +697,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPistonRetract(BlockPistonRetractEvent event) {
         if (getConfig().getBoolean("protection.piston", true)
-                && pistonCrossesClaimBoundary(event.getBlock(), event.getBlocks(), event.getDirection())) {
+                && (pistonUseProtected(event.getBlock()) || pistonCrossesClaimBoundary(event.getBlock(), event.getBlocks(), event.getDirection()))) {
             event.setCancelled(true);
         }
+    }
+
+    private boolean pistonUseProtected(Block piston) {
+        ClaimRegion claim = claimAt(piston.getLocation());
+        return claim != null && !claim.allowsFeature(ClaimFeature.PISTON_USE);
     }
 
     private boolean pistonCrossesClaimBoundary(Block piston, List<Block> movedBlocks, BlockFace direction) {
@@ -693,11 +727,51 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (fromId.equals(toId)) {
             return false;
         }
-        return isPistonProtected(fromClaim) || isPistonProtected(toClaim);
+        return isPistonBoundaryProtected(fromClaim) || isPistonBoundaryProtected(toClaim);
     }
 
-    private boolean isPistonProtected(ClaimRegion claim) {
+    private boolean isPistonBoundaryProtected(ClaimRegion claim) {
         return claim != null && !claim.allowsFeature(ClaimFeature.PISTON);
+    }
+
+    private Player damagingPlayer(Entity damager) {
+        if (damager instanceof Player player) {
+            return player;
+        }
+        if (damager instanceof Projectile projectile && projectile.getShooter() instanceof Player player) {
+            return player;
+        }
+        return null;
+    }
+
+    private ClaimFeature damageFeature(Entity entity) {
+        if (entity instanceof Animals) {
+            return ClaimFeature.ANIMAL_DAMAGE;
+        }
+        if (entity instanceof Monster) {
+            return ClaimFeature.MONSTER_DAMAGE;
+        }
+        return ClaimFeature.ENTITY_INTERACT;
+    }
+
+    private ClaimFeature spawnFeature(Entity entity) {
+        if (entity instanceof Animals) {
+            return ClaimFeature.ANIMAL_SPAWN;
+        }
+        if (entity instanceof Monster) {
+            return ClaimFeature.MONSTER_SPAWN;
+        }
+        return null;
+    }
+
+    private ClaimFeature bucketFeature(Material bucket) {
+        if (bucket == Material.WATER_BUCKET || bucket == Material.WATER) {
+            return ClaimFeature.WATER_BUCKET;
+        }
+        if (bucket == Material.LAVA_BUCKET || bucket == Material.LAVA) {
+            return ClaimFeature.LAVA_BUCKET;
+        }
+        return null;
     }
 
     private void protect(Player player, Block block, org.bukkit.event.Cancellable event, ClaimFeature feature) {
@@ -759,6 +833,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private boolean canManage(Player player, ClaimRegion claim) {
         return claim.ownerUuid.equals(player.getUniqueId()) || player.hasPermission("xiceclaim.admin");
+    }
+
+    private boolean canManage(RingSession session, ClaimRegion claim) {
+        return claim.ownerUuid.equals(session.playerUuid) || session.admin;
     }
 
     private List<String> validateClaimShape(ClaimRegion claim) {
@@ -833,7 +911,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private void openCreateRingMenu(Player player, ItemStack ring, EquipmentSlot hand) {
         RingDraft draft = loadDraftFromRing(ring, player);
-        RingSession session = new RingSession(RingMenuMode.CREATE, ring, draft, normalizeHand(hand), player.getUniqueId(), player.getName());
+        RingSession session = new RingSession(RingMenuMode.CREATE, ring, draft, normalizeHand(hand), player.getUniqueId(), player.getName(), player.hasPermission("xiceclaim.admin"));
         ringSessions.put(player.getUniqueId(), session);
         RingMenu menu = new RingMenu(session);
         Inventory inventory = Bukkit.createInventory(menu, 54, "领地戒指 · 创建领地");
@@ -855,9 +933,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(player, message("no-permission"));
             return;
         }
-        claim = synchronizeRingName(player, ring, claim);
+        if (canManage(player, claim)) {
+            claim = synchronizeRingName(player, ring, claim);
+        } else {
+            setRingDisplayName(ring, claim.name, true);
+        }
         writeRingToHand(player, ring, normalizeHand(hand));
-        RingSession session = new RingSession(RingMenuMode.MANAGE, ring, null, normalizeHand(hand), player.getUniqueId(), player.getName());
+        RingSession session = new RingSession(RingMenuMode.MANAGE, ring, null, normalizeHand(hand), player.getUniqueId(), player.getName(), player.hasPermission("xiceclaim.admin"));
         session.claimId = claim.id;
         ringSessions.put(player.getUniqueId(), session);
         RingMenu menu = new RingMenu(session);
@@ -889,6 +971,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         inventory.setItem(40, createDraftStatusItem(menu));
         setAction(menu, 42, "adjust:1", menuItem(Material.LIME_DYE, "&a+1", List.of("&7调整当前选中的坐标。")));
         setAction(menu, 44, "adjust:10", menuItem(Material.EMERALD, "&a+10", List.of("&7调整当前选中的坐标。")));
+        setAction(menu, 46, "bind-menu", menuItem(Material.MAP, "&b绑定至领地", List.of("&7将这枚戒指绑定到自己拥有或被授权的领地。")));
         setAction(menu, 48, "confirm", menuItem(Material.LIME_CONCRETE, "&a确认创建", List.of("&7使用戒指名称和当前坐标创建领地。")));
         setAction(menu, 49, "preview", menuItem(Material.ENDER_EYE, "&e预览并关闭", List.of("&7保存当前草稿，关闭界面并显示范围。")));
         setAction(menu, 50, "cancel", menuItem(Material.BARRIER, "&c取消", List.of("&7关闭界面，不保存本次改动。")));
@@ -897,6 +980,41 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private void setFieldItem(RingMenu menu, int slot, DraftField field, String label, int value) {
         Material material = menu.session.selectedField == field ? Material.LIME_STAINED_GLASS_PANE : Material.LIGHT_BLUE_STAINED_GLASS_PANE;
         setAction(menu, slot, "field:" + field.name(), menuItem(material, "&e" + label + "：&f" + value, List.of("&7点击选中后使用下方按钮微调。")));
+    }
+
+    private void renderBindRingMenu(RingMenu menu) {
+        menu.actions.clear();
+        Inventory inventory = menu.inventory;
+        inventory.clear();
+        inventory.setItem(4, menuItem(Material.MAP, "&b绑定至领地", List.of(
+                "&7选择一个自己拥有或被授权的领地。",
+                "&7绑定后戒指会发光并指向该领地。")));
+        List<ClaimRegion> accessibleClaims = claims.values().stream()
+                .filter(claim -> claim.canUse(menu.session.playerUuid))
+                .sorted(Comparator
+                        .comparing((ClaimRegion claim) -> !claim.ownerUuid.equals(menu.session.playerUuid))
+                        .thenComparing(claim -> claim.name.toLowerCase(Locale.ROOT)))
+                .limit(28)
+                .toList();
+        int[] slots = {
+                10, 11, 12, 13, 14, 15, 16,
+                19, 20, 21, 22, 23, 24, 25,
+                28, 29, 30, 31, 32, 33, 34,
+                37, 38, 39, 40, 41, 42, 43
+        };
+        for (int index = 0; index < accessibleClaims.size(); index++) {
+            ClaimRegion claim = accessibleClaims.get(index);
+            String relation = claim.ownerUuid.equals(menu.session.playerUuid) ? "&a自己拥有" : "&e已被授权";
+            setAction(menu, slots[index], "bind:" + claim.id, menuItem(Material.FILLED_MAP, "&b" + claim.name, List.of(
+                    "&7关系：" + relation,
+                    "&7所有者：&f" + claim.ownerName,
+                    "&7大小：&f" + claim.sizeX() + " x " + claim.sizeY() + " x " + claim.sizeZ(),
+                    "&7点击绑定这枚领地戒指。")));
+        }
+        if (accessibleClaims.isEmpty()) {
+            inventory.setItem(22, menuItem(Material.BARRIER, "&c没有可绑定的领地", List.of("&7你还没有拥有或被授权的领地。")));
+        }
+        setAction(menu, 49, "back:create", menuItem(Material.ARROW, "&e返回创建页面", List.of("&7继续使用坐标创建新领地。")));
     }
 
     private ItemStack createDraftStatusItem(RingMenu menu) {
@@ -946,14 +1064,19 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         menu.actions.clear();
         Inventory inventory = menu.inventory;
         inventory.clear();
+        boolean canManage = canManage(menu.session, claim);
         inventory.setItem(4, menuItem(Material.FLINT, "&b" + claim.name, List.of(
                 "&7所有者：&f" + claim.ownerName,
                 "&7世界：&f" + claim.world,
                 "&7坐标：&f" + claim.minX + "," + claim.minY + "," + claim.minZ + " 到 " + claim.maxX + "," + claim.maxY + "," + claim.maxZ)));
-        setAction(menu, 20, "view:members", playerHeadItem(claim.ownerUuid, "&a管理授权玩家", List.of("&7添加或移除可以使用该领地的玩家。")));
-        setAction(menu, 22, "view:features", menuItem(Material.COMPARATOR, "&e管理领地功能", List.of("&7预览范围、删除领地等功能。")));
+        if (canManage) {
+            setAction(menu, 20, "view:members", playerHeadItem(claim.ownerUuid, "&a管理授权玩家", List.of("&7添加或移除可以使用该领地的玩家。")));
+            setAction(menu, 22, "view:features", menuItem(Material.COMPARATOR, "&e管理领地功能", List.of("&7切换领地内的保护规则。")));
+            setAction(menu, 40, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
+        } else {
+            inventory.setItem(22, menuItem(Material.OAK_SIGN, "&e已授权领地", List.of("&7你可以使用该领地，但不能管理权限或删除领地。")));
+        }
         setAction(menu, 24, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
-        setAction(menu, 40, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
     }
 
     private void renderManageMembersMenu(RingMenu menu, ClaimRegion claim) {
@@ -989,15 +1112,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         inventory.setItem(4, menuItem(Material.COMPARATOR, "&e管理领地功能", List.of(
                 "&7领地：&f" + claim.name,
                 "&7发光表示允许，无光表示禁止。点击可切换。")));
-        int[] slots = {10, 11, 12, 13, 14, 15, 16, 19, 20};
+        int[] slots = {
+                10, 11, 12, 13, 14, 15, 16,
+                19, 20, 21, 22, 23, 24, 25,
+                31
+        };
         ClaimFeature[] features = ClaimFeature.values();
         for (int index = 0; index < features.length && index < slots.length; index++) {
             ClaimFeature feature = features[index];
             boolean allowed = claim.allowsFeature(feature);
             setAction(menu, slots[index], "feature:" + feature.id, featureItem(feature, allowed));
         }
-        setAction(menu, 39, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
-        setAction(menu, 41, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
         setAction(menu, 49, "view:main", menuItem(Material.ARROW, "&e返回主菜单", List.of("&7回到领地管理菜单。")));
     }
 
@@ -1019,8 +1144,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if (menu.session.mode == RingMenuMode.CREATE) {
             handleCreateRingMenuClick(player, menu, action);
-        } else {
+        } else if (menu.session.mode == RingMenuMode.MANAGE) {
             handleManageRingMenuClick(player, menu, action);
+        } else {
+            handleBindRingMenuClick(player, menu, action);
         }
     }
 
@@ -1067,11 +1194,45 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             createClaimFromRing(player, menu);
             return;
         }
+        if ("bind-menu".equals(action)) {
+            saveDraftToRing(menu.session.ring, draft);
+            writeRingToHand(player, menu.session);
+            menu.session.mode = RingMenuMode.BIND;
+            renderBindRingMenu(menu);
+            return;
+        }
         if ("cancel".equals(action)) {
             menu.session.discardOnClose = true;
             ringSessions.remove(player.getUniqueId());
             player.closeInventory();
         }
+    }
+
+    private void handleBindRingMenuClick(Player player, RingMenu menu, String action) {
+        if ("back:create".equals(action)) {
+            menu.session.mode = RingMenuMode.CREATE;
+            renderCreateRingMenu(menu);
+            return;
+        }
+        if (!action.startsWith("bind:")) {
+            return;
+        }
+        ClaimRegion claim = claims.get(action.substring("bind:".length()));
+        if (claim == null) {
+            renderBindRingMenu(menu);
+            return;
+        }
+        if (!claim.canUse(player)) {
+            send(player, message("no-permission"));
+            return;
+        }
+        bindRing(menu.session.ring, claim, RingDraft.fromClaim(claim));
+        writeRingToHand(player, menu.session);
+        showClaimParticles(player, claim);
+        send(player, message("ring-bound", "&a领地戒指已绑定至领地 {claim}。"), "claim", claim.name);
+        menu.session.discardOnClose = true;
+        ringSessions.remove(player.getUniqueId());
+        player.closeInventory();
     }
 
     private void handleManageRingMenuClick(Player player, RingMenu menu, String action) {
@@ -1085,12 +1246,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(player, message("ring-claim-missing"));
             return;
         }
-        if (!canManage(player, claim)) {
+        if (!claim.canUse(player)) {
             send(player, message("no-permission"));
             return;
         }
         if (action.startsWith("view:")) {
-            menu.session.manageView = ManageView.valueOf(action.substring("view:".length()).toUpperCase(Locale.ROOT));
+            ManageView nextView = ManageView.valueOf(action.substring("view:".length()).toUpperCase(Locale.ROOT));
+            if (nextView != ManageView.MAIN && !canManage(player, claim)) {
+                send(player, message("no-permission"));
+                return;
+            }
+            menu.session.manageView = nextView;
             renderManageRingMenu(menu, claim);
             return;
         }
@@ -1102,6 +1268,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if ("delete-confirm".equals(action)) {
+            if (!canManage(player, claim)) {
+                send(player, message("no-permission"));
+                return;
+            }
             claims.remove(claim.id);
             saveClaims();
             unbindRing(menu.session.ring);
@@ -1113,6 +1283,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (action.startsWith("feature:")) {
+            if (!canManage(player, claim)) {
+                send(player, message("no-permission"));
+                return;
+            }
             ClaimFeature feature = ClaimFeature.fromId(action.substring("feature:".length()));
             if (feature != null) {
                 claim.toggleFeature(feature);
@@ -1122,6 +1296,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (action.startsWith("add:")) {
+            if (!canManage(player, claim)) {
+                send(player, message("no-permission"));
+                return;
+            }
             UUID targetUuid = UUID.fromString(action.substring("add:".length()));
             Player target = Bukkit.getPlayer(targetUuid);
             if (target != null) {
@@ -1133,6 +1311,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (action.startsWith("remove:")) {
+            if (!canManage(player, claim)) {
+                send(player, message("no-permission"));
+                return;
+            }
             UUID targetUuid = UUID.fromString(action.substring("remove:".length()));
             claim.members.remove(targetUuid);
             claim.memberNames.remove(targetUuid);
@@ -1371,6 +1553,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             claimsConfig.set(path + ".max-z", claim.maxZ);
             claimsConfig.set(path + ".created-at", claim.createdAt);
             claimsConfig.set(path + ".allowed-features", claim.allowedFeatureIds());
+            claimsConfig.set(path + ".disabled-features", claim.disabledFeatureIds());
             List<String> members = claim.members.stream().map(UUID::toString).sorted().toList();
             claimsConfig.set(path + ".members", members);
             claimsConfig.set(path + ".member-names", null);
@@ -1473,6 +1656,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return getConfig().getString("messages." + key, "");
     }
 
+    private String message(String key, String fallback) {
+        return getConfig().getString("messages." + key, fallback);
+    }
+
     private String messageText(String key) {
         return color(getConfig().getString("messages." + key, key));
     }
@@ -1508,7 +1695,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private enum RingMenuMode {
         CREATE,
-        MANAGE
+        MANAGE,
+        BIND
     }
 
     private enum ManageView {
@@ -1519,24 +1707,32 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private enum ClaimFeature {
-        BLOCK_BREAK("block-break", Material.IRON_PICKAXE, "&e未授权玩家破坏方块"),
-        BLOCK_PLACE("block-place", Material.GRASS_BLOCK, "&e未授权玩家放置方块"),
-        BLOCK_INTERACT("block-interact", Material.OAK_BUTTON, "&e未授权玩家交互方块"),
-        CONTAINER_OPEN("container-open", Material.CHEST, "&e未授权玩家打开容器"),
-        ENTITY_INTERACT("entity-interact", Material.ARMOR_STAND, "&e未授权玩家交互实体"),
-        BUCKET("bucket", Material.WATER_BUCKET, "&e未授权玩家使用桶装液体"),
-        FIRE("fire", Material.FLINT_AND_STEEL, "&e火焰蔓延和燃烧破坏"),
-        EXPLOSION("explosion", Material.TNT, "&e爆炸破坏方块"),
-        PISTON("piston", Material.PISTON, "&e活塞跨越领地边界");
+        BLOCK_PLACE("block-place", Material.GRASS_BLOCK, "&e未授权玩家放置方块", false),
+        BLOCK_BREAK("block-break", Material.IRON_PICKAXE, "&e未授权玩家破坏方块", false),
+        BLOCK_INTERACT("block-interact", Material.OAK_BUTTON, "&e未授权玩家交互方块", false),
+        CONTAINER_OPEN("container-open", Material.CHEST, "&e未授权玩家打开容器", false),
+        ENTITY_INTERACT("entity-interact", Material.ARMOR_STAND, "&e未授权玩家交互实体", false),
+        WATER_BUCKET("water-bucket", Material.WATER_BUCKET, "&e未授权玩家使用水桶", false),
+        LAVA_BUCKET("lava-bucket", Material.LAVA_BUCKET, "&e未授权玩家使用岩浆桶", false),
+        FIRE("fire", Material.FLINT_AND_STEEL, "&e火焰蔓延和燃烧破坏", false),
+        EXPLOSION("explosion", Material.TNT, "&e爆炸破坏方块", false),
+        PISTON_USE("piston-use", Material.PISTON, "&e领地内使用活塞", true),
+        PISTON("piston", Material.STICKY_PISTON, "&e活塞跨越领地边界", false),
+        ANIMAL_SPAWN("animal-spawn", Material.WHEAT, "&e领地内刷新动物", true),
+        ANIMAL_DAMAGE("animal-damage", Material.LEATHER, "&e未授权玩家伤害动物", false),
+        MONSTER_SPAWN("monster-spawn", Material.ROTTEN_FLESH, "&e领地内刷新怪物", true),
+        MONSTER_DAMAGE("monster-damage", Material.IRON_SWORD, "&e未授权玩家伤害怪物", false);
 
         private final String id;
         private final Material material;
         private final String displayName;
+        private final boolean defaultAllowed;
 
-        ClaimFeature(String id, Material material, String displayName) {
+        ClaimFeature(String id, Material material, String displayName, boolean defaultAllowed) {
             this.id = id;
             this.material = material;
             this.displayName = displayName;
+            this.defaultAllowed = defaultAllowed;
         }
 
         private static ClaimFeature fromId(String id) {
@@ -1547,6 +1743,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             }
             return null;
         }
+
     }
 
     private enum DraftField {
@@ -1559,25 +1756,27 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private static final class RingSession {
-        private final RingMenuMode mode;
+        private RingMenuMode mode;
         private final ItemStack ring;
         private final RingDraft draft;
         private final EquipmentSlot hand;
         private final UUID playerUuid;
         private final String playerName;
+        private final boolean admin;
         private final List<String> statusLines = new ArrayList<>();
         private DraftField selectedField = DraftField.X1;
         private ManageView manageView = ManageView.MAIN;
         private String claimId = "";
         private boolean discardOnClose;
 
-        private RingSession(RingMenuMode mode, ItemStack ring, RingDraft draft, EquipmentSlot hand, UUID playerUuid, String playerName) {
+        private RingSession(RingMenuMode mode, ItemStack ring, RingDraft draft, EquipmentSlot hand, UUID playerUuid, String playerName, boolean admin) {
             this.mode = mode;
             this.ring = ring;
             this.draft = draft;
             this.hand = hand;
             this.playerUuid = playerUuid;
             this.playerName = playerName;
+            this.admin = admin;
         }
     }
 
@@ -1614,6 +1813,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             draft.x2 = point.x;
             draft.y2 = point.y;
             draft.z2 = point.z;
+            return draft;
+        }
+
+        private static RingDraft fromClaim(ClaimRegion claim) {
+            RingDraft draft = new RingDraft();
+            draft.world = claim.world;
+            draft.x1 = claim.minX;
+            draft.y1 = claim.minY;
+            draft.z1 = claim.minZ;
+            draft.x2 = claim.maxX;
+            draft.y2 = claim.maxY;
+            draft.z2 = claim.maxZ;
             return draft;
         }
 
@@ -1672,6 +1883,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private final Set<UUID> members;
         private final Map<UUID, String> memberNames;
         private final Set<String> allowedFeatures;
+        private final Set<String> disabledFeatures;
 
         private ClaimRegion(
                 String id,
@@ -1688,7 +1900,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 long createdAt,
                 Set<UUID> members,
                 Map<UUID, String> memberNames,
-                Set<String> allowedFeatures
+                Set<String> allowedFeatures,
+                Set<String> disabledFeatures
         ) {
             this.id = id;
             this.name = name;
@@ -1705,6 +1918,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             this.members = members;
             this.memberNames = memberNames;
             this.allowedFeatures = allowedFeatures;
+            this.disabledFeatures = disabledFeatures;
         }
 
         private static ClaimRegion fromSelection(
@@ -1730,6 +1944,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     System.currentTimeMillis(),
                     new HashSet<>(),
                     new HashMap<>(),
+                    new HashSet<>(),
                     new HashSet<>());
         }
 
@@ -1747,9 +1962,21 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             }
             Set<String> allowedFeatures = new HashSet<>();
             for (String featureId : section.getStringList("allowed-features")) {
+                if ("bucket".equalsIgnoreCase(featureId)) {
+                    allowedFeatures.add(ClaimFeature.WATER_BUCKET.id);
+                    allowedFeatures.add(ClaimFeature.LAVA_BUCKET.id);
+                    continue;
+                }
                 ClaimFeature feature = ClaimFeature.fromId(featureId);
-                if (feature != null) {
+                if (feature != null && !feature.defaultAllowed) {
                     allowedFeatures.add(feature.id);
+                }
+            }
+            Set<String> disabledFeatures = new HashSet<>();
+            for (String featureId : section.getStringList("disabled-features")) {
+                ClaimFeature feature = ClaimFeature.fromId(featureId);
+                if (feature != null && feature.defaultAllowed) {
+                    disabledFeatures.add(feature.id);
                 }
             }
             return new ClaimRegion(
@@ -1767,7 +1994,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     section.getLong("created-at", System.currentTimeMillis()),
                     members,
                     memberNames,
-                    allowedFeatures);
+                    allowedFeatures,
+                    disabledFeatures);
         }
 
         private boolean contains(Location location) {
@@ -1792,16 +2020,28 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
 
         private boolean canUse(Player player) {
-            return ownerUuid.equals(player.getUniqueId())
-                    || members.contains(player.getUniqueId())
+            return canUse(player.getUniqueId())
                     || player.hasPermission("xiceclaim.admin");
         }
 
+        private boolean canUse(UUID playerUuid) {
+            return ownerUuid.equals(playerUuid) || members.contains(playerUuid);
+        }
+
         private boolean allowsFeature(ClaimFeature feature) {
+            if (feature.defaultAllowed) {
+                return !disabledFeatures.contains(feature.id);
+            }
             return allowedFeatures.contains(feature.id);
         }
 
         private void toggleFeature(ClaimFeature feature) {
+            if (feature.defaultAllowed) {
+                if (!disabledFeatures.remove(feature.id)) {
+                    disabledFeatures.add(feature.id);
+                }
+                return;
+            }
             if (!allowedFeatures.remove(feature.id)) {
                 allowedFeatures.add(feature.id);
             }
@@ -1809,6 +2049,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
         private List<String> allowedFeatureIds() {
             return allowedFeatures.stream().sorted().toList();
+        }
+
+        private List<String> disabledFeatureIds() {
+            return disabledFeatures.stream().sorted().toList();
         }
 
         private ClaimRegion withName(String newName) {
@@ -1827,7 +2071,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     createdAt,
                     members,
                     memberNames,
-                    allowedFeatures);
+                    allowedFeatures,
+                    disabledFeatures);
         }
 
         private int sizeX() {
