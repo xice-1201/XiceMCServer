@@ -315,6 +315,10 @@ func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /", a.handlePublicHome)
 	mux.HandleFunc("GET /tech", a.handlePublicStatic("publicTech", "技术实现", "public-tech"))
 	mux.HandleFunc("GET /plugins", a.handlePublicStatic("publicPlugins", "插件动态", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xiceclaim", a.handlePublicStatic("pluginXiceClaim", "XiceClaim 领地插件", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xiceauditlog", a.handlePublicStatic("pluginXiceAuditLog", "XiceAuditLog 审计插件", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xicecommandcontrol", a.handlePublicStatic("pluginXiceCommandControl", "XiceCommandControl 指令权限插件", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xicetextarranger", a.handlePublicStatic("pluginXiceTextArranger", "XiceTextArranger 文本交互插件", "public-plugins"))
 	mux.HandleFunc("GET /ops", a.handlePublicStatic("publicOps", "运维记录", "public-ops"))
 	mux.HandleFunc("GET /changelog", a.handlePublicStatic("publicChangelog", "更新日志", "public-changelog"))
 	mux.HandleFunc("GET /register", a.handleRegisterPage)
@@ -1590,6 +1594,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .auth-popover[open] summary { background:var(--accent); color:#fff; }
     .auth-popover-panel { position:absolute; right:0; top:calc(100% + 10px); width:min(340px,calc(100vw - 32px)); padding:16px; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 18px 50px rgba(20,32,51,.18); }
     .public-hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(230px,300px); gap:36px; align-items:end; width:min(100% - 48px,1120px); min-height:58vh; margin:0 auto; padding:82px 0 54px; }
+    .public-hero.compact { grid-template-columns:1fr; min-height:48vh; align-items:center; }
     .public-hero h1 { margin:0 0 18px; font-size:48px; line-height:1.08; }
     .public-hero p { max-width:720px; margin:0; font-size:18px; color:#405169; }
     .public-kicker { margin:0 0 10px; color:#2b6c9f; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0; }
@@ -1702,6 +1707,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .public-brand { color:var(--text); font-weight:800; }
     .public-nav { display:flex; gap:6px; justify-content:center; }
     .public-nav a { display:inline-flex; align-items:center; min-height:34px; padding:6px 10px; border-radius:6px; color:var(--muted); font-size:14px; }
+    .public-nav a.active,.public-nav a:hover { background:#eaf1ff; color:var(--text); }
     .public-auth { display:flex; gap:8px; justify-content:flex-end; position:relative; }
     .auth-popover { position:relative; }
     .auth-popover summary { list-style:none; display:inline-flex; align-items:center; min-height:36px; padding:7px 11px; border-radius:6px; background:#e7edf5; color:var(--text); font-size:14px; cursor:pointer; user-select:none; }
@@ -1709,14 +1715,23 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .auth-popover[open] summary { background:var(--accent); color:#fff; }
     .auth-popover-panel { position:absolute; right:0; top:calc(100% + 10px); width:min(340px,calc(100vw - 32px)); padding:16px; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 18px 50px rgba(20,32,51,.18); }
     .public-hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(230px,300px); gap:36px; align-items:end; width:min(100% - 48px,1120px); min-height:58vh; margin:0 auto; padding:82px 0 54px; }
+    .public-hero.compact { grid-template-columns:1fr; min-height:48vh; align-items:center; }
     .public-hero h1 { margin:0 0 18px; font-size:48px; line-height:1.08; }
     .public-hero p { max-width:720px; margin:0; font-size:18px; color:#405169; }
     .public-kicker { margin:0 0 10px; color:#2b6c9f; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0; }
     .public-directory { border-left:3px solid #d8e0ea; padding-left:18px; }
     .public-directory a { display:block; padding:7px 0; color:var(--muted); }
     .public-section { width:min(100% - 48px,1120px); margin:0 auto; padding:42px 0; border-top:1px solid var(--line); }
+    .public-page { width:min(100% - 48px,980px); margin:0 auto; padding:54px 0; }
+    .public-page h1 { font-size:34px; margin-bottom:12px; }
+    .public-lead { max-width:760px; font-size:18px; color:#405169; }
+    .section-heading { margin-bottom:18px; }
     .article-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
     .article-card,.panel { border:1px solid var(--line); border-radius:8px; background:#fff; padding:18px; }
+    .article-card { min-width:0; min-height:178px; }
+    .plugin-subnav { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 22px; }
+    .plugin-subnav a { display:inline-flex; align-items:center; min-height:34px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; color:var(--muted); }
+    .plugin-subnav a:hover { background:#eaf1ff; color:var(--text); }
     .panel { padding:20px; margin-bottom:18px; }
     .status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
     .status-card { min-width:0; padding:18px; border:1px solid var(--line); border-radius:8px; background:#fff; }
@@ -1790,9 +1805,9 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 <header class="public-header">
   <a class="public-brand" href="/">个人技术开发随记</a>
   <nav class="public-nav" aria-label="公开页面目录">
-    <a class="{{if eq .Active "public-home"}}active{{end}}" href="/">首页介绍</a>
-    <a class="{{if eq .Active "public-tech"}}active{{end}}" href="/tech">技术实现</a>
+    <a class="{{if eq .Active "public-home"}}active{{end}}" href="/">首页</a>
     <a class="{{if eq .Active "public-plugins"}}active{{end}}" href="/plugins">插件动态</a>
+    <a class="{{if eq .Active "public-tech"}}active{{end}}" href="/tech">技术实现</a>
     <a class="{{if eq .Active "public-ops"}}active{{end}}" href="/ops">运维记录</a>
     <a class="{{if eq .Active "public-changelog"}}active{{end}}" href="/changelog">更新日志</a>
   </nav>
@@ -1802,7 +1817,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
       <div class="auth-popover-panel">
         {{if and .Error .LoginOpen}}<p class="error">{{.Error}}</p>{{end}}
         <form method="post" action="/login">
-          <label for="login-username">项目 ID</label>
+          <label for="login-username">角色 ID</label>
           <input id="login-username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
           <label for="login-password">登录密码</label>
           <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
@@ -1816,7 +1831,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
         {{if .Message}}<p class="message">{{.Message}}</p>{{end}}
         {{if and .Error .RegisterOpen}}<p class="error">{{.Error}}</p>{{end}}
         <form method="post" action="/register">
-          <label for="register-username">项目 ID</label>
+          <label for="register-username">角色 ID</label>
           <input id="register-username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
           <label for="verification_code">验证码</label>
           <input id="verification_code" name="verification_code" autocomplete="off" required minlength="4" maxlength="16">
@@ -1842,24 +1857,16 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 {{define "public"}}{{template "pageStart" .}}{{template "publicContent" .}}{{template "pageEnd" .}}{{end}}
 {{define "publicContent"}}
 {{template "publicHeader" .}}
-<section class="public-hero" id="overview">
+<section class="public-hero compact" id="overview">
   <div>
-    <p class="public-kicker">Java / Linux / Web / Personal Project Notes</p>
+    <p class="public-kicker">Minecraft Plugin Development Notes</p>
     <h1>个人技术开发随记</h1>
-    <p>这里记录我的个人技术学习、开发实验和项目维护过程，内容以 Java 插件开发、Linux 运维、Web 页面开发、自动化部署和项目更新日志为主。</p>
+    <p>这里主要记录 Minecraft Java 插件的开发过程：从需求整理、交互设计、权限与领地系统实现，到部署验证和问题复盘。公开页面保留技术笔记和插件说明，非公开后台仅用于项目维护。</p>
     <div class="actions">
-      <a class="button" href="/tech">查看技术实现</a>
-      <a class="button secondary" href="/changelog">查看更新日志</a>
+      <a class="button" href="/plugins">查看插件介绍</a>
+      <a class="button secondary" href="/tech">查看技术实现</a>
     </div>
   </div>
-  <aside class="public-directory" aria-label="内容目录">
-    <h2>最近关注</h2>
-    <a href="/plugins">领地插件交互 UI</a><a href="/tech">Go Web 后端迁移</a><a href="/ops">公网访问与备案准备</a>
-  </aside>
-</section>
-<section class="public-section">
-  <div class="section-heading"><p class="public-kicker">Overview</p><h2>站点说明</h2></div>
-  <p>这个站点的公开部分只展示个人技术记录和项目开发状态；登录后的后台入口用于非公开的服务器维护、白名单登记、权限管理和审计查询。</p>
 </section>
 {{end}}
 
@@ -1883,10 +1890,88 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 {{define "publicPluginsContent"}}
 {{template "publicHeader" .}}
 <section class="public-page">
-  <div class="section-heading"><p class="public-kicker">Plugin Notes</p><h2>插件动态</h2></div>
-  <div class="note-list">
-    <article><span>2026-05</span><div><h3>领地交互 UI 调整</h3><p>通过虚拟容器界面组织坐标选择、范围预览、权限状态和授权成员管理，减少命令依赖。</p></div></article>
-    <article><span>2026-05</span><div><h3>Go Web 迁移完成</h3><p>Web 端已经完成 Go 化，后台页面、白名单注册、权限管理、举报和审计查询统一由 Go 服务承载。</p></div></article>
+  <p class="public-kicker">Plugin Index</p>
+  <h1>插件介绍</h1>
+  <p class="public-lead">这里按插件整理服务器功能的设计目标、当前实现和后续演进方向。每个页面聚焦一个插件，便于把开发过程、交互迭代和技术细节分开记录。</p>
+  <div class="article-grid">
+    <article class="article-card"><h3>XiceClaim</h3><p>领地插件，负责三维领地、领地戒指 UI、范围预览、授权成员与领地权限状态。</p><div class="actions"><a class="button secondary" href="/plugins/xiceclaim">查看介绍</a></div></article>
+    <article class="article-card"><h3>XiceAuditLog</h3><p>审计插件，记录关键玩家操作和方块、容器、实体相关事件，为 Web 查询和问题回溯提供数据。</p><div class="actions"><a class="button secondary" href="/plugins/xiceauditlog">查看介绍</a></div></article>
+    <article class="article-card"><h3>XiceCommandControl</h3><p>指令权限插件，将特殊指令授权从代码中抽离到配置与 Web 管理流程。</p><div class="actions"><a class="button secondary" href="/plugins/xicecommandcontrol">查看介绍</a></div></article>
+    <article class="article-card"><h3>XiceTextArranger</h3><p>文本交互插件，承载白名单验证码、进服提示、黑名单提示等面向玩家的消息流程。</p><div class="actions"><a class="button secondary" href="/plugins/xicetextarranger">查看介绍</a></div></article>
+  </div>
+</section>
+{{end}}
+
+{{define "pluginSubnav"}}
+<nav class="plugin-subnav" aria-label="插件介绍子菜单">
+  <a href="/plugins">插件总览</a>
+  <a href="/plugins/xiceclaim">XiceClaim</a>
+  <a href="/plugins/xiceauditlog">XiceAuditLog</a>
+  <a href="/plugins/xicecommandcontrol">XiceCommandControl</a>
+  <a href="/plugins/xicetextarranger">XiceTextArranger</a>
+</nav>
+{{end}}
+
+{{define "pluginXiceClaim"}}{{template "pageStart" .}}{{template "pluginXiceClaimContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceClaimContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  {{template "pluginSubnav" .}}
+  <p class="public-kicker">Claim Plugin</p>
+  <h1>XiceClaim 领地插件</h1>
+  <p class="public-lead">XiceClaim 的核心目标是把领地从命令驱动改成物品与 UI 驱动：玩家通过领地戒指选择坐标、创建领地、绑定已有领地，并在虚拟容器菜单内管理权限与授权成员。</p>
+  <div class="article-grid">
+    <article class="article-card"><h3>三维领地</h3><p>保护范围按立方体计算，不再默认覆盖整条 Y 轴，并在创建、查询、进入领地时用仅玩家可见的粒子展示边界。</p></article>
+    <article class="article-card"><h3>领地戒指</h3><p>以自定义燧石物品为载体，未绑定时用于创建或绑定领地，绑定后用于打开对应领地的管理菜单。</p></article>
+    <article class="article-card"><h3>权限状态</h3><p>每项领地功能支持允许所有人、禁止未授权、全体禁止三种状态，便于区分公共区域、私人领地和完全保护区域。</p></article>
+  </div>
+</section>
+{{end}}
+
+{{define "pluginXiceAuditLog"}}{{template "pageStart" .}}{{template "pluginXiceAuditLogContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceAuditLogContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  {{template "pluginSubnav" .}}
+  <p class="public-kicker">Audit Plugin</p>
+  <h1>XiceAuditLog 审计插件</h1>
+  <p class="public-lead">XiceAuditLog 用于记录服务器里的关键操作，让问题排查不再只依赖聊天记录和在线记忆。它把事件写入 PostgreSQL，并由 Web 端提供筛选查询。</p>
+  <div class="article-grid">
+    <article class="article-card"><h3>事件记录</h3><p>关注方块破坏与放置、容器交互、实体相关操作等容易产生纠纷或需要追溯的行为。</p></article>
+    <article class="article-card"><h3>Web 查询</h3><p>后台支持按玩家、事件类型、时间范围和关键词检索，服务于管理员的日常维护。</p></article>
+    <article class="article-card"><h3>保留策略</h3><p>通过保留天数控制数据规模，在可追溯性和个人小型服务器资源占用之间取得平衡。</p></article>
+  </div>
+</section>
+{{end}}
+
+{{define "pluginXiceCommandControl"}}{{template "pageStart" .}}{{template "pluginXiceCommandControlContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceCommandControlContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  {{template "pluginSubnav" .}}
+  <p class="public-kicker">Command Permission</p>
+  <h1>XiceCommandControl 指令权限插件</h1>
+  <p class="public-lead">XiceCommandControl 负责把特殊指令的授权从硬编码迁移到配置与后台页面。当前用于控制 /creative、/claim give 等需要额外信任的指令。</p>
+  <div class="article-grid">
+    <article class="article-card"><h3>配置化授权</h3><p>权限粒度保持在指令层，后续可以灵活调整哪些玩家拥有某个指令，而不需要改代码。</p></article>
+    <article class="article-card"><h3>Web 管理</h3><p>管理员和服主可在后台“权限管理”页面筛选指令、添加玩家、取消玩家授权。</p></article>
+    <article class="article-card"><h3>服内同步</h3><p>插件侧负责在玩家执行指令时检查授权状态，并提供重载与列表查询等维护入口。</p></article>
+  </div>
+</section>
+{{end}}
+
+{{define "pluginXiceTextArranger"}}{{template "pageStart" .}}{{template "pluginXiceTextArrangerContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceTextArrangerContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  {{template "pluginSubnav" .}}
+  <p class="public-kicker">Text Interaction</p>
+  <h1>XiceTextArranger 文本交互插件</h1>
+  <p class="public-lead">XiceTextArranger 负责整理玩家能直接看到的文本流程，尤其是白名单注册、拒绝提示、验证码和进服消息，让服务器内外的提示保持一致。</p>
+  <div class="article-grid">
+    <article class="article-card"><h3>白名单注册</h3><p>玩家在服务器内获得验证码，再到 Web 端完成角色 ID 绑定和白名单登记。</p></article>
+    <article class="article-card"><h3>提示文案</h3><p>拒绝连接、黑名单、进入服务器等提示集中管理，减少散落在多个配置里的文字漂移。</p></article>
+    <article class="article-card"><h3>联动后台</h3><p>与 Go Web 服务共享验证码和黑名单数据文件，方便后续继续收敛注册与管理流程。</p></article>
   </div>
 </section>
 {{end}}
