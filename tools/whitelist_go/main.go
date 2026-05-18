@@ -1615,6 +1615,10 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .markdown-doc h3 { margin:20px 0 8px; font-size:17px; }
     .markdown-doc ul { margin:8px 0 18px; padding-left:22px; color:var(--muted); line-height:1.7; }
     .markdown-doc li { margin:4px 0; }
+    .plugin-table { width:100%; max-width:900px; margin-top:22px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    .plugin-table table { margin:0; }
+    .plugin-table tr:last-child td { border-bottom:0; }
+    .plugin-table a { font-weight:800; }
     .panel { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:20px; margin-bottom:18px; }
     .identity-card { display:grid; grid-template-columns:minmax(170px,240px) 1fr; gap:24px; width:min(100%,860px); border:1px solid var(--line); border-radius:8px; background:#fff; padding:22px; margin-bottom:18px; }
     .identity-role { display:inline-flex; width:fit-content; padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px; }
@@ -1775,6 +1779,10 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .markdown-doc h3 { margin:20px 0 8px; font-size:17px; }
     .markdown-doc ul { margin:8px 0 18px; padding-left:22px; color:var(--muted); line-height:1.7; }
     .markdown-doc li { margin:4px 0; }
+    .plugin-table { width:100%; max-width:900px; margin-top:22px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    .plugin-table table { margin:0; }
+    .plugin-table tr:last-child td { border-bottom:0; }
+    .plugin-table a { font-weight:800; }
     .identity-card { display:grid; grid-template-columns:minmax(170px,240px) 1fr; gap:24px; width:min(100%,860px); border:1px solid var(--line); border-radius:8px; background:#fff; padding:22px; margin-bottom:18px; }
     .identity-role { display:inline-flex; width:fit-content; padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px; }
     .identity-role.owner { background:#fff4d6; color:#a15c00; }
@@ -1904,17 +1912,18 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 <section class="public-page">
   <p class="public-kicker">Plugin Index</p>
   <h1>插件介绍</h1>
-  <article class="markdown-doc">
-    <p class="public-lead">这里按插件整理服务器功能。插件按名称字母表排序。</p>
-    <h2><a href="/plugins/xiceauditlog">XiceAuditLog</a></h2>
-    <p>审计插件，用于记录关键玩家操作和方块、容器、实体相关事件，为 Web 查询和问题回溯提供数据。</p>
-    <h2><a href="/plugins/xiceclaim">XiceClaim</a></h2>
-    <p>领地插件，用于处理三维领地、领地戒指 UI、范围预览、授权成员和领地权限状态。</p>
-    <h2><a href="/plugins/xicecommandcontrol">XiceCommandControl</a></h2>
-    <p>指令权限插件，用于把特殊指令授权从代码中抽离到配置与 Web 管理流程。</p>
-    <h2><a href="/plugins/xicetextarranger">XiceTextArranger</a></h2>
-    <p>文本交互插件，用于承载白名单验证码、进服提示、黑名单提示等面向玩家的消息流程。</p>
-  </article>
+  <p class="public-lead">这里整理服务器当前使用的自制 Paper 插件。每个插件页面都分为功能概述和部署方式，便于同时查看玩家侧表现与服务器侧安装信息。</p>
+  <div class="plugin-table table-wrap">
+    <table>
+      <thead><tr><th>插件</th><th>功能定位</th><th>页面</th></tr></thead>
+      <tbody>
+        <tr><td><a href="/plugins/xiceauditlog">XiceAuditLog</a></td><td>记录关键玩家行为、方块变化、容器变动和登录会话。</td><td><a href="/plugins/xiceauditlog">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xiceclaim">XiceClaim</a></td><td>提供三维领地保护、领地戒指 GUI、授权管理和范围预览。</td><td><a href="/plugins/xiceclaim">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xicecommandcontrol">XiceCommandControl</a></td><td>用配置文件和 Web 后台维护玩家可用的受控指令。</td><td><a href="/plugins/xicecommandcontrol">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xicetextarranger">XiceTextArranger</a></td><td>重写白名单、正版验证、黑名单、进退服和维护广播等玩家提示。</td><td><a href="/plugins/xicetextarranger">查看介绍</a></td></tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 {{end}}
 
@@ -1925,16 +1934,24 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <article class="markdown-doc">
     <p class="public-kicker">Claim Plugin</p>
     <h1>XiceClaim 领地插件</h1>
-    <p class="public-lead">XiceClaim 用于把服务器领地保护做成可视化、物品化的交互功能。</p>
-    <h2>主要功能</h2>
+    <p class="public-lead">XiceClaim 用于把服务器领地保护做成可视化、物品化的交互功能，让玩家不用记复杂命令也能创建和管理自己的建设空间。</p>
+    <h2>功能概述</h2>
+    <p>XiceClaim 在服务器上表现为“领地戒指”和领地保护系统。玩家获得未绑定的领地戒指后，可以用铁砧把戒指改名为领地名称，再手持戒指右键打开创建界面。界面使用虚拟容器 GUI 调整两个角点坐标，支持按当前所在位置写入坐标、按按钮微调数值、预览范围和确认创建。</p>
+    <p>领地创建成功后，戒指会绑定到该领地并带有附魔光效；玩家再次右键可以进入管理菜单，处理授权成员、领地功能权限、范围预览和删除确认。玩家进入某个领地时会在聊天栏看到领地名称与所有者提示，并自动显示该领地范围；离开时只显示文字提示。</p>
+    <p>保护范围按三维立方体计算，不再默认覆盖整条 Y 轴。插件会阻止未授权玩家破坏方块、放置方块、交互方块、打开容器、交互实体、使用水桶或岩浆桶，以及伤害领地内动物或怪物；也会处理火焰蔓延、燃烧破坏、爆炸破坏、活塞跨越边界等会影响领地安全的行为。</p>
+    <p>领地功能权限支持三种状态：允许所有人、禁止未授权、全体禁止。这样既能做公共区域，也能做普通私人领地，还能做任何人都不能触发对应行为的强保护区域。</p>
+    <h3>当前规则</h3>
     <ul>
-      <li>按立方体计算领地范围，不再默认保护整条 Y 轴。</li>
-      <li>通过领地戒指创建、绑定和管理领地。</li>
-      <li>在创建、查询和进入领地时展示仅玩家可见的范围粒子。</li>
-      <li>支持授权成员管理和领地功能权限切换。</li>
+      <li>每名普通玩家默认最多拥有 3 个领地。</li>
+      <li>领地长、宽、高均不得小于 3 格。</li>
+      <li>领地水平长宽不得超过 128 格。</li>
+      <li>世界边界为 X/Z 正负 50000 格，Y 范围为 -64 到 320。</li>
+      <li>领地不得与已有领地重叠。</li>
     </ul>
-    <h2>权限状态</h2>
-    <p>领地功能支持允许所有人、禁止未授权、全体禁止三种状态，用于区分公共区域、私人领地和完全保护区域。</p>
+    <h2>部署方式</h2>
+    <p>前置插件为无；插件直接基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。源码位于 <code>plugins/XiceClaim</code>，Maven 构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceClaim.jar</code>。</p>
+    <p>插件运行时配置目录为 <code>/opt/xicemc/runtime/plugins/XiceClaim/</code>。主要配置文件是 <code>config.yml</code>，包含领地数量、尺寸限制、世界边界、粒子预览参数、默认保护策略、<code>/claim give</code> 发放权限和提示文案。领地数据保存为 <code>/opt/xicemc/runtime/plugins/XiceClaim/claims.yml</code>，属于运行时数据，不提交到 Git。</p>
+    <p>领地戒指使用资源包图标，资源包由 Web 服务通过 <code>/resourcepacks/xiceclaim.zip</code> 提供；仓库内资源位于 <code>server/resourcepacks/xiceclaim.zip</code> 及其源目录。Web 端读取领地数据时会使用 <code>XICEMC_CLAIMS_PATH</code>，读取配置时会使用 <code>XICEMC_CLAIM_CONFIG_PATH</code>，默认都指向上述运行时目录。</p>
   </article>
 </section>
 {{end}}
@@ -1946,18 +1963,22 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <article class="markdown-doc">
     <p class="public-kicker">Audit Plugin</p>
     <h1>XiceAuditLog 审计插件</h1>
-    <p class="public-lead">XiceAuditLog 用于记录服务器里的关键操作，为问题排查和操作回溯提供依据。</p>
-    <h2>记录范围</h2>
+    <p class="public-lead">XiceAuditLog 用于记录服务器里的关键操作，为问题排查、纠纷处理和操作回溯提供依据。</p>
+    <h2>功能概述</h2>
+    <p>XiceAuditLog 在服务器上不会向普通玩家展示额外界面，它主要在后台监听事件并写入审计数据库。管理员遇到方块被破坏、容器物品变化、爆炸破坏或玩家进出时间争议时，可以通过 Web 端“操作查询”页面检索相关记录。</p>
+    <p>插件的目标不是替代备份，也不是提供游戏内回滚，而是稳定回答“谁在什么时候对哪里做了什么”。记录写入由独立线程完成，主线程只收集事件并放入队列，避免数据库短暂波动直接拖慢服务器玩法。</p>
+    <h3>记录范围</h3>
     <ul>
-      <li>方块破坏与放置。</li>
-      <li>容器交互。</li>
-      <li>实体相关操作。</li>
-      <li>其它需要留痕的玩家行为。</li>
+      <li>方块破坏与放置，包括 TNT、苦力怕等爆炸造成的方块破坏。</li>
+      <li>容器物品放入与取出，按物品类型和数量记录变化。</li>
+      <li>玩家加入与退出，退出记录会携带本次在线时长。</li>
+      <li>后续需要追踪的其它关键行为，可以继续沿用同一套审计表结构扩展。</li>
     </ul>
-    <h2>查询方式</h2>
-    <p>审计数据写入 PostgreSQL，并由 Web 端按玩家、事件类型、时间范围和关键词进行筛选查询。</p>
-    <h2>保留策略</h2>
-    <p>数据保留天数可配置，用于在可追溯性和小型服务器资源占用之间取得平衡。</p>
+    <p>Web 查询按玩家、事件类型、时间范围和关键词筛选。插件只负责写入，查询由 Go Web 服务直接访问 PostgreSQL 完成，不在 Minecraft 主线程执行数据库查询。</p>
+    <h2>部署方式</h2>
+    <p>前置插件为无；插件直接基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。它需要一个可用的 PostgreSQL 数据库服务，数据库连接参数写在运行时配置中。PostgreSQL JDBC 驱动通过 Maven Shade 打包进插件 jar，不需要额外把 JDBC jar 放入服务器插件目录。</p>
+    <p>源码位于 <code>plugins/XiceAuditLog</code>，Maven 构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceAuditLog.jar</code>。运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceAuditLog/config.yml</code>，主要字段包括 <code>storage.type</code>、批量写入大小、队列容量、数据库 host/port/database/username，以及密码环境变量名。</p>
+    <p>当前配置使用 PostgreSQL，默认数据库为 <code>xicemc_audit</code>，默认用户为 <code>xicemc_audit</code>，密码不写入配置文件，而是由环境变量 <code>XICE_AUDIT_DB_PASSWORD</code> 提供。Web 端也使用同一个数据库，并通过 <code>XICE_AUDIT_DB_HOST</code>、<code>XICE_AUDIT_DB_PORT</code>、<code>XICE_AUDIT_DB_NAME</code>、<code>XICE_AUDIT_DB_USER</code>、<code>XICE_AUDIT_DB_PASSWORD</code> 和 <code>XICE_AUDIT_RETENTION_DAYS</code> 控制查询与保留策略。</p>
   </article>
 </section>
 {{end}}
@@ -1969,17 +1990,23 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <article class="markdown-doc">
     <p class="public-kicker">Command Permission</p>
     <h1>XiceCommandControl 指令权限插件</h1>
-    <p class="public-lead">XiceCommandControl 用于管理需要额外信任的服务器指令。</p>
-    <h2>设计目标</h2>
-    <p>插件把特殊指令授权从代码中抽离出来，让授权关系可以通过配置和 Web 页面维护。</p>
-    <h2>当前用途</h2>
+    <p class="public-lead">XiceCommandControl 用于管理需要额外信任的服务器指令，避免为了少量功能直接给玩家 OP 或开放原版高权限命令。</p>
+    <h2>功能概述</h2>
+    <p>XiceCommandControl 在服务器上表现为一组受控指令。普通玩家可以使用默认开放的指令，例如 <code>/survival</code>；需要额外信任的指令，例如 <code>/creative</code>、<code>/claim give</code> 或插件维护指令，则必须在配置中为指定玩家 UUID 授权。</p>
+    <p>插件把“谁能执行什么指令”从代码中抽离出来。管理员可以通过 Web 端“权限管理”页面添加或取消某个玩家对某条指令的权限，插件侧负责在玩家执行指令时读取配置并拦截无权限操作。</p>
+    <h3>当前用途</h3>
     <ul>
-      <li>控制 /creative 等特殊指令。</li>
-      <li>控制 /claim give 等物品发放指令。</li>
-      <li>支持管理员维护指令授权列表。</li>
+      <li><code>/survival</code>：切换自己为生存模式，默认允许所有玩家使用。</li>
+      <li><code>/creative</code>：切换自己为创造模式，只允许配置中授权的玩家使用。</li>
+      <li><code>/xcc reload</code>：重新加载指令权限配置。</li>
+      <li><code>/xcc list [玩家名或 UUID]</code>：查询当前配置中的玩家指令权限。</li>
+      <li><code>/claim give</code> 这类插件物品发放能力可以通过同一套权限管理思路交给指定玩家。</li>
     </ul>
-    <h2>权限粒度</h2>
-    <p>权限粒度保持在指令层，便于以后灵活调整某个玩家是否拥有某条指令。</p>
+    <p>权限粒度保持在指令层，不继续细分到每个子动作。这样配置更简单，也符合当前服务器只给少数可信玩家开放特殊能力的实际需求。</p>
+    <h2>部署方式</h2>
+    <p>前置插件为无；插件直接基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。源码位于 <code>plugins/XiceCommandControl</code>，Maven 构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceCommandControl.jar</code>。</p>
+    <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceCommandControl/config.yml</code>。配置中包含 <code>default-allowed-commands</code> 和 <code>players</code> 两部分：前者声明所有玩家默认可用的受控指令，后者按玩家 UUID 配置专属指令列表，<code>name</code> 字段只用于显示和查询。</p>
+    <p>Web 端权限管理页面读取和写入同一份配置文件，默认路径由 <code>XICEMC_COMMAND_CONTROL_CONFIG_PATH</code> 指向 <code>/opt/xicemc/runtime/plugins/XiceCommandControl/config.yml</code>。修改配置后，插件可通过 <code>/xcc reload</code> 重新加载。</p>
   </article>
 </section>
 {{end}}
@@ -1991,18 +2018,23 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <article class="markdown-doc">
     <p class="public-kicker">Text Interaction</p>
     <h1>XiceTextArranger 文本交互插件</h1>
-    <p class="public-lead">XiceTextArranger 用于整理玩家在服务器内外看到的文本提示和验证流程。</p>
-    <h2>白名单注册</h2>
-    <p>玩家在服务器内获得验证码，再到 Web 端完成角色 ID 绑定和白名单登记。</p>
-    <h2>提示文案</h2>
+    <p class="public-lead">XiceTextArranger 用于整理玩家在服务器内外看到的文本提示和验证流程，让白名单注册、黑名单拒绝和维护广播的文案集中管理。</p>
+    <h2>功能概述</h2>
+    <p>XiceTextArranger 在服务器上主要影响玩家看到的系统文本。未加入白名单的玩家连接服务器时，插件会把拒绝提示改写为更清楚的注册说明，并生成一次性验证码。玩家随后到 Web 首页右上角的注册入口填写角色 ID 和验证码，注册成功后再回到游戏重新连接。</p>
+    <p>插件还会处理正版验证失败提示、黑名单拒绝提示、玩家加入/离开消息，以及维护脚本通过 RCON 触发的系统广播。它不改变白名单、正版验证和封禁判断本身，只负责把玩家最终看到的文字整理成更准确的格式。</p>
+    <h3>当前管理的文本</h3>
     <ul>
-      <li>拒绝连接提示。</li>
-      <li>黑名单提示。</li>
-      <li>进服消息。</li>
-      <li>验证码相关提示。</li>
+      <li>白名单拒绝提示和注册验证码。</li>
+      <li>正版验证失败提示。</li>
+      <li>Web 黑名单同步后的拒绝登录提示。</li>
+      <li>玩家加入与退出消息，可选择保留、删除、重写或追加。</li>
+      <li><code>xicebroadcast</code> 系统广播，用于每日维护前的倒计时提醒。</li>
     </ul>
-    <h2>数据联动</h2>
-    <p>插件与 Go Web 服务共享验证码和黑名单数据文件，方便保持服务器内外提示一致。</p>
+    <h2>部署方式</h2>
+    <p>前置插件为无；插件直接基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。源码位于 <code>plugins/XiceTextArranger</code>，Maven 构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceTextArranger.jar</code>。</p>
+    <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceTextArranger/config.yml</code>。配置中包含白名单拒绝提示、验证码生成规则、黑名单提示、正版验证失败匹配文本、进退服消息模式和广播模板。</p>
+    <p>插件会和 Go Web 服务共享两个运行时数据文件：验证码文件 <code>/opt/xicemc/runtime/plugins/XiceTextArranger/verification-codes.tsv</code>，黑名单文件 <code>/opt/xicemc/runtime/plugins/XiceTextArranger/blacklist.tsv</code>。Web 端默认通过 <code>XICEMC_VERIFY_CODES_PATH</code> 和 <code>XICEMC_BLACKLIST_PATH</code> 指向这两个文件。</p>
+    <p><code>xicebroadcast</code> 命令权限为 <code>xicetextarranger.broadcast</code>，默认仅 OP 或控制台可执行；每日维护脚本通过 RCON 以控制台身份发送维护提醒。</p>
   </article>
 </section>
 {{end}}
