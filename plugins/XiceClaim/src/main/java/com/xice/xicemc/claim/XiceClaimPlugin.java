@@ -65,6 +65,7 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -410,14 +411,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
         if (getConfig().getBoolean("protection.block-break", true)) {
-            protect(event.getPlayer(), event.getBlock(), event);
+            protect(event.getPlayer(), event.getBlock(), event, ClaimFeature.BLOCK_BREAK);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
         if (getConfig().getBoolean("protection.block-place", true)) {
-            protect(event.getPlayer(), event.getBlockPlaced(), event);
+            protect(event.getPlayer(), event.getBlockPlaced(), event, ClaimFeature.BLOCK_PLACE);
         }
     }
 
@@ -434,7 +435,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (!getConfig().getBoolean("protection.block-interact", true) || event.getClickedBlock() == null) {
             return;
         }
-        protect(event.getPlayer(), event.getClickedBlock(), event);
+        protect(event.getPlayer(), event.getClickedBlock(), event, ClaimFeature.BLOCK_INTERACT);
     }
 
     private boolean isRightClick(Action action) {
@@ -487,7 +488,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         ClaimRegion claim = claimAt(location);
-        if (claim != null && !claim.canUse(player)) {
+        if (claim != null && !claim.canUse(player) && !claim.allowsFeature(ClaimFeature.CONTAINER_OPEN)) {
             event.setCancelled(true);
             send(player, message("protected"), "claim", claim.name);
         }
@@ -559,7 +560,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (getConfig().getBoolean("protection.entity-interact", true)) {
-            protectEntity(event.getPlayer(), event.getRightClicked(), event);
+            protectEntity(event.getPlayer(), event.getRightClicked(), event, ClaimFeature.ENTITY_INTERACT);
         }
     }
 
@@ -568,13 +569,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (!getConfig().getBoolean("protection.entity-interact", true) || !(event.getDamager() instanceof Player player)) {
             return;
         }
-        protectEntity(player, event.getEntity(), event);
+        protectEntity(player, event.getEntity(), event, ClaimFeature.ENTITY_INTERACT);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onHangingPlace(HangingPlaceEvent event) {
         if (getConfig().getBoolean("protection.entity-interact", true) && event.getPlayer() != null) {
-            protectEntity(event.getPlayer(), event.getEntity(), event);
+            protectEntity(event.getPlayer(), event.getEntity(), event, ClaimFeature.ENTITY_INTERACT);
         }
     }
 
@@ -584,10 +585,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (event.getRemover() instanceof Player player) {
-            protectEntity(player, event.getEntity(), event);
+            protectEntity(player, event.getEntity(), event, ClaimFeature.ENTITY_INTERACT);
             return;
         }
-        if (claimAt(event.getEntity().getLocation()) != null) {
+        ClaimRegion claim = claimAt(event.getEntity().getLocation());
+        if (claim != null && !claim.allowsFeature(ClaimFeature.ENTITY_INTERACT)) {
             event.setCancelled(true);
         }
     }
@@ -595,14 +597,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBucketEmpty(PlayerBucketEmptyEvent event) {
         if (getConfig().getBoolean("protection.bucket", true)) {
-            protect(event.getPlayer(), event.getBlock(), event);
+            protect(event.getPlayer(), event.getBlock(), event, ClaimFeature.BUCKET);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBucketFill(PlayerBucketFillEvent event) {
         if (getConfig().getBoolean("protection.bucket", true)) {
-            protect(event.getPlayer(), event.getBlock(), event);
+            protect(event.getPlayer(), event.getBlock(), event, ClaimFeature.BUCKET);
         }
     }
 
@@ -613,6 +615,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         ClaimRegion claim = claimAt(event.getBlock().getLocation());
         if (claim == null) {
+            return;
+        }
+        if (claim.allowsFeature(ClaimFeature.FIRE)) {
             return;
         }
         Player player = event.getPlayer();
@@ -626,7 +631,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockBurn(BlockBurnEvent event) {
-        if (getConfig().getBoolean("protection.fire", true) && claimAt(event.getBlock().getLocation()) != null) {
+        ClaimRegion claim = claimAt(event.getBlock().getLocation());
+        if (getConfig().getBoolean("protection.fire", true) && claim != null && !claim.allowsFeature(ClaimFeature.FIRE)) {
             event.setCancelled(true);
         }
     }
@@ -634,14 +640,20 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
         if (getConfig().getBoolean("protection.explosion", true)) {
-            event.blockList().removeIf(block -> claimAt(block.getLocation()) != null);
+            event.blockList().removeIf(block -> {
+                ClaimRegion claim = claimAt(block.getLocation());
+                return claim != null && !claim.allowsFeature(ClaimFeature.EXPLOSION);
+            });
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent event) {
         if (getConfig().getBoolean("protection.explosion", true)) {
-            event.blockList().removeIf(block -> claimAt(block.getLocation()) != null);
+            event.blockList().removeIf(block -> {
+                ClaimRegion claim = claimAt(block.getLocation());
+                return claim != null && !claim.allowsFeature(ClaimFeature.EXPLOSION);
+            });
         }
     }
 
@@ -678,21 +690,28 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ClaimRegion toClaim = claimAt(to);
         String fromId = fromClaim == null ? "" : fromClaim.id;
         String toId = toClaim == null ? "" : toClaim.id;
-        return !fromId.equals(toId);
+        if (fromId.equals(toId)) {
+            return false;
+        }
+        return isPistonProtected(fromClaim) || isPistonProtected(toClaim);
     }
 
-    private void protect(Player player, Block block, org.bukkit.event.Cancellable event) {
+    private boolean isPistonProtected(ClaimRegion claim) {
+        return claim != null && !claim.allowsFeature(ClaimFeature.PISTON);
+    }
+
+    private void protect(Player player, Block block, org.bukkit.event.Cancellable event, ClaimFeature feature) {
         ClaimRegion claim = claimAt(block.getLocation());
-        if (claim == null || claim.canUse(player)) {
+        if (claim == null || claim.canUse(player) || claim.allowsFeature(feature)) {
             return;
         }
         event.setCancelled(true);
         send(player, message("protected"), "claim", claim.name);
     }
 
-    private void protectEntity(Player player, Entity entity, org.bukkit.event.Cancellable event) {
+    private void protectEntity(Player player, Entity entity, org.bukkit.event.Cancellable event, ClaimFeature feature) {
         ClaimRegion claim = claimAt(entity.getLocation());
-        if (claim == null || claim.canUse(player)) {
+        if (claim == null || claim.canUse(player) || claim.allowsFeature(feature)) {
             return;
         }
         event.setCancelled(true);
@@ -931,7 +950,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 "&7所有者：&f" + claim.ownerName,
                 "&7世界：&f" + claim.world,
                 "&7坐标：&f" + claim.minX + "," + claim.minY + "," + claim.minZ + " 到 " + claim.maxX + "," + claim.maxY + "," + claim.maxZ)));
-        setAction(menu, 20, "view:members", menuItem(Material.PLAYER_HEAD, "&a管理授权玩家", List.of("&7添加或移除可以使用该领地的玩家。")));
+        setAction(menu, 20, "view:members", playerHeadItem(claim.ownerUuid, "&a管理授权玩家", List.of("&7添加或移除可以使用该领地的玩家。")));
         setAction(menu, 22, "view:features", menuItem(Material.COMPARATOR, "&e管理领地功能", List.of("&7预览范围、删除领地等功能。")));
         setAction(menu, 24, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
         setAction(menu, 40, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
@@ -941,7 +960,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         menu.actions.clear();
         Inventory inventory = menu.inventory;
         inventory.clear();
-        inventory.setItem(4, menuItem(Material.PLAYER_HEAD, "&a管理授权玩家", List.of(
+        inventory.setItem(4, playerHeadItem(claim.ownerUuid, "&a管理授权玩家", List.of(
                 "&7领地：&f" + claim.name,
                 "&7左侧添加在线玩家，右侧移除已授权玩家。")));
         int addSlot = 10;
@@ -969,9 +988,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         inventory.clear();
         inventory.setItem(4, menuItem(Material.COMPARATOR, "&e管理领地功能", List.of(
                 "&7领地：&f" + claim.name,
-                "&7选择要执行的领地功能。")));
-        setAction(menu, 20, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
-        setAction(menu, 24, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
+                "&7发光表示允许，无光表示禁止。点击可切换。")));
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 19, 20};
+        ClaimFeature[] features = ClaimFeature.values();
+        for (int index = 0; index < features.length && index < slots.length; index++) {
+            ClaimFeature feature = features[index];
+            boolean allowed = claim.allowsFeature(feature);
+            setAction(menu, slots[index], "feature:" + feature.id, featureItem(feature, allowed));
+        }
+        setAction(menu, 39, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
+        setAction(menu, 41, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
         setAction(menu, 49, "view:main", menuItem(Material.ARROW, "&e返回主菜单", List.of("&7回到领地管理菜单。")));
     }
 
@@ -1084,6 +1110,15 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             ringSessions.remove(player.getUniqueId());
             player.closeInventory();
             send(player, message("ring-claim-deleted"), "claim", claim.name);
+            return;
+        }
+        if (action.startsWith("feature:")) {
+            ClaimFeature feature = ClaimFeature.fromId(action.substring("feature:".length()));
+            if (feature != null) {
+                claim.toggleFeature(feature);
+                saveClaims();
+                renderManageRingMenu(menu, claim);
+            }
             return;
         }
         if (action.startsWith("add:")) {
@@ -1270,6 +1305,31 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return item;
     }
 
+    private ItemStack menuItem(Material material, String name, List<String> lore, boolean glint) {
+        ItemStack item = menuItem(material, name, lore);
+        ItemMeta meta = item.getItemMeta();
+        meta.setEnchantmentGlintOverride(glint);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private ItemStack featureItem(ClaimFeature feature, boolean allowed) {
+        String status = allowed ? "&a允许" : "&c禁止";
+        return menuItem(feature.material, feature.displayName, List.of(
+                "&7当前状态： " + status,
+                "&7点击切换该领地内的该项规则。"), allowed);
+    }
+
+    private ItemStack playerHeadItem(UUID playerUuid, String name, List<String> lore) {
+        ItemStack item = menuItem(Material.PLAYER_HEAD, name, lore);
+        ItemMeta meta = item.getItemMeta();
+        if (meta instanceof SkullMeta skullMeta) {
+            skullMeta.setOwningPlayer(Bukkit.getOfflinePlayer(playerUuid));
+            item.setItemMeta(skullMeta);
+        }
+        return item;
+    }
+
     private void loadClaims() {
         claims.clear();
         claimsFile = new File(getDataFolder(), "claims.yml");
@@ -1310,6 +1370,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             claimsConfig.set(path + ".min-z", claim.minZ);
             claimsConfig.set(path + ".max-z", claim.maxZ);
             claimsConfig.set(path + ".created-at", claim.createdAt);
+            claimsConfig.set(path + ".allowed-features", claim.allowedFeatureIds());
             List<String> members = claim.members.stream().map(UUID::toString).sorted().toList();
             claimsConfig.set(path + ".members", members);
             claimsConfig.set(path + ".member-names", null);
@@ -1457,6 +1518,37 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         DELETE_CONFIRM
     }
 
+    private enum ClaimFeature {
+        BLOCK_BREAK("block-break", Material.IRON_PICKAXE, "&e未授权玩家破坏方块"),
+        BLOCK_PLACE("block-place", Material.GRASS_BLOCK, "&e未授权玩家放置方块"),
+        BLOCK_INTERACT("block-interact", Material.OAK_BUTTON, "&e未授权玩家交互方块"),
+        CONTAINER_OPEN("container-open", Material.CHEST, "&e未授权玩家打开容器"),
+        ENTITY_INTERACT("entity-interact", Material.ARMOR_STAND, "&e未授权玩家交互实体"),
+        BUCKET("bucket", Material.WATER_BUCKET, "&e未授权玩家使用桶装液体"),
+        FIRE("fire", Material.FLINT_AND_STEEL, "&e火焰蔓延和燃烧破坏"),
+        EXPLOSION("explosion", Material.TNT, "&e爆炸破坏方块"),
+        PISTON("piston", Material.PISTON, "&e活塞跨越领地边界");
+
+        private final String id;
+        private final Material material;
+        private final String displayName;
+
+        ClaimFeature(String id, Material material, String displayName) {
+            this.id = id;
+            this.material = material;
+            this.displayName = displayName;
+        }
+
+        private static ClaimFeature fromId(String id) {
+            for (ClaimFeature feature : values()) {
+                if (feature.id.equalsIgnoreCase(id)) {
+                    return feature;
+                }
+            }
+            return null;
+        }
+    }
+
     private enum DraftField {
         X1,
         Y1,
@@ -1579,6 +1671,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private final long createdAt;
         private final Set<UUID> members;
         private final Map<UUID, String> memberNames;
+        private final Set<String> allowedFeatures;
 
         private ClaimRegion(
                 String id,
@@ -1594,7 +1687,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 int maxZ,
                 long createdAt,
                 Set<UUID> members,
-                Map<UUID, String> memberNames
+                Map<UUID, String> memberNames,
+                Set<String> allowedFeatures
         ) {
             this.id = id;
             this.name = name;
@@ -1610,6 +1704,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             this.createdAt = createdAt;
             this.members = members;
             this.memberNames = memberNames;
+            this.allowedFeatures = allowedFeatures;
         }
 
         private static ClaimRegion fromSelection(
@@ -1634,7 +1729,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     Math.max(pos1.z, pos2.z),
                     System.currentTimeMillis(),
                     new HashSet<>(),
-                    new HashMap<>());
+                    new HashMap<>(),
+                    new HashSet<>());
         }
 
         private static ClaimRegion fromConfig(String id, ConfigurationSection section) {
@@ -1647,6 +1743,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             if (names != null) {
                 for (String key : names.getKeys(false)) {
                     memberNames.put(UUID.fromString(key), names.getString(key, key));
+                }
+            }
+            Set<String> allowedFeatures = new HashSet<>();
+            for (String featureId : section.getStringList("allowed-features")) {
+                ClaimFeature feature = ClaimFeature.fromId(featureId);
+                if (feature != null) {
+                    allowedFeatures.add(feature.id);
                 }
             }
             return new ClaimRegion(
@@ -1663,7 +1766,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     section.getInt("max-z"),
                     section.getLong("created-at", System.currentTimeMillis()),
                     members,
-                    memberNames);
+                    memberNames,
+                    allowedFeatures);
         }
 
         private boolean contains(Location location) {
@@ -1693,6 +1797,20 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     || player.hasPermission("xiceclaim.admin");
         }
 
+        private boolean allowsFeature(ClaimFeature feature) {
+            return allowedFeatures.contains(feature.id);
+        }
+
+        private void toggleFeature(ClaimFeature feature) {
+            if (!allowedFeatures.remove(feature.id)) {
+                allowedFeatures.add(feature.id);
+            }
+        }
+
+        private List<String> allowedFeatureIds() {
+            return allowedFeatures.stream().sorted().toList();
+        }
+
         private ClaimRegion withName(String newName) {
             return new ClaimRegion(
                     id,
@@ -1708,7 +1826,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     maxZ,
                     createdAt,
                     members,
-                    memberNames);
+                    memberNames,
+                    allowedFeatures);
         }
 
         private int sizeX() {

@@ -1097,10 +1097,10 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     <a class="{ 'active' if active == 'docs' else '' }" href="/docs">服务器文档</a>
     <a class="{ 'active' if active == 'audit' else '' }" href="/audit">操作查询</a>
     <a class="{ 'active' if active == 'players' else '' }" href="/players">玩家列表</a>
+    {management_links}
     <a class="{ 'active' if active == 'blacklist' else '' }" href="/blacklist">黑名单列表</a>
     <a class="{ 'active' if active == 'report' else '' }" href="/report">举报</a>
     {report_admin_link}
-    {management_links}
   </nav>
   <form method="post" action="/logout"><button class="secondary" type="submit">退出登录</button></form>
 </aside>
