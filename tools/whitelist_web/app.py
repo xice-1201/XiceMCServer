@@ -1179,12 +1179,11 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
     p {{ line-height: 1.6; color: var(--muted); }}
     .login-shell {{
       min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 20px;
+      display: block;
+      padding: 0;
     }}
     .login-shell main {{
-      width: min(94vw, 920px);
+      width: 100%;
       padding: 0;
     }}
     .auth-grid {{
@@ -1194,15 +1193,189 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       gap: 18px;
       align-items: start;
     }}
-    .auth-title {{
-      margin: 0 0 18px;
-      text-align: center;
-      font-size: 30px;
-      line-height: 1.18;
+    .public-header {{
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 18px;
+      align-items: center;
+      min-height: 64px;
+      padding: 0 28px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.96);
     }}
-    .auth-docs-link {{
+    .public-brand {{
+      color: var(--text);
+      font-weight: 800;
+    }}
+    .public-nav {{
+      display: flex;
+      gap: 6px;
+      margin: 0;
       justify-content: center;
-      margin-top: 18px;
+    }}
+    .public-nav a {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 14px;
+    }}
+    .public-nav a:hover {{
+      background: #eef4fb;
+      color: var(--text);
+    }}
+    .public-auth {{
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+      position: relative;
+    }}
+    .auth-popover {{
+      position: relative;
+    }}
+    .auth-popover summary {{
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 7px 11px;
+      border-radius: 6px;
+      background: #e7edf5;
+      color: var(--text);
+      font-size: 14px;
+      cursor: pointer;
+      user-select: none;
+    }}
+    .auth-popover summary::-webkit-details-marker {{ display: none; }}
+    .auth-popover[open] summary {{
+      background: var(--accent);
+      color: #ffffff;
+    }}
+    .auth-popover-panel {{
+      position: absolute;
+      right: 0;
+      top: calc(100% + 10px);
+      width: min(340px, calc(100vw - 32px));
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 18px 50px rgba(20, 32, 51, 0.18);
+    }}
+    .auth-popover-panel label {{
+      margin-top: 8px;
+    }}
+    .public-hero {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(230px, 300px);
+      gap: 36px;
+      align-items: end;
+      width: min(100% - 48px, 1120px);
+      min-height: 58vh;
+      margin: 0 auto;
+      padding: 82px 0 54px;
+    }}
+    .public-hero-copy {{
+      max-width: 760px;
+    }}
+    .public-kicker {{
+      margin: 0 0 10px;
+      color: #2b6c9f;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }}
+    .public-hero h1 {{
+      margin: 0 0 18px;
+      font-size: 48px;
+      line-height: 1.08;
+    }}
+    .public-hero p {{
+      max-width: 720px;
+      margin: 0;
+      font-size: 18px;
+      color: #405169;
+    }}
+    .public-directory {{
+      border-left: 3px solid #d8e0ea;
+      padding-left: 18px;
+    }}
+    .public-directory h2 {{
+      margin-bottom: 12px;
+      font-size: 16px;
+    }}
+    .public-directory a {{
+      display: block;
+      padding: 7px 0;
+      color: var(--muted);
+    }}
+    .public-section {{
+      width: min(100% - 48px, 1120px);
+      margin: 0 auto;
+      padding: 42px 0;
+      border-top: 1px solid var(--line);
+    }}
+    .section-heading {{
+      margin-bottom: 18px;
+    }}
+    .section-heading h2 {{
+      margin: 0;
+      font-size: 24px;
+    }}
+    .article-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }}
+    .article-card {{
+      min-width: 0;
+      min-height: 178px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }}
+    .article-card h3,
+    .note-list h3 {{
+      margin: 0 0 8px;
+      font-size: 17px;
+    }}
+    .article-card p,
+    .note-list p,
+    .public-text {{
+      margin: 0;
+      color: #405169;
+      line-height: 1.7;
+    }}
+    .note-list {{
+      display: grid;
+      gap: 0;
+      border-top: 1px solid var(--line);
+    }}
+    .note-list article {{
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr);
+      gap: 18px;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--line);
+    }}
+    .note-date {{
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .timeline {{
+      margin: 0;
+      padding-left: 22px;
+      color: #405169;
+      line-height: 1.8;
     }}
     .login-card {{
       width: 100%;
@@ -1730,6 +1903,41 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
       .app-shell {{ grid-template-columns: 1fr; }}
       .sidebar {{ border-right: 0; border-bottom: 1px solid var(--line); }}
       main {{ padding: 18px; }}
+      .login-shell main {{ padding: 0; }}
+      .public-header {{
+        position: static;
+        grid-template-columns: 1fr;
+        align-items: start;
+        gap: 10px;
+        padding: 14px 18px;
+      }}
+      .public-nav {{
+        justify-content: flex-start;
+        overflow-x: auto;
+        padding-bottom: 2px;
+      }}
+      .public-auth {{
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }}
+      .auth-popover-panel {{
+        left: 0;
+        right: auto;
+      }}
+      .public-hero {{
+        grid-template-columns: 1fr;
+        min-height: 0;
+        width: min(100% - 36px, 1120px);
+        padding: 48px 0 34px;
+      }}
+      .public-hero h1 {{ font-size: 34px; }}
+      .public-hero p {{ font-size: 16px; }}
+      .public-section {{
+        width: min(100% - 36px, 1120px);
+        padding: 32px 0;
+      }}
+      .article-grid {{ grid-template-columns: 1fr; }}
+      .note-list article {{ grid-template-columns: 1fr; gap: 6px; }}
       .identity-card {{ min-width: 680px; padding: 16px; gap: 16px; }}
       .identity-card-wrap {{ overflow-x: auto; padding-bottom: 4px; }}
       .identity-visual {{ min-height: 0; }}
@@ -1770,44 +1978,123 @@ def register_page(message="", status=HTTPStatus.OK):
 def auth_page(login_message="", register_message="", status=HTTPStatus.OK):
     safe_login_message = f'<p class="message">{esc(login_message)}</p>' if login_message else ""
     safe_register_message = f'<p class="register-message">{esc(register_message)}</p>' if register_message else ""
+    login_open = " open" if login_message else ""
+    register_open = " open" if register_message else ""
     body = f"""
-<h1 class="auth-title">XiceMCServer玩家平台</h1>
-<div class="auth-grid">
-<section class="login-card">
-  <h1>XiceMCServer 登录</h1>
-  <p class="help-text">服务器版本：Minecraft Java 版 {MINECRAFT_VERSION}。</p>
-  {safe_login_message}
-  <form method="post" action="/login">
-    <label for="username">Minecraft Java 版 ID</label>
-    <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
-    <label for="password">Web 登录密码</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+" placeholder="初始密码 123456">
-    <p class="field-hint">成功注册白名单后，初始 Web 登录密码为 123456；登录后可在首页修改。</p>
-    <div class="actions">
-      <button type="submit">登录</button>
-    </div>
-  </form>
+<header class="public-header">
+  <a class="public-brand" href="/">个人技术开发随记</a>
+  <nav class="public-nav" aria-label="首页目录">
+    <a href="#overview">首页介绍</a>
+    <a href="#stack">技术实现</a>
+    <a href="#plugins">插件动态</a>
+    <a href="#log">更新日志</a>
+  </nav>
+  <div class="public-auth">
+    <details class="auth-popover"{login_open}>
+      <summary>后台登录</summary>
+      <div class="auth-popover-panel">
+        {safe_login_message}
+        <form method="post" action="/login">
+          <label for="login-username">项目 ID</label>
+          <input id="login-username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
+          <label for="login-password">登录密码</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
+          <div class="actions compact-actions">
+            <button type="submit">进入后台</button>
+          </div>
+        </form>
+      </div>
+    </details>
+    <details class="auth-popover"{register_open}>
+      <summary>注册入口</summary>
+      <div class="auth-popover-panel">
+        {safe_register_message}
+        <form method="post" action="/register">
+          <label for="register-username">项目 ID</label>
+          <input id="register-username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
+          <label for="verification_code">验证码</label>
+          <input id="verification_code" name="verification_code" autocomplete="off" required minlength="4" maxlength="16">
+          <p class="field-hint">该入口仅用于非公开项目成员登记。</p>
+          <div class="actions compact-actions">
+            <button type="submit">提交登记</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  </div>
+</header>
+<section class="public-hero" id="overview">
+  <div class="public-hero-copy">
+    <p class="public-kicker">Java / Linux / Web / Personal Project Notes</p>
+    <h1>个人技术开发随记</h1>
+    <p>这里记录我的个人技术学习、开发实验和项目维护过程，内容以 Java 插件开发、Linux 运维、Web 页面开发、自动化部署和项目更新日志为主。</p>
+  </div>
+  <aside class="public-directory" aria-label="内容目录">
+    <h2>目录</h2>
+    <a href="#stack">技术实现</a>
+    <a href="#plugins">插件动态</a>
+    <a href="#ops">运维记录</a>
+    <a href="#log">更新日志</a>
+  </aside>
 </section>
-<section class="login-card">
-  <h1>注册白名单</h1>
-  <p class="help-text">请使用 Minecraft Java 版 {MINECRAFT_VERSION} 连接服务器获取白名单验证码。白名单验证码在 5 分钟内有效。</p>
-  {safe_register_message}
-  <form method="post" action="/register">
-    <label for="username">Minecraft Java 版 ID</label>
-    <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
-    <label for="verification_code">白名单验证码</label>
-    <input id="verification_code" name="verification_code" autocomplete="off" required minlength="4" maxlength="16">
-    <div class="actions">
-      <button type="submit">加入白名单</button>
-    </div>
-  </form>
+<section class="public-section" id="stack">
+  <div class="section-heading">
+    <p class="public-kicker">Implementation</p>
+    <h2>技术实现</h2>
+  </div>
+  <div class="article-grid">
+    <article class="article-card">
+      <h3>Java 插件开发</h3>
+      <p>围绕权限、领地、审计和文本交互等模块整理实现思路，记录事件监听、配置持久化、命令控制和用户界面迭代。</p>
+    </article>
+    <article class="article-card">
+      <h3>Web 页面开发</h3>
+      <p>记录轻量 Python Web 后端、会话管理、权限页面、审计查询和后台页面拆分过程，关注小型项目的可维护性。</p>
+    </article>
+    <article class="article-card">
+      <h3>自动化部署</h3>
+      <p>整理从代码提交、构建、备份到服务重启的部署流程，保留每次调整背后的取舍与问题复盘。</p>
+    </article>
+  </div>
 </section>
-</div>
-<div class="actions auth-docs-link">
-  <a class="button secondary" href="/docs">查看服务器文档</a>
-</div>
+<section class="public-section" id="plugins">
+  <div class="section-heading">
+    <p class="public-kicker">Plugin Notes</p>
+    <h2>插件动态</h2>
+  </div>
+  <div class="note-list">
+    <article>
+      <span class="note-date">2026-05</span>
+      <h3>领地交互 UI 调整</h3>
+      <p>通过虚拟容器界面组织坐标选择、范围预览、权限状态和授权成员管理，减少命令依赖。</p>
+    </article>
+    <article>
+      <span class="note-date">2026-05</span>
+      <h3>资源包物品图标</h3>
+      <p>为自定义物品准备低分辨率透明贴图和物品模型映射，记录资源包兼容与发布细节。</p>
+    </article>
+  </div>
+</section>
+<section class="public-section" id="ops">
+  <div class="section-heading">
+    <p class="public-kicker">Operations</p>
+    <h2>运维记录</h2>
+  </div>
+  <p class="public-text">项目运行在个人云主机环境中，维护记录会关注系统服务、备份策略、访问控制、日志排查和资源配置。当前公开页面仅展示技术笔记，非公开后台入口用于个人项目维护。</p>
+</section>
+<section class="public-section" id="log">
+  <div class="section-heading">
+    <p class="public-kicker">Changelog</p>
+    <h2>更新日志</h2>
+  </div>
+  <ol class="timeline">
+    <li><strong>访问控制：</strong>备案审核期间限制公网 Web 访问，仅保留个人调试入口。</li>
+    <li><strong>备案页脚：</strong>预留 ICP 与公安联网备案展示位，备案号下发后可直接启用。</li>
+    <li><strong>前台调整：</strong>公开首页转为个人技术记录，后台能力仅向登录用户提供。</li>
+  </ol>
+</section>
 """
-    return page("XiceMCServer玩家平台", body, status)
+    return page("个人技术开发随记", body, status)
 
 
 def render_home_claims(claims):
@@ -2248,8 +2535,6 @@ def server_docs_page(user, message=""):
     markdown = read_server_docs_markdown()
     if can_edit_server_docs(user):
         page_action = '<a class="button secondary" href="/docs/edit">编辑</a>'
-    elif user is None:
-        page_action = '<a class="button secondary" href="/">返回登录</a>'
     else:
         page_action = ""
     safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
@@ -3812,6 +4097,9 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(*status_page(user))
             return
         if parsed.path == "/docs":
+            if not user:
+                self.send_redirect("/")
+                return
             self.respond(*server_docs_page(user))
             return
         if parsed.path == "/docs/edit":
@@ -3905,7 +4193,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             entry = whitelist_entry(username)
             if not entry:
-                self.respond(*login_page("该玩家不在白名单内，请先在右侧注册白名单。", HTTPStatus.FORBIDDEN))
+                self.respond(*login_page("该 ID 暂无后台权限，请使用注册入口完成登记。", HTTPStatus.FORBIDDEN))
                 return
             player = web_player(entry)
             if not player or not hmac.compare_digest(player["password_hash"], password_hash(submitted_password)):
@@ -3954,7 +4242,7 @@ class Handler(BaseHTTPRequestHandler):
   <h1>已提交白名单</h1>
   <p class="register-message">玩家 <strong>{esc(verified_entry["name"])}</strong> 已提交加入白名单。{esc("已加入白名单。" if added else "该玩家已在白名单内，已刷新白名单。")} Web 默认登录密码为 <strong>123456</strong>，登录后请在首页修改密码。</p>
   <p>{esc(result or "白名单已刷新。")}</p>
-  <div class="actions"><a class="button" href="/">返回登录</a></div>
+  <div class="actions"><a class="button" href="/">返回首页</a></div>
 </section>
 """
         self.respond(*page("已提交白名单", body))
