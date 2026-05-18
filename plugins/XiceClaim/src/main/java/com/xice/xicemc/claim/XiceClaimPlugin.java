@@ -95,6 +95,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey ringY2Key;
     private NamespacedKey ringZ2Key;
     private NamespacedKey ringRecipeKey;
+    private NamespacedKey ringItemModelKey;
 
     @Override
     public void onEnable() {
@@ -122,6 +123,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ringY2Key = new NamespacedKey(this, "claim_ring_y2");
         ringZ2Key = new NamespacedKey(this, "claim_ring_z2");
         ringRecipeKey = new NamespacedKey(this, "claim_ring_recipe");
+        ringItemModelKey = new NamespacedKey(this, "claim_ring");
     }
 
     @Override
@@ -892,6 +894,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ItemMeta meta = ring.getItemMeta();
         meta.setDisplayName(color("&b领地戒指"));
         meta.setLore(List.of(color("&7右键打开领地创建界面。"), color("&7可用铁砧改名，戒指名即领地名。")));
+        applyRingItemModel(meta);
         PersistentDataContainer data = meta.getPersistentDataContainer();
         data.set(ringKey, PersistentDataType.BYTE, (byte) 1);
         ring.setItemMeta(meta);
@@ -1428,6 +1431,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         meta.setDisplayName(color("&b" + claim.name));
         meta.setLore(List.of(color("&7已绑定领地。"), color("&7右键打开领地管理界面。")));
         meta.setEnchantmentGlintOverride(true);
+        applyRingItemModel(meta);
         PersistentDataContainer data = meta.getPersistentDataContainer();
         data.set(ringKey, PersistentDataType.BYTE, (byte) 1);
         data.set(ringClaimIdKey, PersistentDataType.STRING, claim.id);
@@ -1439,6 +1443,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ItemMeta meta = ring.getItemMeta();
         meta.setLore(List.of(color("&7右键打开领地创建界面。"), color("&7可用铁砧改名，戒指名即领地名。")));
         meta.setEnchantmentGlintOverride(false);
+        applyRingItemModel(meta);
         meta.getPersistentDataContainer().remove(ringClaimIdKey);
         ring.setItemMeta(meta);
     }
@@ -1447,7 +1452,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ItemMeta meta = ring.getItemMeta();
         meta.setDisplayName(color("&b" + name));
         meta.setEnchantmentGlintOverride(bound);
+        applyRingItemModel(meta);
         ring.setItemMeta(meta);
+    }
+
+    private void applyRingItemModel(ItemMeta meta) {
+        meta.setItemModel(ringItemModelKey);
     }
 
     private EquipmentSlot normalizeHand(EquipmentSlot hand) {
@@ -1482,6 +1492,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private void saveDraftToRing(ItemStack ring, RingDraft draft) {
         ItemMeta meta = ring.getItemMeta();
+        applyRingItemModel(meta);
         PersistentDataContainer data = meta.getPersistentDataContainer();
         data.set(ringKey, PersistentDataType.BYTE, (byte) 1);
         data.set(ringWorldKey, PersistentDataType.STRING, draft.world);

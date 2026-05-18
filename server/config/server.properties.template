@@ -50,5 +50,5 @@ enable-query=false
 
 # Resource pack
 require-resource-pack=false
-resource-pack=
-resource-pack-sha1=
+resource-pack=http://150.158.93.80/resourcepacks/xiceclaim.zip
+resource-pack-sha1=ce1603f30b7a836659b4115f78d01e90e607139a

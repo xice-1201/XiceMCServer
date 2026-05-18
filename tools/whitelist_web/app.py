@@ -96,6 +96,7 @@ CLAIM_CONFIG_PATH = env("XICEMC_CLAIM_CONFIG_PATH", os.path.join(RUNTIME_DIR, "p
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 WEB_ICON_PATH = env("XICEMC_WEB_ICON_PATH", os.path.join(REPO_ROOT, "server", "assets", "xicemc-logo.png"))
 WEB_FAVICON_PATH = env("XICEMC_WEB_FAVICON_PATH", os.path.join(REPO_ROOT, "server", "assets", "favicon.ico"))
+RESOURCE_PACK_PATH = env("XICEMC_RESOURCE_PACK_PATH", os.path.join(REPO_ROOT, "server", "resourcepacks", "xiceclaim.zip"))
 SERVER_DOCS_HOME_PATH = env("XICEMC_DOCS_HOME_PATH", os.path.join(RUNTIME_DIR, "web", "server-docs.md"))
 SERVER_DOCS_MAX_LENGTH = int(env("XICEMC_DOCS_MAX_LENGTH", "100000"))
 COMMAND_PERMISSION_STORE = CommandPermissionStore(COMMAND_CONTROL_CONFIG_PATH, CLAIM_CONFIG_PATH)
@@ -3675,6 +3676,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/favicon.ico":
             self.respond_file(WEB_FAVICON_PATH, "image/x-icon")
+            return
+        if parsed.path == "/resourcepacks/xiceclaim.zip":
+            self.respond_file(RESOURCE_PACK_PATH, "application/zip")
             return
 
         if parsed.path == "/":
