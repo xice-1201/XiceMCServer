@@ -1583,7 +1583,8 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .sidebar nav a { display:block; padding:10px 12px; border-radius:6px; color:var(--text); }
     .sidebar nav a.active,.sidebar nav a:hover { background:#eaf1ff; }
     .public-header { position:sticky; top:0; z-index:30; display:grid; grid-template-columns:auto 1fr auto; gap:18px; align-items:center; min-height:64px; padding:0 28px; border-bottom:1px solid var(--line); background:rgba(255,255,255,.96); }
-    .public-brand { color:var(--text); font-weight:800; }
+    .public-brand { display:inline-flex; align-items:center; gap:9px; color:var(--text); font-weight:800; }
+    .public-brand img { width:28px; height:28px; border-radius:6px; object-fit:cover; }
     .public-nav { display:flex; gap:6px; justify-content:center; }
     .public-nav a { display:inline-flex; align-items:center; min-height:34px; padding:6px 10px; border-radius:6px; color:var(--muted); font-size:14px; }
     .public-nav a.active,.public-nav a:hover { background:#eaf1ff; color:var(--text); }
@@ -1630,7 +1631,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .message { color:var(--muted); }
     .register-message,.error { color:var(--danger); font-weight:700; border:1px solid #f1b7b7; background:#fff1f1; border-radius:6px; padding:10px 12px; }
     .field-hint { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
-    .compliance-footer { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:26px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; line-height:1.5; }
+    .compliance-footer { display:flex; flex-wrap:wrap; justify-content:center; gap:8px 16px; margin-top:26px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; line-height:1.5; text-align:center; }
     .pre { white-space:pre-wrap; overflow-wrap:anywhere; }
     @media (max-width:760px) {
       .app-shell { grid-template-columns:1fr; }
@@ -1704,7 +1705,8 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .sidebar nav a { display:block; padding:10px 12px; border-radius:6px; color:var(--text); }
     .sidebar nav a.active,.sidebar nav a:hover { background:#eaf1ff; }
     .public-header { position:sticky; top:0; z-index:30; display:grid; grid-template-columns:auto 1fr auto; gap:18px; align-items:center; min-height:64px; padding:0 28px; border-bottom:1px solid var(--line); background:rgba(255,255,255,.96); }
-    .public-brand { color:var(--text); font-weight:800; }
+    .public-brand { display:inline-flex; align-items:center; gap:9px; color:var(--text); font-weight:800; }
+    .public-brand img { width:28px; height:28px; border-radius:6px; object-fit:cover; }
     .public-nav { display:flex; gap:6px; justify-content:center; }
     .public-nav a { display:inline-flex; align-items:center; min-height:34px; padding:6px 10px; border-radius:6px; color:var(--muted); font-size:14px; }
     .public-nav a.active,.public-nav a:hover { background:#eaf1ff; color:var(--text); }
@@ -1776,7 +1778,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .message { color:var(--muted); }
     .error { color:var(--danger); font-weight:700; border:1px solid #f1b7b7; background:#fff1f1; border-radius:6px; padding:10px 12px; }
     .field-hint { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
-    .compliance-footer { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:26px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; line-height:1.5; }
+    .compliance-footer { display:flex; flex-wrap:wrap; justify-content:center; gap:8px 16px; margin-top:26px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; line-height:1.5; text-align:center; }
     .pre { white-space:pre-wrap; overflow-wrap:anywhere; }
     @media (max-width:760px) {
       .app-shell { grid-template-columns:1fr; }
@@ -1803,7 +1805,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 
 {{define "publicHeader"}}
 <header class="public-header">
-  <a class="public-brand" href="/">个人技术开发随记</a>
+  <a class="public-brand" href="/"><img src="/favicon.png" alt="" aria-hidden="true">个人技术开发随记</a>
   <nav class="public-nav" aria-label="公开页面目录">
     <a class="{{if eq .Active "public-home"}}active{{end}}" href="/">首页</a>
     <a class="{{if eq .Active "public-plugins"}}active{{end}}" href="/plugins">插件动态</a>
@@ -1861,7 +1863,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <div>
     <p class="public-kicker">Minecraft Plugin Development Notes</p>
     <h1>个人技术开发随记</h1>
-    <p>这里主要记录 Minecraft Java 插件的开发过程：从需求整理、交互设计、权限与领地系统实现，到部署验证和问题复盘。公开页面保留技术笔记和插件说明，非公开后台仅用于项目维护。</p>
+    <p>这里主要介绍 Minecraft Java 插件的功能设计与使用效果，围绕领地保护、权限控制、操作审计和玩家文本交互等模块，整理每个插件解决了什么问题、提供了哪些能力。</p>
     <div class="actions">
       <a class="button" href="/plugins">查看插件介绍</a>
       <a class="button secondary" href="/tech">查看技术实现</a>
@@ -1892,10 +1894,10 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 <section class="public-page">
   <p class="public-kicker">Plugin Index</p>
   <h1>插件介绍</h1>
-  <p class="public-lead">这里按插件整理服务器功能的设计目标、当前实现和后续演进方向。每个页面聚焦一个插件，便于把开发过程、交互迭代和技术细节分开记录。</p>
+  <p class="public-lead">这里按插件整理服务器功能的设计目标、当前实现和后续演进方向。每个页面聚焦一个插件，便于按功能模块查阅。</p>
   <div class="article-grid">
-    <article class="article-card"><h3>XiceClaim</h3><p>领地插件，负责三维领地、领地戒指 UI、范围预览、授权成员与领地权限状态。</p><div class="actions"><a class="button secondary" href="/plugins/xiceclaim">查看介绍</a></div></article>
     <article class="article-card"><h3>XiceAuditLog</h3><p>审计插件，记录关键玩家操作和方块、容器、实体相关事件，为 Web 查询和问题回溯提供数据。</p><div class="actions"><a class="button secondary" href="/plugins/xiceauditlog">查看介绍</a></div></article>
+    <article class="article-card"><h3>XiceClaim</h3><p>领地插件，负责三维领地、领地戒指 UI、范围预览、授权成员与领地权限状态。</p><div class="actions"><a class="button secondary" href="/plugins/xiceclaim">查看介绍</a></div></article>
     <article class="article-card"><h3>XiceCommandControl</h3><p>指令权限插件，将特殊指令授权从代码中抽离到配置与 Web 管理流程。</p><div class="actions"><a class="button secondary" href="/plugins/xicecommandcontrol">查看介绍</a></div></article>
     <article class="article-card"><h3>XiceTextArranger</h3><p>文本交互插件，承载白名单验证码、进服提示、黑名单提示等面向玩家的消息流程。</p><div class="actions"><a class="button secondary" href="/plugins/xicetextarranger">查看介绍</a></div></article>
   </div>
@@ -1905,8 +1907,8 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 {{define "pluginSubnav"}}
 <nav class="plugin-subnav" aria-label="插件介绍子菜单">
   <a href="/plugins">插件总览</a>
-  <a href="/plugins/xiceclaim">XiceClaim</a>
   <a href="/plugins/xiceauditlog">XiceAuditLog</a>
+  <a href="/plugins/xiceclaim">XiceClaim</a>
   <a href="/plugins/xicecommandcontrol">XiceCommandControl</a>
   <a href="/plugins/xicetextarranger">XiceTextArranger</a>
 </nav>
