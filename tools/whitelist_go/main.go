@@ -314,7 +314,7 @@ func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /resourcepacks/xiceclaim.zip", a.fileHandler(a.cfg.ResourcePackPath, "application/zip"))
 	mux.HandleFunc("GET /", a.handlePublicHome)
 	mux.HandleFunc("GET /tech", a.handlePublicStatic("publicTech", "技术实现", "public-tech"))
-	mux.HandleFunc("GET /plugins", a.handlePublicStatic("publicPlugins", "插件动态", "public-plugins"))
+	mux.HandleFunc("GET /plugins", a.handlePublicStatic("publicPlugins", "插件介绍", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xiceclaim", a.handlePublicStatic("pluginXiceClaim", "XiceClaim 领地插件", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xiceauditlog", a.handlePublicStatic("pluginXiceAuditLog", "XiceAuditLog 审计插件", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xicecommandcontrol", a.handlePublicStatic("pluginXiceCommandControl", "XiceCommandControl 指令权限插件", "public-plugins"))
@@ -1610,6 +1610,11 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .article-card { min-width:0; min-height:178px; padding:18px; border:1px solid var(--line); border-radius:8px; background:#fff; }
     .note-list { display:grid; border-top:1px solid var(--line); }
     .note-list article { display:grid; grid-template-columns:120px minmax(0,1fr); gap:18px; padding:18px 0; border-bottom:1px solid var(--line); }
+    .markdown-doc { max-width:780px; }
+    .markdown-doc h2 { margin:28px 0 10px; padding-top:18px; border-top:1px solid var(--line); font-size:22px; }
+    .markdown-doc h3 { margin:20px 0 8px; font-size:17px; }
+    .markdown-doc ul { margin:8px 0 18px; padding-left:22px; color:var(--muted); line-height:1.7; }
+    .markdown-doc li { margin:4px 0; }
     .panel { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:20px; margin-bottom:18px; }
     .identity-card { display:grid; grid-template-columns:minmax(170px,240px) 1fr; gap:24px; width:min(100%,860px); border:1px solid var(--line); border-radius:8px; background:#fff; padding:22px; margin-bottom:18px; }
     .identity-role { display:inline-flex; width:fit-content; padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px; }
@@ -1765,6 +1770,11 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .log-lines { max-height:320px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:14px; border:1px solid var(--line); border-radius:8px; background:#f8fafc; color:#405169; }
     .note-list { display:grid; border-top:1px solid var(--line); }
     .note-list article { display:grid; grid-template-columns:120px minmax(0,1fr); gap:18px; padding:18px 0; border-bottom:1px solid var(--line); }
+    .markdown-doc { max-width:780px; }
+    .markdown-doc h2 { margin:28px 0 10px; padding-top:18px; border-top:1px solid var(--line); font-size:22px; }
+    .markdown-doc h3 { margin:20px 0 8px; font-size:17px; }
+    .markdown-doc ul { margin:8px 0 18px; padding-left:22px; color:var(--muted); line-height:1.7; }
+    .markdown-doc li { margin:4px 0; }
     .identity-card { display:grid; grid-template-columns:minmax(170px,240px) 1fr; gap:24px; width:min(100%,860px); border:1px solid var(--line); border-radius:8px; background:#fff; padding:22px; margin-bottom:18px; }
     .identity-role { display:inline-flex; width:fit-content; padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px; }
     .identity-role.owner { background:#fff4d6; color:#a15c00; }
@@ -1808,7 +1818,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <a class="public-brand" href="/"><img src="/favicon.png" alt="" aria-hidden="true">个人技术开发随记</a>
   <nav class="public-nav" aria-label="公开页面目录">
     <a class="{{if eq .Active "public-home"}}active{{end}}" href="/">首页</a>
-    <a class="{{if eq .Active "public-plugins"}}active{{end}}" href="/plugins">插件动态</a>
+    <a class="{{if eq .Active "public-plugins"}}active{{end}}" href="/plugins">插件介绍</a>
     <a class="{{if eq .Active "public-tech"}}active{{end}}" href="/tech">技术实现</a>
     <a class="{{if eq .Active "public-ops"}}active{{end}}" href="/ops">运维记录</a>
     <a class="{{if eq .Active "public-changelog"}}active{{end}}" href="/changelog">更新日志</a>
@@ -1863,7 +1873,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <div>
     <p class="public-kicker">Minecraft Plugin Development Notes</p>
     <h1>个人技术开发随记</h1>
-    <p>这里主要介绍 Minecraft Java 插件的功能设计与使用效果，围绕领地保护、权限控制、操作审计和玩家文本交互等模块，整理每个插件解决了什么问题、提供了哪些能力。</p>
+    <p>这里记录我为 Minecraft 服务器做过的一些 Java 插件。</p>
     <div class="actions">
       <a class="button" href="/plugins">查看插件介绍</a>
       <a class="button secondary" href="/tech">查看技术实现</a>
@@ -1894,39 +1904,38 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 <section class="public-page">
   <p class="public-kicker">Plugin Index</p>
   <h1>插件介绍</h1>
-  <p class="public-lead">这里按插件整理服务器功能的设计目标、当前实现和后续演进方向。每个页面聚焦一个插件，便于按功能模块查阅。</p>
-  <div class="article-grid">
-    <article class="article-card"><h3>XiceAuditLog</h3><p>审计插件，记录关键玩家操作和方块、容器、实体相关事件，为 Web 查询和问题回溯提供数据。</p><div class="actions"><a class="button secondary" href="/plugins/xiceauditlog">查看介绍</a></div></article>
-    <article class="article-card"><h3>XiceClaim</h3><p>领地插件，负责三维领地、领地戒指 UI、范围预览、授权成员与领地权限状态。</p><div class="actions"><a class="button secondary" href="/plugins/xiceclaim">查看介绍</a></div></article>
-    <article class="article-card"><h3>XiceCommandControl</h3><p>指令权限插件，将特殊指令授权从代码中抽离到配置与 Web 管理流程。</p><div class="actions"><a class="button secondary" href="/plugins/xicecommandcontrol">查看介绍</a></div></article>
-    <article class="article-card"><h3>XiceTextArranger</h3><p>文本交互插件，承载白名单验证码、进服提示、黑名单提示等面向玩家的消息流程。</p><div class="actions"><a class="button secondary" href="/plugins/xicetextarranger">查看介绍</a></div></article>
-  </div>
+  <article class="markdown-doc">
+    <p class="public-lead">这里按插件整理服务器功能。插件按名称字母表排序。</p>
+    <h2><a href="/plugins/xiceauditlog">XiceAuditLog</a></h2>
+    <p>审计插件，用于记录关键玩家操作和方块、容器、实体相关事件，为 Web 查询和问题回溯提供数据。</p>
+    <h2><a href="/plugins/xiceclaim">XiceClaim</a></h2>
+    <p>领地插件，用于处理三维领地、领地戒指 UI、范围预览、授权成员和领地权限状态。</p>
+    <h2><a href="/plugins/xicecommandcontrol">XiceCommandControl</a></h2>
+    <p>指令权限插件，用于把特殊指令授权从代码中抽离到配置与 Web 管理流程。</p>
+    <h2><a href="/plugins/xicetextarranger">XiceTextArranger</a></h2>
+    <p>文本交互插件，用于承载白名单验证码、进服提示、黑名单提示等面向玩家的消息流程。</p>
+  </article>
 </section>
-{{end}}
-
-{{define "pluginSubnav"}}
-<nav class="plugin-subnav" aria-label="插件介绍子菜单">
-  <a href="/plugins">插件总览</a>
-  <a href="/plugins/xiceauditlog">XiceAuditLog</a>
-  <a href="/plugins/xiceclaim">XiceClaim</a>
-  <a href="/plugins/xicecommandcontrol">XiceCommandControl</a>
-  <a href="/plugins/xicetextarranger">XiceTextArranger</a>
-</nav>
 {{end}}
 
 {{define "pluginXiceClaim"}}{{template "pageStart" .}}{{template "pluginXiceClaimContent" .}}{{template "pageEnd" .}}{{end}}
 {{define "pluginXiceClaimContent"}}
 {{template "publicHeader" .}}
 <section class="public-page">
-  {{template "pluginSubnav" .}}
-  <p class="public-kicker">Claim Plugin</p>
-  <h1>XiceClaim 领地插件</h1>
-  <p class="public-lead">XiceClaim 的核心目标是把领地从命令驱动改成物品与 UI 驱动：玩家通过领地戒指选择坐标、创建领地、绑定已有领地，并在虚拟容器菜单内管理权限与授权成员。</p>
-  <div class="article-grid">
-    <article class="article-card"><h3>三维领地</h3><p>保护范围按立方体计算，不再默认覆盖整条 Y 轴，并在创建、查询、进入领地时用仅玩家可见的粒子展示边界。</p></article>
-    <article class="article-card"><h3>领地戒指</h3><p>以自定义燧石物品为载体，未绑定时用于创建或绑定领地，绑定后用于打开对应领地的管理菜单。</p></article>
-    <article class="article-card"><h3>权限状态</h3><p>每项领地功能支持允许所有人、禁止未授权、全体禁止三种状态，便于区分公共区域、私人领地和完全保护区域。</p></article>
-  </div>
+  <article class="markdown-doc">
+    <p class="public-kicker">Claim Plugin</p>
+    <h1>XiceClaim 领地插件</h1>
+    <p class="public-lead">XiceClaim 用于把服务器领地保护做成可视化、物品化的交互功能。</p>
+    <h2>主要功能</h2>
+    <ul>
+      <li>按立方体计算领地范围，不再默认保护整条 Y 轴。</li>
+      <li>通过领地戒指创建、绑定和管理领地。</li>
+      <li>在创建、查询和进入领地时展示仅玩家可见的范围粒子。</li>
+      <li>支持授权成员管理和领地功能权限切换。</li>
+    </ul>
+    <h2>权限状态</h2>
+    <p>领地功能支持允许所有人、禁止未授权、全体禁止三种状态，用于区分公共区域、私人领地和完全保护区域。</p>
+  </article>
 </section>
 {{end}}
 
@@ -1934,15 +1943,22 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 {{define "pluginXiceAuditLogContent"}}
 {{template "publicHeader" .}}
 <section class="public-page">
-  {{template "pluginSubnav" .}}
-  <p class="public-kicker">Audit Plugin</p>
-  <h1>XiceAuditLog 审计插件</h1>
-  <p class="public-lead">XiceAuditLog 用于记录服务器里的关键操作，让问题排查不再只依赖聊天记录和在线记忆。它把事件写入 PostgreSQL，并由 Web 端提供筛选查询。</p>
-  <div class="article-grid">
-    <article class="article-card"><h3>事件记录</h3><p>关注方块破坏与放置、容器交互、实体相关操作等容易产生纠纷或需要追溯的行为。</p></article>
-    <article class="article-card"><h3>Web 查询</h3><p>后台支持按玩家、事件类型、时间范围和关键词检索，服务于管理员的日常维护。</p></article>
-    <article class="article-card"><h3>保留策略</h3><p>通过保留天数控制数据规模，在可追溯性和个人小型服务器资源占用之间取得平衡。</p></article>
-  </div>
+  <article class="markdown-doc">
+    <p class="public-kicker">Audit Plugin</p>
+    <h1>XiceAuditLog 审计插件</h1>
+    <p class="public-lead">XiceAuditLog 用于记录服务器里的关键操作，为问题排查和操作回溯提供依据。</p>
+    <h2>记录范围</h2>
+    <ul>
+      <li>方块破坏与放置。</li>
+      <li>容器交互。</li>
+      <li>实体相关操作。</li>
+      <li>其它需要留痕的玩家行为。</li>
+    </ul>
+    <h2>查询方式</h2>
+    <p>审计数据写入 PostgreSQL，并由 Web 端按玩家、事件类型、时间范围和关键词进行筛选查询。</p>
+    <h2>保留策略</h2>
+    <p>数据保留天数可配置，用于在可追溯性和小型服务器资源占用之间取得平衡。</p>
+  </article>
 </section>
 {{end}}
 
@@ -1950,15 +1966,21 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 {{define "pluginXiceCommandControlContent"}}
 {{template "publicHeader" .}}
 <section class="public-page">
-  {{template "pluginSubnav" .}}
-  <p class="public-kicker">Command Permission</p>
-  <h1>XiceCommandControl 指令权限插件</h1>
-  <p class="public-lead">XiceCommandControl 负责把特殊指令的授权从硬编码迁移到配置与后台页面。当前用于控制 /creative、/claim give 等需要额外信任的指令。</p>
-  <div class="article-grid">
-    <article class="article-card"><h3>配置化授权</h3><p>权限粒度保持在指令层，后续可以灵活调整哪些玩家拥有某个指令，而不需要改代码。</p></article>
-    <article class="article-card"><h3>Web 管理</h3><p>管理员和服主可在后台“权限管理”页面筛选指令、添加玩家、取消玩家授权。</p></article>
-    <article class="article-card"><h3>服内同步</h3><p>插件侧负责在玩家执行指令时检查授权状态，并提供重载与列表查询等维护入口。</p></article>
-  </div>
+  <article class="markdown-doc">
+    <p class="public-kicker">Command Permission</p>
+    <h1>XiceCommandControl 指令权限插件</h1>
+    <p class="public-lead">XiceCommandControl 用于管理需要额外信任的服务器指令。</p>
+    <h2>设计目标</h2>
+    <p>插件把特殊指令授权从代码中抽离出来，让授权关系可以通过配置和 Web 页面维护。</p>
+    <h2>当前用途</h2>
+    <ul>
+      <li>控制 /creative 等特殊指令。</li>
+      <li>控制 /claim give 等物品发放指令。</li>
+      <li>支持管理员维护指令授权列表。</li>
+    </ul>
+    <h2>权限粒度</h2>
+    <p>权限粒度保持在指令层，便于以后灵活调整某个玩家是否拥有某条指令。</p>
+  </article>
 </section>
 {{end}}
 
@@ -1966,15 +1988,22 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 {{define "pluginXiceTextArrangerContent"}}
 {{template "publicHeader" .}}
 <section class="public-page">
-  {{template "pluginSubnav" .}}
-  <p class="public-kicker">Text Interaction</p>
-  <h1>XiceTextArranger 文本交互插件</h1>
-  <p class="public-lead">XiceTextArranger 负责整理玩家能直接看到的文本流程，尤其是白名单注册、拒绝提示、验证码和进服消息，让服务器内外的提示保持一致。</p>
-  <div class="article-grid">
-    <article class="article-card"><h3>白名单注册</h3><p>玩家在服务器内获得验证码，再到 Web 端完成角色 ID 绑定和白名单登记。</p></article>
-    <article class="article-card"><h3>提示文案</h3><p>拒绝连接、黑名单、进入服务器等提示集中管理，减少散落在多个配置里的文字漂移。</p></article>
-    <article class="article-card"><h3>联动后台</h3><p>与 Go Web 服务共享验证码和黑名单数据文件，方便后续继续收敛注册与管理流程。</p></article>
-  </div>
+  <article class="markdown-doc">
+    <p class="public-kicker">Text Interaction</p>
+    <h1>XiceTextArranger 文本交互插件</h1>
+    <p class="public-lead">XiceTextArranger 用于整理玩家在服务器内外看到的文本提示和验证流程。</p>
+    <h2>白名单注册</h2>
+    <p>玩家在服务器内获得验证码，再到 Web 端完成角色 ID 绑定和白名单登记。</p>
+    <h2>提示文案</h2>
+    <ul>
+      <li>拒绝连接提示。</li>
+      <li>黑名单提示。</li>
+      <li>进服消息。</li>
+      <li>验证码相关提示。</li>
+    </ul>
+    <h2>数据联动</h2>
+    <p>插件与 Go Web 服务共享验证码和黑名单数据文件，方便保持服务器内外提示一致。</p>
+  </article>
 </section>
 {{end}}
 
