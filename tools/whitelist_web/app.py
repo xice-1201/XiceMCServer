@@ -2023,6 +2023,20 @@ def auth_page(login_message="", register_message="", status=HTTPStatus.OK):
     </details>
   </div>
 </header>
+<script>
+  document.querySelectorAll(".auth-popover").forEach((popover) => {{
+    popover.addEventListener("toggle", () => {{
+      if (!popover.open) {{
+        return;
+      }}
+      document.querySelectorAll(".auth-popover[open]").forEach((current) => {{
+        if (current !== popover) {{
+          current.removeAttribute("open");
+        }}
+      }});
+    }});
+  }});
+</script>
 <section class="public-hero" id="overview">
   <div class="public-hero-copy">
     <p class="public-kicker">Java / Linux / Web / Personal Project Notes</p>

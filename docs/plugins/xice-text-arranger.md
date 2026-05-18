@@ -25,7 +25,7 @@ whitelist-denied:
     - '&f你的注册验证码：&e{verificationCode}'
     - '&7验证码将在 {verificationExpiresMinutes} 分钟后失效。'
     - '&f请使用浏览器打开 Web 首页：'
-    - '&bhttp://150.158.93.80/'
+    - '&bhttp://xicemc.site/'
     - '&7在页面右上角点击“注册入口”，填写 Minecraft ID 和验证码。'
     - '&7提交成功后，回到游戏重新连接服务器。'
 
