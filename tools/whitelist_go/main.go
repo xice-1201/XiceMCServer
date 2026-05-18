@@ -75,6 +75,7 @@ type config struct {
 	ICPRecordURL             string
 	PublicSecurityRecordNo   string
 	PublicSecurityRecordURL  string
+	ProtectedOwnerUUID       string
 	DBHost                   string
 	DBPort                   string
 	DBName                   string
@@ -256,6 +257,7 @@ func loadConfig() config {
 		ICPRecordURL:             env("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/"),
 		PublicSecurityRecordNo:   env("XICEMC_PUBLIC_SECURITY_RECORD_NO", ""),
 		PublicSecurityRecordURL:  env("XICEMC_PUBLIC_SECURITY_RECORD_URL", ""),
+		ProtectedOwnerUUID:       canonicalUUID(env("XICEMC_PROTECTED_OWNER_UUID", "")),
 		DBHost:                   env("XICE_AUDIT_DB_HOST", "127.0.0.1"),
 		DBPort:                   env("XICE_AUDIT_DB_PORT", "5432"),
 		DBName:                   env("XICE_AUDIT_DB_NAME", "xicemc_audit"),

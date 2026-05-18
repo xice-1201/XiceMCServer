@@ -481,8 +481,8 @@ func (a *app) updatePlayerRole(ctx context.Context, uuid, role string) error {
 	if !ok {
 		return errors.New("玩家不存在或不在白名单中")
 	}
-	if role != ownerRole && strings.EqualFold(entry.Name, "ExamplePlayer") {
-		return errors.New("不能将 ExamplePlayer 从服主身份降级")
+	if role != ownerRole && a.cfg.ProtectedOwnerUUID != "" && strings.EqualFold(canonicalUUID(entry.UUID), a.cfg.ProtectedOwnerUUID) {
+		return errors.New("不能将受保护服主账号降级")
 	}
 	if err := a.ensureWebPlayer(ctx, entry); err != nil {
 		return err

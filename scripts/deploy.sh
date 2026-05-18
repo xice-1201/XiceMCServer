@@ -70,9 +70,14 @@ if compgen -G "${REPO_DIR}/plugins/*/pom.xml" > /dev/null; then
     install -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0644 "${jar_path}" "${RUNTIME_DIR}/plugins/${plugin_name}.jar"
     if [[ -f "${plugin_dir}/src/main/resources/config.yml" ]]; then
       install -d -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0755 "${RUNTIME_DIR}/plugins/${plugin_name}"
-      install -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0644 \
-        "${plugin_dir}/src/main/resources/config.yml" \
-        "${RUNTIME_DIR}/plugins/${plugin_name}/config.yml"
+      runtime_config="${RUNTIME_DIR}/plugins/${plugin_name}/config.yml"
+      if [[ ! -f "${runtime_config}" ]]; then
+        install -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0644 \
+          "${plugin_dir}/src/main/resources/config.yml" \
+          "${runtime_config}"
+      else
+        echo "Keeping existing runtime config: ${runtime_config}"
+      fi
     fi
   done
 fi
