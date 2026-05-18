@@ -7,8 +7,6 @@ import json
 import os
 import re
 import shutil
-import socket
-import struct
 import subprocess
 import threading
 import time
@@ -17,6 +15,9 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
+
+from command_permissions import PERMISSION_COMMANDS, CommandPermissionStore
+from rcon import RconClient
 
 try:
     import psycopg2
@@ -50,6 +51,7 @@ QUERY_LIMIT = 50
 MAX_RADIUS = 200
 ATTEMPTS = {}
 WHITELIST_LOCK = threading.Lock()
+PERMISSIONS_LOCK = threading.Lock()
 
 
 def env(name, default=None, required=False):
@@ -86,11 +88,17 @@ SERVER_SERVICE_NAME = env("XICEMC_SERVICE_NAME", "xicemc.service")
 SERVER_LOG_PATH = env("XICEMC_SERVER_LOG_PATH", os.path.join(RUNTIME_DIR, "logs", "latest.log"))
 BLACKLIST_PATH = env("XICEMC_BLACKLIST_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceTextArranger", "blacklist.tsv"))
 CLAIMS_PATH = env("XICEMC_CLAIMS_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceClaim", "claims.yml"))
+COMMAND_CONTROL_CONFIG_PATH = env(
+    "XICEMC_COMMAND_CONTROL_CONFIG_PATH",
+    os.path.join(RUNTIME_DIR, "plugins", "XiceCommandControl", "config.yml"),
+)
+CLAIM_CONFIG_PATH = env("XICEMC_CLAIM_CONFIG_PATH", os.path.join(RUNTIME_DIR, "plugins", "XiceClaim", "config.yml"))
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 WEB_ICON_PATH = env("XICEMC_WEB_ICON_PATH", os.path.join(REPO_ROOT, "server", "assets", "xicemc-logo.png"))
 WEB_FAVICON_PATH = env("XICEMC_WEB_FAVICON_PATH", os.path.join(REPO_ROOT, "server", "assets", "favicon.ico"))
 SERVER_DOCS_HOME_PATH = env("XICEMC_DOCS_HOME_PATH", os.path.join(RUNTIME_DIR, "web", "server-docs.md"))
 SERVER_DOCS_MAX_LENGTH = int(env("XICEMC_DOCS_MAX_LENGTH", "100000"))
+COMMAND_PERMISSION_STORE = CommandPermissionStore(COMMAND_CONTROL_CONFIG_PATH, CLAIM_CONFIG_PATH)
 DEFAULT_SERVER_DOCS_MARKDOWN = f"""# 欢迎来到 XiceMCServer
 
 XiceMCServer 是一个以朋友间长期游玩为核心的 Minecraft Java 版服务器。当前服务器版本为 Minecraft Java 版 {MINECRAFT_VERSION}，主世界不会随意重置，适合慢慢生存、建设基地、推进工程和留下真正属于大家的痕迹。
@@ -134,57 +142,6 @@ XiceMCServer 是一个以朋友间长期游玩为核心的 Minecraft Java 版服
 希望这个服务器能成为大家愿意反复回来的地方。祝你玩得开心，也欢迎把你的想法、问题和建议告诉服主或管理员。
 """
 DOCS_LOCK = threading.Lock()
-
-
-class RconClient:
-    AUTH = 3
-    COMMAND = 2
-
-    def __init__(self, host, port, password, timeout=8):
-        self.host = host
-        self.port = port
-        self.password = password
-        self.timeout = timeout
-        self.request_id = 100
-
-    def _packet(self, packet_type, payload):
-        body = struct.pack("<ii", self.request_id, packet_type)
-        body += payload.encode("utf-8")
-        body += b"\x00\x00"
-        return struct.pack("<i", len(body)) + body
-
-    def _read_packet(self, sock):
-        raw_length = self._read_exact(sock, 4)
-        length = struct.unpack("<i", raw_length)[0]
-        data = self._read_exact(sock, length)
-        request_id, packet_type = struct.unpack("<ii", data[:8])
-        payload = data[8:-2].decode("utf-8", "replace")
-        return request_id, packet_type, payload
-
-    @staticmethod
-    def _read_exact(sock, size):
-        chunks = []
-        remaining = size
-        while remaining:
-            chunk = sock.recv(remaining)
-            if not chunk:
-                raise ConnectionError("RCON connection closed unexpectedly")
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        return b"".join(chunks)
-
-    def run(self, command):
-        with socket.create_connection((self.host, self.port), timeout=self.timeout) as sock:
-            sock.settimeout(self.timeout)
-            sock.sendall(self._packet(self.AUTH, self.password))
-            request_id, _, _ = self._read_packet(sock)
-            if request_id == -1:
-                raise PermissionError("RCON authentication failed")
-
-            self.request_id += 1
-            sock.sendall(self._packet(self.COMMAND, command))
-            _, _, payload = self._read_packet(sock)
-            return payload.strip()
 
 
 def rate_limited(ip):
@@ -953,6 +910,86 @@ def reset_player_password(player_uuid):
             raise ValueError("玩家 Web 记录不存在。")
 
 
+def permission_command_options(selected):
+    return "\n".join(
+        option(command_id, command["label"], selected)
+        for command_id, command in PERMISSION_COMMANDS.items()
+    )
+
+
+def normalize_permission_command(command_id):
+    return COMMAND_PERMISSION_STORE.normalize_command(command_id)
+
+
+def read_permission_assignments(command_id):
+    command_id = normalize_permission_command(command_id)
+    rows = []
+    for entry in COMMAND_PERMISSION_STORE.assignments(command_id):
+        player = permission_player_record(entry["uuid"], entry.get("name", ""))
+        rows.append({
+            "uuid": player["uuid"],
+            "name": player["name"],
+            "role": player["role"],
+        })
+    rows.sort(key=lambda row: (role_sort_order(row["role"]), row["name"].lower()))
+    return rows
+
+
+def permission_player_record(player_uuid, fallback_name=""):
+    normalized_uuid = canonical_uuid(player_uuid)
+    entry = whitelist_entry_by_uuid(normalized_uuid)
+    if entry:
+        try:
+            player = web_player(entry)
+            return {
+                "uuid": normalized_uuid,
+                "name": entry["name"],
+                "role": player["role"] if player and player.get("role") else PLAYER_ROLE,
+            }
+        except Exception:
+            return {"uuid": normalized_uuid, "name": entry["name"], "role": PLAYER_ROLE}
+    return {"uuid": normalized_uuid, "name": fallback_name or normalized_uuid, "role": "未知"}
+
+
+def role_sort_order(role):
+    return {OWNER_ROLE: 0, ADMIN_ROLE: 1, PLAYER_ROLE: 2}.get(role, 3)
+
+
+def grant_player_command(player_query, command_id):
+    entry = resolve_player_query(player_query)
+    command_id = normalize_permission_command(command_id)
+    with PERMISSIONS_LOCK:
+        reload_command = COMMAND_PERMISSION_STORE.grant(entry, command_id)
+    reload_permission_config(reload_command)
+
+
+def revoke_player_command(player_uuid, command_id):
+    command_id = normalize_permission_command(command_id)
+    with PERMISSIONS_LOCK:
+        reload_command = COMMAND_PERMISSION_STORE.revoke(player_uuid, command_id)
+    reload_permission_config(reload_command)
+
+
+def resolve_player_query(player_query):
+    query = str(player_query or "").strip()
+    if UUID_RE.fullmatch(query):
+        entry = whitelist_entry_by_uuid(query)
+    elif USERNAME_RE.fullmatch(query):
+        entry = whitelist_entry(query)
+    else:
+        entry = None
+    if not entry:
+        raise ValueError("玩家不存在或不在白名单中。")
+    ensure_web_player(entry)
+    return {"uuid": canonical_uuid(entry["uuid"]), "name": entry["name"]}
+
+
+def reload_permission_config(reload_command):
+    if not reload_command:
+        return
+    RconClient(RCON_HOST, RCON_PORT, RCON_PASSWORD, timeout=3).run(reload_command)
+
+
 def find_verification_code(username, code):
     now = int(time.time() * 1000)
     username_key = username.lower()
@@ -1048,6 +1085,7 @@ def page(title, body, status=HTTPStatus.OK, user=None, active="home"):
         management_links = ""
         if can_manage_players(user):
             management_links = f"""
+    <a class="{ 'active' if active == 'permissions' else '' }" href="/permissions">权限管理</a>
 """
         nav = f"""
 <aside class="sidebar">
@@ -2577,6 +2615,188 @@ def render_player_card_dialog(player):
 """
 
 
+def permissions_page(user, params=None, message=""):
+    query = params or {}
+    try:
+        selected_command = normalize_permission_command(first(query, "command") if query else "creative")
+    except Exception:
+        selected_command = "creative"
+        message = message or "指令筛选不正确，已回到 /creative。"
+    command_label = PERMISSION_COMMANDS[selected_command]["label"]
+    try:
+        rows = "".join(render_permission_row(row, selected_command) for row in read_permission_assignments(selected_command))
+    except Exception as exc:
+        rows = ""
+        message = f"权限列表暂不可用：{exc}"
+    if not rows:
+        rows = '<tr><td colspan="4" class="message">暂无玩家拥有该指令的单独权限</td></tr>'
+    safe_message = f'<p class="message">{esc(message)}</p>' if message else ""
+    body = f"""
+<h1>权限管理</h1>
+{safe_message}
+<section class="panel">
+  <h2>筛选</h2>
+  <form method="get" action="/permissions">
+    <label for="command">指令</label>
+    <select id="command" name="command">{permission_command_options(selected_command)}</select>
+    <div class="actions">
+      <button type="submit">查看</button>
+    </div>
+  </form>
+</section>
+<section class="panel">
+  <h2>添加权限</h2>
+  <form method="post" action="/permissions/add">
+    <input type="hidden" name="command" value="{esc(selected_command)}">
+    <label for="permission-player">玩家 ID 或 UUID</label>
+    <div class="autocomplete-field">
+      <input id="permission-player" name="player" required minlength="3" maxlength="36" autocomplete="off" aria-autocomplete="list" aria-controls="permission-player-suggestions">
+      <div id="permission-player-suggestions" class="autocomplete-menu" role="listbox"></div>
+    </div>
+    <div class="actions">
+      <button type="submit">添加 {esc(command_label)} 权限</button>
+    </div>
+  </form>
+</section>
+<section class="panel">
+  <h2>{esc(command_label)} 权限玩家</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>玩家名称</th><th>UUID</th><th>身份</th><th>操作</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+</section>
+<script>
+  const permissionPlayerInput = document.getElementById("permission-player");
+  const permissionPlayerSuggestions = document.getElementById("permission-player-suggestions");
+  let permissionSuggestionItems = [];
+  let activePermissionSuggestionIndex = -1;
+  let permissionSuggestionTimer = null;
+
+  function closePermissionSuggestions() {{
+    permissionPlayerSuggestions.classList.remove("is-open");
+    permissionPlayerSuggestions.innerHTML = "";
+    permissionSuggestionItems = [];
+    activePermissionSuggestionIndex = -1;
+  }}
+
+  function setActivePermissionSuggestion(index) {{
+    const options = Array.from(permissionPlayerSuggestions.querySelectorAll(".autocomplete-option"));
+    options.forEach((option, optionIndex) => {{
+      option.classList.toggle("is-active", optionIndex === index);
+    }});
+    activePermissionSuggestionIndex = index;
+  }}
+
+  function choosePermissionSuggestion(item) {{
+    permissionPlayerInput.value = item.value;
+    closePermissionSuggestions();
+    permissionPlayerInput.focus();
+  }}
+
+  function renderPermissionSuggestions(items) {{
+    permissionPlayerSuggestions.innerHTML = "";
+    permissionSuggestionItems = items;
+    if (!items.length) {{
+      closePermissionSuggestions();
+      return;
+    }}
+    items.forEach((item, index) => {{
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "autocomplete-option";
+      option.setAttribute("role", "option");
+      const name = document.createElement("span");
+      name.className = "autocomplete-name";
+      name.textContent = item.label;
+      const detail = document.createElement("span");
+      detail.className = "autocomplete-detail";
+      detail.textContent = item.match + " 匹配 · " + item.source + " · " + item.uuid;
+      option.appendChild(name);
+      option.appendChild(detail);
+      option.addEventListener("mousedown", (event) => {{
+        event.preventDefault();
+        choosePermissionSuggestion(item);
+      }});
+      option.addEventListener("mouseenter", () => setActivePermissionSuggestion(index));
+      permissionPlayerSuggestions.appendChild(option);
+    }});
+    permissionPlayerSuggestions.classList.add("is-open");
+    setActivePermissionSuggestion(0);
+  }}
+
+  async function loadPermissionSuggestions() {{
+    const query = permissionPlayerInput.value.trim();
+    if (!query) {{
+      closePermissionSuggestions();
+      return;
+    }}
+    try {{
+      const response = await fetch("/players/suggestions?q=" + encodeURIComponent(query), {{
+        headers: {{ "Accept": "application/json" }}
+      }});
+      if (!response.ok) {{
+        closePermissionSuggestions();
+        return;
+      }}
+      const data = await response.json();
+      renderPermissionSuggestions(data.items || []);
+    }} catch (error) {{
+      closePermissionSuggestions();
+    }}
+  }}
+
+  permissionPlayerInput.addEventListener("input", () => {{
+    clearTimeout(permissionSuggestionTimer);
+    permissionSuggestionTimer = setTimeout(loadPermissionSuggestions, 140);
+  }});
+
+  permissionPlayerInput.addEventListener("keydown", (event) => {{
+    if (!permissionPlayerSuggestions.classList.contains("is-open")) {{
+      return;
+    }}
+    if (event.key === "ArrowDown") {{
+      event.preventDefault();
+      setActivePermissionSuggestion((activePermissionSuggestionIndex + 1) % permissionSuggestionItems.length);
+    }} else if (event.key === "ArrowUp") {{
+      event.preventDefault();
+      setActivePermissionSuggestion((activePermissionSuggestionIndex - 1 + permissionSuggestionItems.length) % permissionSuggestionItems.length);
+    }} else if (event.key === "Enter" && activePermissionSuggestionIndex >= 0) {{
+      event.preventDefault();
+      choosePermissionSuggestion(permissionSuggestionItems[activePermissionSuggestionIndex]);
+    }} else if (event.key === "Escape") {{
+      closePermissionSuggestions();
+    }}
+  }});
+
+  document.addEventListener("click", (event) => {{
+    if (!permissionPlayerInput.contains(event.target) && !permissionPlayerSuggestions.contains(event.target)) {{
+      closePermissionSuggestions();
+    }}
+  }});
+</script>
+"""
+    return page("权限管理", body, user=user, active="permissions")
+
+
+def render_permission_row(row, command_id):
+    return f"""
+<tr>
+  <td>{esc(row["name"])}</td>
+  <td class="mono">{esc(row["uuid"])}</td>
+  <td>{render_role_badge(row["role"])}</td>
+  <td>
+    <form method="post" action="/permissions/remove" class="inline-form">
+      <input type="hidden" name="command" value="{esc(command_id)}">
+      <input type="hidden" name="player_uuid" value="{esc(row["uuid"])}">
+      <button class="secondary" type="submit">取消权限</button>
+    </form>
+  </td>
+</tr>
+"""
+
+
 def blacklist_page(user, message=""):
     try:
         rows = "".join(render_blacklist_row(entry, user) for entry in all_blacklist_entries())
@@ -3511,6 +3731,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.respond(*blacklist_page(user))
             return
+        if parsed.path == "/permissions":
+            if not user:
+                self.send_redirect("/")
+                return
+            if not can_manage_players(user):
+                self.respond(*page("无权访问", "<h1>无权访问</h1>", HTTPStatus.FORBIDDEN, user=user))
+                return
+            self.respond(*permissions_page(user, parse_qs(parsed.query)))
+            return
         if parsed.path == "/status":
             if not user:
                 self.send_redirect("/")
@@ -3573,6 +3802,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/blacklist/remove":
             self.handle_blacklist_remove()
+            return
+        if parsed.path == "/permissions/add":
+            self.handle_permission_add()
+            return
+        if parsed.path == "/permissions/remove":
+            self.handle_permission_remove()
             return
         if parsed.path == "/password":
             self.handle_password_change()
@@ -3803,6 +4038,34 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(*blacklist_page(user, f"解除黑名单失败：{exc}"))
             return
         self.respond(*blacklist_page(user, "黑名单已解除。"))
+
+    def handle_permission_add(self):
+        user = self.require_manager()
+        if not user:
+            return
+        command_id = "creative"
+        try:
+            params = self.read_form()
+            command_id = normalize_permission_command(first(params, "command"))
+            grant_player_command(first(params, "player"), command_id)
+        except Exception as exc:
+            self.respond(*permissions_page(user, {"command": [command_id]}, f"添加权限失败：{exc}"))
+            return
+        self.respond(*permissions_page(user, {"command": [command_id]}, "权限已添加并重载。"))
+
+    def handle_permission_remove(self):
+        user = self.require_manager()
+        if not user:
+            return
+        command_id = "creative"
+        try:
+            params = self.read_form()
+            command_id = normalize_permission_command(first(params, "command"))
+            revoke_player_command(first(params, "player_uuid"), command_id)
+        except Exception as exc:
+            self.respond(*permissions_page(user, {"command": [command_id]}, f"取消权限失败：{exc}"))
+            return
+        self.respond(*permissions_page(user, {"command": [command_id]}, "权限已取消并重载。"))
 
     def handle_password_change(self):
         user = parse_session(self.headers.get("Cookie"))
