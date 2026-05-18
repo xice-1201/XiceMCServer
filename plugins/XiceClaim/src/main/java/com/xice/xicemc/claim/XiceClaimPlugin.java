@@ -58,6 +58,8 @@ import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
@@ -134,15 +136,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
 
         switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "pos1" -> setPosition(player, args, true);
-            case "pos2" -> setPosition(player, args, false);
-            case "create" -> createClaim(player, args);
-            case "info" -> showClaimInfo(player, args);
-            case "list" -> listClaims(player, args);
-            case "trust" -> trustPlayer(player, args, true);
-            case "untrust" -> trustPlayer(player, args, false);
-            case "delete", "remove" -> deleteClaim(player, args);
             case "give" -> giveClaimItem(player, args);
+            case "pos1", "pos2", "create", "info", "list", "trust", "untrust", "delete", "remove" ->
+                    send(player, message("command-disabled"));
             default -> sendUsage(sender);
         }
         return true;
@@ -443,6 +439,40 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private boolean isRightClick(Action action) {
         return action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK;
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerMove(PlayerMoveEvent event) {
+        Location from = event.getFrom();
+        Location to = event.getTo();
+        if (to == null || sameBlock(from, to)) {
+            return;
+        }
+        ClaimRegion fromClaim = claimAt(from);
+        ClaimRegion toClaim = claimAt(to);
+        String fromId = fromClaim == null ? "" : fromClaim.id;
+        String toId = toClaim == null ? "" : toClaim.id;
+        if (fromId.equals(toId)) {
+            return;
+        }
+        if (fromClaim != null) {
+            send(event.getPlayer(), message("claim-left"), "claim", fromClaim.name, "owner", fromClaim.ownerName);
+        }
+        if (toClaim != null) {
+            send(event.getPlayer(), message("claim-entered"), "claim", toClaim.name, "owner", toClaim.ownerName);
+        }
+    }
+
+    private boolean sameBlock(Location first, Location second) {
+        return Objects.equals(first.getWorld(), second.getWorld())
+                && first.getBlockX() == second.getBlockX()
+                && first.getBlockY() == second.getBlockY()
+                && first.getBlockZ() == second.getBlockZ();
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        ringSessions.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -892,7 +922,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 "&7世界：&f" + claim.world,
                 "&7坐标：&f" + claim.minX + "," + claim.minY + "," + claim.minZ + " 到 " + claim.maxX + "," + claim.maxY + "," + claim.maxZ)));
         setAction(menu, 49, "preview", menuItem(Material.ENDER_EYE, "&e显示领地边界", List.of("&7仅自己可见。")));
-        setAction(menu, 53, "delete-claim", menuItem(Material.TNT, "&c删除领地", List.of("&7删除后戒指会恢复为空戒指。")));
+        if (menu.session.confirmingDelete) {
+            setAction(menu, 53, "delete-claim", menuItem(Material.RED_CONCRETE, "&c确认删除领地", List.of("&7再次点击将永久删除该领地。", "&7删除后戒指会恢复为空戒指。")));
+        } else {
+            setAction(menu, 53, "delete-claim", menuItem(Material.TNT, "&c删除领地", List.of("&7需要二次确认。")));
+        }
         int addSlot = 10;
         for (Player target : Bukkit.getOnlinePlayers().stream()
                 .filter(target -> !target.getUniqueId().equals(claim.ownerUuid))
@@ -990,9 +1024,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if ("preview".equals(action)) {
             showClaimParticles(player, claim);
+            menu.session.discardOnClose = true;
+            ringSessions.remove(player.getUniqueId());
+            player.closeInventory();
             return;
         }
         if ("delete-claim".equals(action)) {
+            if (!menu.session.confirmingDelete) {
+                menu.session.confirmingDelete = true;
+                renderManageRingMenu(menu, claim);
+                return;
+            }
             claims.remove(claim.id);
             saveClaims();
             unbindRing(menu.session.ring);
@@ -1004,6 +1046,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (action.startsWith("add:")) {
+            menu.session.confirmingDelete = false;
             UUID targetUuid = UUID.fromString(action.substring("add:".length()));
             Player target = Bukkit.getPlayer(targetUuid);
             if (target != null) {
@@ -1015,6 +1058,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (action.startsWith("remove:")) {
+            menu.session.confirmingDelete = false;
             UUID targetUuid = UUID.fromString(action.substring("remove:".length()));
             claim.members.remove(targetUuid);
             claim.memberNames.remove(targetUuid);
@@ -1350,7 +1394,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             String prefix = args[0].toLowerCase(Locale.ROOT);
-            return List.of("help", "pos1", "pos2", "create", "info", "list", "trust", "untrust", "delete", "give", "reload").stream()
+            return List.of("help", "give", "reload").stream()
                     .filter(value -> value.startsWith(prefix))
                     .toList();
         }
@@ -1358,40 +1402,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             String prefix = args[1].toLowerCase(Locale.ROOT);
             return List.of("ring").stream()
                     .filter(value -> value.startsWith(prefix))
-                    .toList();
-        }
-        if (args.length == 2 && sender instanceof Player player && ("delete".equalsIgnoreCase(args[0]) || "remove".equalsIgnoreCase(args[0]))) {
-            String prefix = args[1].toLowerCase(Locale.ROOT);
-            return claims.values().stream()
-                    .filter(claim -> claim.ownerUuid.equals(player.getUniqueId()))
-                    .map(claim -> claim.name)
-                    .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix))
-                    .sorted()
-                    .toList();
-        }
-        if (args.length == 2 && "info".equalsIgnoreCase(args[0])) {
-            String prefix = args[1].toLowerCase(Locale.ROOT);
-            return claims.values().stream()
-                    .map(claim -> claim.name)
-                    .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix))
-                    .sorted()
-                    .toList();
-        }
-        if (args.length == 2 && "list".equalsIgnoreCase(args[0])) {
-            String prefix = args[1].toLowerCase(Locale.ROOT);
-            return claims.values().stream()
-                    .map(claim -> claim.ownerName)
-                    .distinct()
-                    .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix))
-                    .sorted()
-                    .toList();
-        }
-        if (args.length == 2 && ("trust".equalsIgnoreCase(args[0]) || "untrust".equalsIgnoreCase(args[0]))) {
-            String prefix = args[1].toLowerCase(Locale.ROOT);
-            return Bukkit.getOnlinePlayers().stream()
-                    .map(Player::getName)
-                    .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix))
-                    .sorted()
                     .toList();
         }
         return List.of();
@@ -1422,6 +1432,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private DraftField selectedField = DraftField.X1;
         private String claimId = "";
         private boolean discardOnClose;
+        private boolean confirmingDelete;
 
         private RingSession(RingMenuMode mode, ItemStack ring, RingDraft draft, EquipmentSlot hand, UUID playerUuid, String playerName) {
             this.mode = mode;
