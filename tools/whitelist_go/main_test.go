@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -139,6 +140,34 @@ func TestFormatBytes(t *testing.T) {
 func TestTemplatesParse(t *testing.T) {
 	if mustTemplates() == nil {
 		t.Fatal("mustTemplates() = nil")
+	}
+}
+
+func TestAuthenticatedTemplatesExecute(t *testing.T) {
+	templates := mustTemplates()
+	user := &userSession{UUID: "12345678-90ab-cdef-1234-567890abcdef", Name: "ExamplePlayer", Role: ownerRole}
+	data := pageData{
+		Title:  "test",
+		User:   user,
+		Public: publicData{SiteBaseURL: "http://127.0.0.1"},
+		Status: serverStatus{
+			ServerState:   statusState{Label: "运行中", Class: "state-running", Detail: "xicemc.service"},
+			OnlinePlayers: statusMetric{Value: "0 / 20 (0.0%)", Detail: "当前在线 / 最大人数", Level: "low"},
+			Disk:          statusMetric{Value: "1.0 GB / 2.0 GB (50.0%)", Detail: "已用 / 总量", Percent: 50, Level: "medium"},
+			Memory:        statusMetric{Value: "1.0 GB / 2.0 GB (50.0%)", Detail: "已用 / 总量", Percent: 50, Level: "medium"},
+			LogScanLines:  500,
+		},
+		Permissions: permissionPageData{
+			SelectedCommand: "creative",
+			CommandLabel:    "/creative",
+			Commands:        []commandOption{{ID: "creative", Label: "/creative", Selected: true}},
+		},
+		Audit: auditPageData{Query: auditQuery{}},
+	}
+	for _, name := range []string{"home", "status", "players", "permissions", "report", "reports", "blacklist", "audit", "docsEdit"} {
+		if err := templates.ExecuteTemplate(&bytes.Buffer{}, name, data); err != nil {
+			t.Fatalf("ExecuteTemplate(%s) error = %v", name, err)
+		}
 	}
 }
 

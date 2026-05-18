@@ -48,34 +48,39 @@ var (
 )
 
 type config struct {
-	Host                    string
-	Port                    string
-	RconHost                string
-	RconPort                string
-	RconPassword            string
-	RuntimeDir              string
-	BackupDir               string
-	WhitelistPath           string
-	VerifyCodesPath         string
-	ClaimsPath              string
-	ServerLogPath           string
-	ServiceName             string
-	WebIconPath             string
-	WebFaviconPath          string
-	ResourcePackPath        string
-	ServerDocsPath          string
-	SessionSecret           string
-	PublicSiteBaseURL       string
-	PublicSiteDomain        string
-	ICPRecordNo             string
-	ICPRecordURL            string
-	PublicSecurityRecordNo  string
-	PublicSecurityRecordURL string
-	DBHost                  string
-	DBPort                  string
-	DBName                  string
-	DBUser                  string
-	DBPassword              string
+	Host                     string
+	Port                     string
+	RconHost                 string
+	RconPort                 string
+	RconPassword             string
+	RuntimeDir               string
+	BackupDir                string
+	WhitelistPath            string
+	VerifyCodesPath          string
+	BlacklistPath            string
+	ClaimsPath               string
+	ServerLogPath            string
+	ServiceName              string
+	CommandControlConfigPath string
+	ClaimConfigPath          string
+	WebIconPath              string
+	WebFaviconPath           string
+	ResourcePackPath         string
+	ServerDocsPath           string
+	ServerDocsMaxLength      int
+	SessionSecret            string
+	PublicSiteBaseURL        string
+	PublicSiteDomain         string
+	ICPRecordNo              string
+	ICPRecordURL             string
+	PublicSecurityRecordNo   string
+	PublicSecurityRecordURL  string
+	DBHost                   string
+	DBPort                   string
+	DBName                   string
+	DBUser                   string
+	DBPassword               string
+	AuditRetentionDays       int
 }
 
 type app struct {
@@ -126,6 +131,12 @@ type pageData struct {
 	Profile      webPlayer
 	Claims       claimGroups
 	Status       serverStatus
+	Players      []playerRow
+	Reports      []reportRow
+	Blacklist    []blacklistRow
+	Permissions  permissionPageData
+	Audit        auditPageData
+	DocsText     string
 }
 
 type claimGroups struct {
@@ -218,34 +229,39 @@ func loadConfig() config {
 	runtimeDir := env("XICEMC_RUNTIME_DIR", "/opt/xicemc/runtime")
 	rconPassword := env("XICEMC_RCON_PASSWORD", "")
 	return config{
-		Host:                    env("WHITELIST_WEB_HOST", "0.0.0.0"),
-		Port:                    env("WHITELIST_WEB_PORT", "8080"),
-		RconHost:                env("XICEMC_RCON_HOST", "127.0.0.1"),
-		RconPort:                env("XICEMC_RCON_PORT", "25575"),
-		RconPassword:            rconPassword,
-		RuntimeDir:              runtimeDir,
-		BackupDir:               env("XICEMC_BACKUP_DIR", "/opt/xicemc/backups"),
-		WhitelistPath:           env("XICEMC_WHITELIST_PATH", filepath.Join(runtimeDir, "whitelist.json")),
-		VerifyCodesPath:         env("XICEMC_VERIFY_CODES_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "verification-codes.tsv")),
-		ClaimsPath:              env("XICEMC_CLAIMS_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "claims.yml")),
-		ServerLogPath:           env("XICEMC_SERVER_LOG_PATH", filepath.Join(runtimeDir, "logs", "latest.log")),
-		ServiceName:             env("XICEMC_SERVICE_NAME", "xicemc.service"),
-		WebIconPath:             env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
-		WebFaviconPath:          env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
-		ResourcePackPath:        env("XICEMC_RESOURCE_PACK_PATH", filepath.Join(repoRoot, "server", "resourcepacks", "xiceclaim.zip")),
-		ServerDocsPath:          env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
-		SessionSecret:           env("WHITELIST_WEB_SESSION_SECRET", rconPassword),
-		PublicSiteBaseURL:       strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "http://150.158.93.80"), "/"),
-		PublicSiteDomain:        env("XICEMC_PUBLIC_SITE_DOMAIN", "xicemc.site"),
-		ICPRecordNo:             env("XICEMC_ICP_RECORD_NO", ""),
-		ICPRecordURL:            env("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/"),
-		PublicSecurityRecordNo:  env("XICEMC_PUBLIC_SECURITY_RECORD_NO", ""),
-		PublicSecurityRecordURL: env("XICEMC_PUBLIC_SECURITY_RECORD_URL", ""),
-		DBHost:                  env("XICE_AUDIT_DB_HOST", "127.0.0.1"),
-		DBPort:                  env("XICE_AUDIT_DB_PORT", "5432"),
-		DBName:                  env("XICE_AUDIT_DB_NAME", "xicemc_audit"),
-		DBUser:                  env("XICE_AUDIT_DB_USER", "xicemc_audit"),
-		DBPassword:              env("XICE_AUDIT_DB_PASSWORD", ""),
+		Host:                     env("WHITELIST_WEB_HOST", "0.0.0.0"),
+		Port:                     env("WHITELIST_WEB_PORT", "8080"),
+		RconHost:                 env("XICEMC_RCON_HOST", "127.0.0.1"),
+		RconPort:                 env("XICEMC_RCON_PORT", "25575"),
+		RconPassword:             rconPassword,
+		RuntimeDir:               runtimeDir,
+		BackupDir:                env("XICEMC_BACKUP_DIR", "/opt/xicemc/backups"),
+		WhitelistPath:            env("XICEMC_WHITELIST_PATH", filepath.Join(runtimeDir, "whitelist.json")),
+		VerifyCodesPath:          env("XICEMC_VERIFY_CODES_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "verification-codes.tsv")),
+		BlacklistPath:            env("XICEMC_BLACKLIST_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "blacklist.tsv")),
+		ClaimsPath:               env("XICEMC_CLAIMS_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "claims.yml")),
+		ServerLogPath:            env("XICEMC_SERVER_LOG_PATH", filepath.Join(runtimeDir, "logs", "latest.log")),
+		ServiceName:              env("XICEMC_SERVICE_NAME", "xicemc.service"),
+		CommandControlConfigPath: env("XICEMC_COMMAND_CONTROL_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceCommandControl", "config.yml")),
+		ClaimConfigPath:          env("XICEMC_CLAIM_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "config.yml")),
+		WebIconPath:              env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
+		WebFaviconPath:           env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
+		ResourcePackPath:         env("XICEMC_RESOURCE_PACK_PATH", filepath.Join(repoRoot, "server", "resourcepacks", "xiceclaim.zip")),
+		ServerDocsPath:           env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
+		ServerDocsMaxLength:      envInt("XICEMC_DOCS_MAX_LENGTH", 100000),
+		SessionSecret:            env("WHITELIST_WEB_SESSION_SECRET", rconPassword),
+		PublicSiteBaseURL:        strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "http://150.158.93.80"), "/"),
+		PublicSiteDomain:         env("XICEMC_PUBLIC_SITE_DOMAIN", "xicemc.site"),
+		ICPRecordNo:              env("XICEMC_ICP_RECORD_NO", ""),
+		ICPRecordURL:             env("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/"),
+		PublicSecurityRecordNo:   env("XICEMC_PUBLIC_SECURITY_RECORD_NO", ""),
+		PublicSecurityRecordURL:  env("XICEMC_PUBLIC_SECURITY_RECORD_URL", ""),
+		DBHost:                   env("XICE_AUDIT_DB_HOST", "127.0.0.1"),
+		DBPort:                   env("XICE_AUDIT_DB_PORT", "5432"),
+		DBName:                   env("XICE_AUDIT_DB_NAME", "xicemc_audit"),
+		DBUser:                   env("XICE_AUDIT_DB_USER", "xicemc_audit"),
+		DBPassword:               env("XICE_AUDIT_DB_PASSWORD", ""),
+		AuditRetentionDays:       envInt("XICE_AUDIT_RETENTION_DAYS", 3),
 	}
 }
 
@@ -254,6 +270,18 @@ func env(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envInt(name string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed := atoi(value)
+	if parsed == 0 && value != "0" {
+		return fallback
+	}
+	return parsed
 }
 
 func openDB(cfg config) (*sql.DB, error) {
@@ -295,12 +323,24 @@ func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /profile", a.requireUser(a.handleProfileUpdate))
 	mux.HandleFunc("GET /docs", a.requireUser(a.handleDocs))
 	mux.HandleFunc("GET /status", a.requireUser(a.handleStatus))
-	mux.HandleFunc("GET /players", a.requireUser(a.handleMigrationPlaceholder("玩家列表")))
-	mux.HandleFunc("GET /audit", a.requireUser(a.handleMigrationPlaceholder("操作查询")))
-	mux.HandleFunc("GET /report", a.requireUser(a.handleMigrationPlaceholder("举报")))
-	mux.HandleFunc("GET /reports", a.requireManager(a.handleMigrationPlaceholder("举报受理")))
-	mux.HandleFunc("GET /blacklist", a.requireUser(a.handleMigrationPlaceholder("黑名单列表")))
-	mux.HandleFunc("GET /permissions", a.requireManager(a.handleMigrationPlaceholder("权限管理")))
+	mux.HandleFunc("GET /players", a.requireUser(a.handlePlayers))
+	mux.HandleFunc("GET /players/suggestions", a.requireUser(a.handlePlayerSuggestions))
+	mux.HandleFunc("GET /audit/source-suggestions", a.requireUser(a.handlePlayerSuggestions))
+	mux.HandleFunc("POST /players/role", a.requireOwner(a.handlePlayerRole))
+	mux.HandleFunc("POST /players/reset-password", a.requireOwner(a.handlePlayerPasswordReset))
+	mux.HandleFunc("GET /audit", a.requireUser(a.handleAudit))
+	mux.HandleFunc("GET /report", a.requireUser(a.handleReportPage))
+	mux.HandleFunc("POST /report", a.requireUser(a.handleReportSubmit))
+	mux.HandleFunc("GET /reports", a.requireManager(a.handleReports))
+	mux.HandleFunc("POST /reports/process", a.requireManager(a.handleReportProcess))
+	mux.HandleFunc("GET /blacklist", a.requireUser(a.handleBlacklist))
+	mux.HandleFunc("POST /blacklist/add", a.requireManager(a.handleBlacklistAdd))
+	mux.HandleFunc("POST /blacklist/remove", a.requireManager(a.handleBlacklistRemove))
+	mux.HandleFunc("GET /permissions", a.requireManager(a.handlePermissions))
+	mux.HandleFunc("POST /permissions/add", a.requireManager(a.handlePermissionAdd))
+	mux.HandleFunc("POST /permissions/remove", a.requireManager(a.handlePermissionRemove))
+	mux.HandleFunc("GET /docs/edit", a.requireManager(a.handleDocsEditPage))
+	mux.HandleFunc("POST /docs/edit", a.requireManager(a.handleDocsUpdate))
 }
 
 func (a *app) fileHandler(path, contentType string) http.HandlerFunc {
@@ -603,6 +643,16 @@ func (a *app) requireUser(next func(http.ResponseWriter, *http.Request, *userSes
 func (a *app) requireManager(next func(http.ResponseWriter, *http.Request, *userSession)) http.HandlerFunc {
 	return a.requireUser(func(w http.ResponseWriter, r *http.Request, user *userSession) {
 		if user.Role != adminRole && user.Role != ownerRole {
+			http.Error(w, "无权访问", http.StatusForbidden)
+			return
+		}
+		next(w, r, user)
+	})
+}
+
+func (a *app) requireOwner(next func(http.ResponseWriter, *http.Request, *userSession)) http.HandlerFunc {
+	return a.requireUser(func(w http.ResponseWriter, r *http.Request, user *userSession) {
+		if user.Role != ownerRole {
 			http.Error(w, "无权访问", http.StatusForbidden)
 			return
 		}
@@ -1281,6 +1331,32 @@ func (a *app) initWebTables(ctx context.Context) error {
 			role TEXT NOT NULL DEFAULT '玩家',
 			profile_bio TEXT NOT NULL DEFAULT '一名普通的Minecraft玩家'
 		)`,
+		`CREATE TABLE IF NOT EXISTS web_reports (
+			id BIGSERIAL PRIMARY KEY,
+			reporter_uuid TEXT NOT NULL,
+			reporter_name TEXT NOT NULL,
+			target_uuid TEXT NOT NULL,
+			target_name TEXT NOT NULL,
+			reason TEXT NOT NULL,
+			status TEXT NOT NULL,
+			action TEXT,
+			handler_uuid TEXT,
+			handler_name TEXT,
+			created_at BIGINT NOT NULL,
+			handled_at BIGINT,
+			ban_expires_at BIGINT,
+			ban_permanent BOOLEAN NOT NULL DEFAULT FALSE
+		)`,
+		`CREATE TABLE IF NOT EXISTS web_blacklist (
+			player_uuid TEXT PRIMARY KEY,
+			player_name TEXT NOT NULL,
+			reason TEXT NOT NULL,
+			report_id BIGINT,
+			created_at BIGINT NOT NULL,
+			expires_at BIGINT,
+			permanent BOOLEAN NOT NULL DEFAULT FALSE,
+			active BOOLEAN NOT NULL DEFAULT TRUE
+		)`,
 		`ALTER TABLE web_players ADD COLUMN IF NOT EXISTS password_hash TEXT`,
 		`ALTER TABLE web_players ADD COLUMN IF NOT EXISTS role TEXT`,
 		`ALTER TABLE web_players ADD COLUMN IF NOT EXISTS profile_bio TEXT`,
@@ -1471,7 +1547,7 @@ func mustTemplates() *template.Template {
 			return result
 		},
 	}
-	return template.Must(template.New("root").Funcs(funcs).Parse(templatesHTML))
+	return template.Must(template.New("root").Funcs(funcs).Parse(templatesHTML + adminTemplatesHTML))
 }
 
 var templatesHTML = `{{define "layout"}}<!doctype html>
@@ -1528,10 +1604,17 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .identity-role.admin { background:#eafaf2; color:#176f48; }
     .identity-role.player { background:#eaf3ff; color:#1d5fa7; }
     label { display:block; margin:12px 0 6px; color:var(--muted); }
-    input,textarea { width:100%; padding:10px 11px; border-radius:6px; border:1px solid #c7d2df; background:#fff; color:var(--text); font-size:15px; }
+    input,textarea,select { width:100%; padding:10px 11px; border-radius:6px; border:1px solid #c7d2df; background:#fff; color:var(--text); font-size:15px; }
     button,.button { display:inline-block; border:0; border-radius:6px; padding:10px 13px; background:var(--accent); color:#fff; font-size:15px; cursor:pointer; text-align:center; }
     button.secondary,.button.secondary { background:#e7edf5; color:var(--text); }
+    .page-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
     .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+    .inline-form { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:4px 0; }
+    .inline-form input,.inline-form select { width:auto; min-width:110px; }
+    .small-input { max-width:110px; }
+    .checkbox-inline { display:inline-flex; align-items:center; gap:6px; margin:0; white-space:nowrap; }
+    .checkbox-inline input { width:auto; }
+    .form-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
     .message { color:var(--muted); }
     .register-message,.error { color:var(--danger); font-weight:700; border:1px solid #f1b7b7; background:#fff1f1; border-radius:6px; padding:10px 12px; }
     .field-hint { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
@@ -1684,6 +1767,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
       .public-hero h1 { font-size:34px; }
       .article-grid { grid-template-columns:1fr; }
       .status-grid { grid-template-columns:1fr; }
+      .form-grid { grid-template-columns:1fr; }
       .note-list article { grid-template-columns:1fr; gap:6px; }
     }
   </style>
@@ -1917,7 +2001,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 
 {{define "docs"}}{{template "pageStart" .}}{{template "docsContent" .}}{{template "pageEnd" .}}{{end}}
 {{define "docsContent"}}
-<h1>服务器文档</h1>
+<div class="page-heading"><h1>服务器文档</h1>{{if or (eq .User.Role "管理员") (eq .User.Role "服主")}}<a class="button secondary" href="/docs/edit">编辑</a>{{end}}</div>
 <section class="panel"><div class="pre">{{.Message}}</div></section>
 {{end}}
 
