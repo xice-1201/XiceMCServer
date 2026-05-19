@@ -45,6 +45,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
@@ -484,6 +485,21 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (isClaimTotemBottom(possibleBottom)) {
             collapseTotem(possibleBottom, true);
         }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockDamage(BlockDamageEvent event) {
+        if (!isClaimTotemBlock(event.getBlock())) {
+            return;
+        }
+        if (getConfig().getBoolean("protection.block-break", true) && isProtectedFrom(event.getPlayer(), event.getBlock(), ClaimFeature.BLOCK_BREAK)) {
+            ClaimRegion claim = claimAt(event.getBlock().getLocation());
+            event.setCancelled(true);
+            send(event.getPlayer(), message("protected"), "claim", claim == null ? "" : claim.name);
+            return;
+        }
+        event.setCancelled(true);
+        collapseTotem(event.getBlock(), event.getPlayer().getGameMode() != GameMode.CREATIVE);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

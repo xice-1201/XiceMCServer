@@ -2,11 +2,15 @@
   "parent": "minecraft:block/block",
   "textures": {
     "particle": "minecraft:block/quartz_block_side",
-    "quartz": "minecraft:block/quartz_block_side",
-    "quartz_top": "minecraft:block/quartz_block_top",
-    "gold": "minecraft:block/gold_block",
+    "quartz": "xiceclaim:block/claim_totem_quartz",
+    "quartz_top": "xiceclaim:block/claim_totem_quartz_top",
+    "gold": "xiceclaim:block/claim_totem_gold",
     "pearl": "xiceclaim:block/claim_totem_pearl",
-    "magic": "xiceclaim:block/claim_totem_magic"
+    "magic": "xiceclaim:block/claim_totem_magic",
+    "front_lower": "xiceclaim:block/claim_totem_front_lower",
+    "front_upper": "xiceclaim:block/claim_totem_front_upper",
+    "side_panel": "xiceclaim:block/claim_totem_side_panel",
+    "altar": "xiceclaim:block/claim_totem_altar"
   },
   "elements": [
     {
@@ -156,16 +160,16 @@
           "texture": "#quartz_top"
         },
         "north": {
-          "texture": "#quartz"
+          "texture": "#front_lower"
         },
         "south": {
-          "texture": "#quartz"
+          "texture": "#front_lower"
         },
         "west": {
-          "texture": "#quartz"
+          "texture": "#side_panel"
         },
         "east": {
-          "texture": "#quartz"
+          "texture": "#side_panel"
         }
       }
     },
