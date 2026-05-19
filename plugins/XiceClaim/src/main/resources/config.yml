@@ -57,6 +57,7 @@ messages:
   totem-bound: '&a领地图腾已绑定至领地 {claim}。'
   totem-unbound: '&e领地图腾已与领地 {claim} 解绑。'
   teleport-countdown-started: '&e传送将在 3 秒后开始。'
+  teleport-cancelled-moved: '&c传送已取消：你移动了。'
   teleport-success: '&a已传送至领地 {claim}。'
   teleport-no-permission: '&c你没有传送至该领地的权限。'
   teleport-no-totem: '&c该领地尚未绑定领地图腾，无法传送。'

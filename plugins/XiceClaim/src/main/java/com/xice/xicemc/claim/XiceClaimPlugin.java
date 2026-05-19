@@ -23,6 +23,7 @@ import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Particle;
+import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -86,6 +87,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 
 public final class XiceClaimPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final Pattern CLAIM_NAME_PATTERN = Pattern.compile("^[\\p{L}\\p{N}_-]{1,24}$");
@@ -96,6 +98,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private final Map<UUID, Selection> selections = new HashMap<>();
     private final Map<String, ClaimRegion> claims = new HashMap<>();
     private final Map<UUID, RingSession> ringSessions = new HashMap<>();
+    private final Map<UUID, PendingTeleport> pendingTeleports = new HashMap<>();
     private File claimsFile;
     private FileConfiguration claimsConfig;
     private NamespacedKey ringKey;
@@ -136,6 +139,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             command.setTabCompleter(this);
         }
         getLogger().info("XiceClaim enabled. Claims: " + claims.size());
+    }
+
+    @Override
+    public void onDisable() {
+        for (PendingTeleport pending : pendingTeleports.values()) {
+            pending.cancel();
+        }
+        pendingTeleports.clear();
     }
 
     private void initializeKeys() {
@@ -586,6 +597,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     public void onPlayerMove(PlayerMoveEvent event) {
         Location from = event.getFrom();
         Location to = event.getTo();
+        if (to != null && positionChanged(from, to)) {
+            cancelPendingTeleport(event.getPlayer(), message("teleport-cancelled-moved", "&c传送已取消：你移动了。"));
+        }
         if (to == null || sameBlock(from, to)) {
             return;
         }
@@ -612,6 +626,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 && first.getBlockZ() == second.getBlockZ();
     }
 
+    private boolean positionChanged(Location first, Location second) {
+        return !Objects.equals(first.getWorld(), second.getWorld())
+                || Math.abs(first.getX() - second.getX()) > 0.0001D
+                || Math.abs(first.getY() - second.getY()) > 0.0001D
+                || Math.abs(first.getZ() - second.getZ()) > 0.0001D;
+    }
+
     private boolean sameBlock(Block first, Block second) {
         return first != null
                 && second != null
@@ -624,6 +645,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         ringSessions.remove(event.getPlayer().getUniqueId());
+        cancelPendingTeleport(event.getPlayer(), null);
     }
 
     @EventHandler
@@ -1985,6 +2007,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private void startClaimTotemTeleport(Player player, ClaimRegion claim) {
+        cancelPendingTeleport(player, null);
         TeleportTarget firstCheck = validateClaimTotemTeleport(player, claim);
         if (!firstCheck.allowed()) {
             send(player, firstCheck.message());
@@ -1992,26 +2015,93 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         send(player, message("teleport-countdown-started", "&e传送将在 3 秒后开始。"));
         String claimId = claim.id;
-        Bukkit.getScheduler().runTaskLater(this, () -> {
-            if (!player.isOnline()) {
+        PendingTeleport pending = new PendingTeleport(claimId);
+        pendingTeleports.put(player.getUniqueId(), pending);
+        pending.particleTask = startTeleportParticles(player);
+        pending.teleportTask = Bukkit.getScheduler().runTaskLater(this, () -> {
+            PendingTeleport currentPending = pendingTeleports.get(player.getUniqueId());
+            if (currentPending != pending) {
                 return;
             }
-            ClaimRegion current = claims.get(claimId);
+            if (!player.isOnline()) {
+                finishPendingTeleport(player);
+                return;
+            }
+            ClaimRegion current = claims.get(currentPending.claimId);
             if (current == null) {
+                finishPendingTeleport(player);
                 send(player, message("ring-claim-missing"));
                 return;
             }
             TeleportTarget secondCheck = validateClaimTotemTeleport(player, current);
             if (!secondCheck.allowed()) {
+                finishPendingTeleport(player);
                 send(player, secondCheck.message());
                 return;
             }
-            if (!player.teleport(secondCheck.destination())) {
+            Location departure = player.getLocation();
+            Location destination = secondCheck.destination();
+            finishPendingTeleport(player);
+            if (!player.teleport(destination)) {
                 send(player, message("teleport-failed", "&c传送失败，请稍后再试。"));
                 return;
             }
+            departure.getWorld().playSound(departure, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
+            destination.getWorld().playSound(destination, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
             send(player, message("teleport-success", "&a已传送至领地 {claim}。"), "claim", current.name);
         }, 60L);
+    }
+
+    private BukkitTask startTeleportParticles(Player player) {
+        Particle.DustOptions dust = new Particle.DustOptions(Color.fromRGB(145, 65, 255), 1.25F);
+        return new BukkitRunnable() {
+            private int elapsedTicks;
+
+            @Override
+            public void run() {
+                if (!player.isOnline() || !pendingTeleports.containsKey(player.getUniqueId())) {
+                    cancel();
+                    return;
+                }
+                spawnTeleportParticles(player.getLocation(), elapsedTicks, dust);
+                elapsedTicks += 5;
+            }
+        }.runTaskTimer(this, 0L, 5L);
+    }
+
+    private void spawnTeleportParticles(Location base, int elapsedTicks, Particle.DustOptions dust) {
+        World world = base.getWorld();
+        if (world == null) {
+            return;
+        }
+        double progress = Math.min(1.0D, elapsedTicks / 60.0D);
+        int count = 10 + (int) Math.round(progress * 34.0D);
+        double phase = elapsedTicks * 0.28D;
+        for (int index = 0; index < count; index++) {
+            double angle = phase + index * Math.PI * 2.0D / count;
+            double radius = 0.28D + progress * 0.42D + (index % 3) * 0.04D;
+            double y = 0.08D + ((index * 0.37D + progress * 1.8D) % 1.85D);
+            Location point = base.clone().add(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+            world.spawnParticle(Particle.DUST, point, 1, 0.02D, 0.02D, 0.02D, 0.0D, dust);
+        }
+    }
+
+    private void cancelPendingTeleport(Player player, String message) {
+        PendingTeleport pending = pendingTeleports.remove(player.getUniqueId());
+        if (pending == null) {
+            return;
+        }
+        pending.cancel();
+        if (message != null && !message.isBlank()) {
+            send(player, message);
+        }
+    }
+
+    private void finishPendingTeleport(Player player) {
+        PendingTeleport pending = pendingTeleports.remove(player.getUniqueId());
+        if (pending != null) {
+            pending.cancel();
+        }
     }
 
     private TeleportTarget validateClaimTotemTeleport(Player player, ClaimRegion claim) {
@@ -2785,6 +2875,25 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
         private static TeleportTarget failure(String message) {
             return new TeleportTarget(false, null, message);
+        }
+    }
+
+    private static final class PendingTeleport {
+        private final String claimId;
+        private BukkitTask teleportTask;
+        private BukkitTask particleTask;
+
+        private PendingTeleport(String claimId) {
+            this.claimId = claimId;
+        }
+
+        private void cancel() {
+            if (teleportTask != null) {
+                teleportTask.cancel();
+            }
+            if (particleTask != null) {
+                particleTask.cancel();
+            }
         }
     }
 
