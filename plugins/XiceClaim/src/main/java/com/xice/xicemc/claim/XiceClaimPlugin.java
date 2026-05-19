@@ -2469,6 +2469,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         PendingTeleport pending = new PendingTeleport(null);
         pendingTeleports.put(player.getUniqueId(), pending);
         pending.particleTask = startTeleportParticles(player);
+        startChaoticWarpSearch(player, pending);
         pending.teleportTask = Bukkit.getScheduler().runTaskLater(this, () -> {
             PendingTeleport currentPending = pendingTeleports.get(player.getUniqueId());
             if (currentPending != pending) {
@@ -2483,7 +2484,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 send(player, message("chaotic-warp-no-level", "&c经验等级不足，紊乱跃迁失败。"));
                 return;
             }
-            Location destination = randomWarpDestination(player);
+            Location destination = currentPending.chaoticDestination;
             if (destination == null) {
                 finishPendingTeleport(player);
                 send(player, message("chaotic-warp-no-target", "&c没有找到可用的随机落点，紊乱跃迁失败。"));
@@ -2506,7 +2507,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }, 60L);
     }
 
-    private Location randomWarpDestination(Player player) {
+    private void startChaoticWarpSearch(Player player, PendingTeleport pending) {
+        if (!player.isOnline() || pendingTeleports.get(player.getUniqueId()) != pending || pending.chaoticDestination != null) {
+            return;
+        }
+        if (pending.chaoticSearchAttempts >= CHAOTIC_WARP_RANDOM_ATTEMPTS) {
+            return;
+        }
         World world = player.getWorld();
         WorldBorder border = world.getWorldBorder();
         Location center = border.getCenter();
@@ -2516,15 +2523,24 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         double minZ = center.getZ() - radius;
         double maxZ = center.getZ() + radius;
         ThreadLocalRandom random = ThreadLocalRandom.current();
-        for (int attempt = 0; attempt < CHAOTIC_WARP_RANDOM_ATTEMPTS; attempt++) {
-            int x = (int) Math.floor(random.nextDouble(minX, maxX));
-            int z = (int) Math.floor(random.nextDouble(minZ, maxZ));
+        int x = (int) Math.floor(random.nextDouble(minX, maxX));
+        int z = (int) Math.floor(random.nextDouble(minZ, maxZ));
+        pending.chaoticSearchAttempts++;
+        world.getChunkAtAsync(x >> 4, z >> 4, true).whenComplete((chunk, throwable) -> Bukkit.getScheduler().runTask(this, () -> {
+            if (!player.isOnline() || pendingTeleports.get(player.getUniqueId()) != pending || pending.chaoticDestination != null) {
+                return;
+            }
+            if (throwable != null || chunk == null || !world.isChunkLoaded(chunk.getX(), chunk.getZ())) {
+                startChaoticWarpSearch(player, pending);
+                return;
+            }
             Location destination = findSafeRandomDestination(world, x, z, player.getLocation());
             if (destination != null && border.isInside(destination)) {
-                return destination;
+                pending.chaoticDestination = destination;
+                return;
             }
-        }
-        return null;
+            startChaoticWarpSearch(player, pending);
+        }));
     }
 
     private Location findSafeRandomDestination(World world, int x, int z, Location current) {
@@ -3429,6 +3445,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private final String claimId;
         private BukkitTask teleportTask;
         private BukkitTask particleTask;
+        private Location chaoticDestination;
+        private int chaoticSearchAttempts;
 
         private PendingTeleport(String claimId) {
             this.claimId = claimId;
