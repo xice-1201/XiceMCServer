@@ -36,6 +36,7 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockSupport;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.TileState;
+import org.bukkit.block.data.Waterlogged;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -2678,6 +2679,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     + " scanned=" + result.scannedBlocks()
                     + " spaceOk=" + result.spaceOk()
                     + " floorOk=" + result.floorOk()
+                    + " deepWater=" + result.deepWater()
                     + " feetBlocked=" + result.feetBlocked()
                     + " headBlocked=" + result.headBlocked());
             topUpChaoticWarpQueue(world);
@@ -2746,7 +2748,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 || !bounds.contains(location)
                 || !world.getWorldBorder().isInside(location)
                 || !hasTeleportSpace(feet)
-                || !hasTeleportFloor(feet)) {
+                || !hasTeleportFloor(feet)
+                || isDeepWaterLanding(feet)) {
             return null;
         }
         location.setYaw(player.getLocation().getYaw());
@@ -2826,6 +2829,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         int scannedBlocks = 0;
         int spaceOk = 0;
         int floorOk = 0;
+        int deepWater = 0;
         int feetBlocked = 0;
         int headBlocked = 0;
         for (int y = maxY; y >= minY; y--) {
@@ -2846,13 +2850,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             spaceOk++;
             if (hasTeleportFloor(feet)) {
                 floorOk++;
+                if (isDeepWaterLanding(feet)) {
+                    deepWater++;
+                    continue;
+                }
                 Location destination = feet.getLocation().add(0.5, 0.0, 0.5);
                 destination.setYaw(current.getYaw());
                 destination.setPitch(current.getPitch());
-                return new SafeRandomDestinationResult(destination, scannedBlocks, spaceOk, floorOk, feetBlocked, headBlocked);
+                return new SafeRandomDestinationResult(destination, scannedBlocks, spaceOk, floorOk, deepWater, feetBlocked, headBlocked);
             }
         }
-        return new SafeRandomDestinationResult(null, scannedBlocks, spaceOk, floorOk, feetBlocked, headBlocked);
+        return new SafeRandomDestinationResult(null, scannedBlocks, spaceOk, floorOk, deepWater, feetBlocked, headBlocked);
     }
 
     private void applyWarpSuppression(Player player, long durationMillis) {
@@ -2983,6 +2991,23 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         Block floor = feet.getRelative(BlockFace.DOWN);
         return floor.getBlockData().isFaceSturdy(BlockFace.UP, BlockSupport.FULL);
+    }
+
+    private boolean isDeepWaterLanding(Block feet) {
+        return isWaterLike(feet) && isWaterLike(feet.getRelative(BlockFace.UP));
+    }
+
+    private boolean isWaterLike(Block block) {
+        if (block.getType() == Material.WATER) {
+            return true;
+        }
+        if (block.getBlockData() instanceof Waterlogged waterlogged && waterlogged.isWaterlogged()) {
+            return true;
+        }
+        return switch (block.getType()) {
+            case KELP, KELP_PLANT, SEAGRASS, TALL_SEAGRASS -> true;
+            default -> false;
+        };
     }
 
     private void handleManageRingMenuClick(Player player, RingMenu menu, String action) {
@@ -3845,6 +3870,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             int scannedBlocks,
             int spaceOk,
             int floorOk,
+            int deepWater,
             int feetBlocked,
             int headBlocked) {
         private String failureReason() {
@@ -3853,6 +3879,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             }
             if (floorOk <= 0) {
                 return "no-full-support";
+            }
+            if (deepWater > 0) {
+                return "deep-water";
             }
             return "no-safe-landing";
         }
