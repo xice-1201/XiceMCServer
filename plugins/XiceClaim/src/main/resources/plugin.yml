@@ -8,7 +8,7 @@ softdepend: [XiceMorePotionEffects]
 commands:
   claim:
     description: Manage land claims.
-    usage: /claim <help|give <ring|totem|core> [player|selector]|reload>
+    usage: /claim <help|give <ring|totem|core|warp_core> [player|selector]|reload>
     aliases: [xiceclaim]
 permissions:
   xiceclaim.admin:

@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.concurrent.ThreadLocalRandom;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Color;
@@ -25,6 +26,7 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.World;
+import org.bukkit.WorldBorder;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockSupport;
@@ -80,7 +82,9 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
+import org.bukkit.inventory.ShapelessRecipe;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -100,6 +104,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private static final int TOTEM_CORE_SLOT = 4;
     private static final int TOTEM_AURA_PERIOD_TICKS = 200;
     private static final int TOTEM_AURA_DURATION_TICKS = 500;
+    private static final long CHAOTIC_WARP_SUPPRESSION_MILLIS = 15L * 60L * 1000L;
+    private static final int CHAOTIC_WARP_EFFECT_DURATION_TICKS = 20 * 20;
+    private static final int CHAOTIC_WARP_RANDOM_ATTEMPTS = 64;
     private static final double TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED = 0.0009D;
 
     private final Map<UUID, Selection> selections = new HashMap<>();
@@ -126,6 +133,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey totemCoreKey;
     private NamespacedKey totemCoreItemModelKey;
     private NamespacedKey totemCoreRecipeKey;
+    private NamespacedKey chaoticWarpCoreKey;
+    private NamespacedKey chaoticWarpCoreRecipeKey;
     private NamespacedKey totemIdKey;
     private NamespacedKey totemPartKey;
     private NamespacedKey totemFrontKey;
@@ -142,6 +151,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         registerClaimRingRecipe();
         registerClaimTotemRecipe();
         registerTotemCoreRecipe();
+        registerChaoticWarpCoreRecipe();
         loadClaims();
         getServer().getPluginManager().registerEvents(this, this);
         Bukkit.getScheduler().runTask(this, this::refreshLoadedTotemBlocks);
@@ -150,6 +160,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (command != null) {
             command.setExecutor(this);
             command.setTabCompleter(this);
+        }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.discoverRecipe(chaoticWarpCoreRecipeKey);
         }
         getLogger().info("XiceClaim enabled. Claims: " + claims.size());
     }
@@ -184,6 +197,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         totemCoreKey = new NamespacedKey(this, "claim_totem_core");
         totemCoreItemModelKey = new NamespacedKey(this, "claim_totem_core");
         totemCoreRecipeKey = new NamespacedKey(this, "claim_totem_core_recipe");
+        chaoticWarpCoreKey = new NamespacedKey(this, "chaotic_warp_core");
+        chaoticWarpCoreRecipeKey = new NamespacedKey(this, "chaotic_warp_core_recipe");
         totemIdKey = new NamespacedKey(this, "claim_totem_id");
         totemPartKey = new NamespacedKey(this, "claim_totem_part");
         totemFrontKey = new NamespacedKey(this, "claim_totem_front");
@@ -233,7 +248,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (args.length < 2) {
-            send(sender, message("give-usage"));
+            send(sender, message("give-usage", "&c用法：/claim give <ring|totem|core|warp_core> [玩家|选择器]"));
             return;
         }
         List<Player> targets = claimGiveTargets(sender, args);
@@ -248,8 +263,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             messageKey = "totem-given";
         } else if ("core".equalsIgnoreCase(args[1])) {
             messageKey = "totem-core-given";
+        } else if ("warp_core".equalsIgnoreCase(args[1]) || "warp-core".equalsIgnoreCase(args[1]) || "chaotic_warp_core".equalsIgnoreCase(args[1])) {
+            messageKey = "chaotic-warp-core-given";
         } else {
-            send(sender, message("give-usage"));
+            send(sender, message("give-usage", "&c用法：/claim give <ring|totem|core|warp_core> [玩家|选择器]"));
             return;
         }
         for (Player target : targets) {
@@ -259,14 +276,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 unlockPostRingRecipes(target);
             } else if ("totem".equalsIgnoreCase(args[1])) {
                 item = createClaimTotem();
-            } else {
+            } else if ("core".equalsIgnoreCase(args[1])) {
                 item = createTotemCore();
+            } else {
+                item = createChaoticWarpCore();
             }
             Map<Integer, ItemStack> leftover = target.getInventory().addItem(item);
             for (ItemStack leftoverItem : leftover.values()) {
                 target.getWorld().dropItemNaturally(target.getLocation(), leftoverItem);
             }
-            send(target, message(messageKey));
+            send(target, message(messageKey, "&a已获得物品。"));
         }
         if (!(sender instanceof Player player) || !targets.contains(player) || targets.size() > 1) {
             send(sender, message("give-summary", "&a已向 {count} 名玩家发放物品。"), "count", targets.size());
@@ -601,6 +620,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerInteract(PlayerInteractEvent event) {
+        if (event.getItem() != null && isChaoticWarpCoreItem(event.getItem()) && isRightClick(event.getAction())) {
+            event.setCancelled(true);
+            if (event.getHand() == EquipmentSlot.OFF_HAND && isChaoticWarpCoreItem(event.getPlayer().getInventory().getItemInMainHand())) {
+                return;
+            }
+            startChaoticWarpTeleport(event.getPlayer());
+            return;
+        }
         if (event.getClickedBlock() != null && isClaimTotemBlock(event.getClickedBlock()) && isRightClick(event.getAction())) {
             if (shouldPassTotemInteractionToBlockPlacement(event)) {
                 return;
@@ -742,6 +769,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         event.getPlayer().discoverRecipe(ringRecipeKey);
+        event.getPlayer().discoverRecipe(chaoticWarpCoreRecipeKey);
         if (hasClaimRing(event.getPlayer())) {
             unlockPostRingRecipes(event.getPlayer());
         }
@@ -828,7 +856,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH)
     public void onPrepareItemCraft(PrepareItemCraftEvent event) {
         for (ItemStack item : event.getInventory().getMatrix()) {
-            if (isClaimRing(item) || isClaimTotemItem(item) || isTotemCoreItem(item)) {
+            if (isClaimRing(item) || isClaimTotemItem(item) || isTotemCoreItem(item) || isChaoticWarpCoreItem(item)) {
                 event.getInventory().setResult(null);
                 return;
             }
@@ -838,7 +866,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onCraftItem(CraftItemEvent event) {
         for (ItemStack item : event.getInventory().getMatrix()) {
-            if (isClaimRing(item) || isClaimTotemItem(item) || isTotemCoreItem(item)) {
+            if (isClaimRing(item) || isClaimTotemItem(item) || isTotemCoreItem(item) || isChaoticWarpCoreItem(item)) {
                 event.setCancelled(true);
                 return;
             }
@@ -858,7 +886,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             openRingMenu(event.getPlayer(), item, event.getHand());
             return;
         }
-        if (isClaimTotemItem(item) || isTotemCoreItem(item)) {
+        if (isClaimTotemItem(item) || isTotemCoreItem(item) || isChaoticWarpCoreItem(item)) {
             event.setCancelled(true);
             return;
         }
@@ -1260,6 +1288,27 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         getServer().addRecipe(recipe);
     }
 
+    private void registerChaoticWarpCoreRecipe() {
+        ShapelessRecipe recipe = new ShapelessRecipe(chaoticWarpCoreRecipeKey, createChaoticWarpCore());
+        recipe.addIngredient(Material.ENDER_PEARL);
+        recipe.addIngredient(Material.WHEAT_SEEDS);
+        recipe.addIngredient(new RecipeChoice.MaterialChoice(
+                Material.OAK_PLANKS,
+                Material.SPRUCE_PLANKS,
+                Material.BIRCH_PLANKS,
+                Material.JUNGLE_PLANKS,
+                Material.ACACIA_PLANKS,
+                Material.DARK_OAK_PLANKS,
+                Material.MANGROVE_PLANKS,
+                Material.CHERRY_PLANKS,
+                Material.PALE_OAK_PLANKS,
+                Material.BAMBOO_PLANKS,
+                Material.CRIMSON_PLANKS,
+                Material.WARPED_PLANKS));
+        getServer().removeRecipe(chaoticWarpCoreRecipeKey);
+        getServer().addRecipe(recipe);
+    }
+
     private ItemStack createClaimTotem() {
         ItemStack totem = new ItemStack(TOTEM_ITEM_MATERIAL);
         ItemMeta meta = totem.getItemMeta();
@@ -1284,6 +1333,19 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return core;
     }
 
+    private ItemStack createChaoticWarpCore() {
+        ItemStack core = new ItemStack(Material.FIREWORK_STAR);
+        ItemMeta meta = core.getItemMeta();
+        meta.setDisplayName(color("&d紊乱跃迁晶核"));
+        meta.setLore(List.of(
+                color("&7右键启动 3 秒跃迁倒计时。"),
+                color("&7结束后消耗 1 级经验随机传送至当前维度。")));
+        meta.setEnchantmentGlintOverride(true);
+        meta.getPersistentDataContainer().set(chaoticWarpCoreKey, PersistentDataType.BYTE, (byte) 1);
+        core.setItemMeta(meta);
+        return core;
+    }
+
     private boolean isClaimRing(ItemStack item) {
         if (item == null || item.getType() != Material.FLINT || !item.hasItemMeta()) {
             return false;
@@ -1303,6 +1365,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return false;
         }
         return item.getItemMeta().getPersistentDataContainer().has(totemCoreKey, PersistentDataType.BYTE);
+    }
+
+    private boolean isChaoticWarpCoreItem(ItemStack item) {
+        if (item == null || item.getType() != Material.FIREWORK_STAR || !item.hasItemMeta()) {
+            return false;
+        }
+        return item.getItemMeta().getPersistentDataContainer().has(chaoticWarpCoreKey, PersistentDataType.BYTE);
     }
 
     private void unlockPostRingRecipes(Player player) {
@@ -2391,14 +2460,97 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private void applyClaimTeleportSuppression(Player player) {
+        applyWarpSuppression(player, 30_000L);
+    }
+
+    private void startChaoticWarpTeleport(Player player) {
+        cancelPendingTeleport(player, null);
+        send(player, message("teleport-countdown-started", "&e传送将在 3 秒后开始。"));
+        PendingTeleport pending = new PendingTeleport(null);
+        pendingTeleports.put(player.getUniqueId(), pending);
+        pending.particleTask = startTeleportParticles(player);
+        pending.teleportTask = Bukkit.getScheduler().runTaskLater(this, () -> {
+            PendingTeleport currentPending = pendingTeleports.get(player.getUniqueId());
+            if (currentPending != pending) {
+                return;
+            }
+            if (!player.isOnline()) {
+                finishPendingTeleport(player);
+                return;
+            }
+            if (player.getGameMode() != GameMode.CREATIVE && player.getLevel() < 1) {
+                finishPendingTeleport(player);
+                send(player, message("chaotic-warp-no-level", "&c经验等级不足，紊乱跃迁失败。"));
+                return;
+            }
+            Location destination = randomWarpDestination(player);
+            if (destination == null) {
+                finishPendingTeleport(player);
+                send(player, message("chaotic-warp-no-target", "&c没有找到可用的随机落点，紊乱跃迁失败。"));
+                return;
+            }
+            Location departure = player.getLocation();
+            finishPendingTeleport(player);
+            if (!player.teleport(destination)) {
+                send(player, message("teleport-failed", "&c传送失败，请稍后再试。"));
+                return;
+            }
+            if (player.getGameMode() != GameMode.CREATIVE) {
+                player.setLevel(player.getLevel() - 1);
+            }
+            departure.getWorld().playSound(departure, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 0.75F);
+            destination.getWorld().playSound(destination, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 0.75F);
+            applyWarpSuppression(player, CHAOTIC_WARP_SUPPRESSION_MILLIS);
+            player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, CHAOTIC_WARP_EFFECT_DURATION_TICKS, 4, true, false, true), true);
+            player.addPotionEffect(new PotionEffect(PotionEffectType.SLOW_FALLING, CHAOTIC_WARP_EFFECT_DURATION_TICKS, 0, true, false, true), true);
+        }, 60L);
+    }
+
+    private Location randomWarpDestination(Player player) {
+        World world = player.getWorld();
+        WorldBorder border = world.getWorldBorder();
+        Location center = border.getCenter();
+        double radius = Math.max(1.0D, border.getSize() / 2.0D - 1.0D);
+        double minX = center.getX() - radius;
+        double maxX = center.getX() + radius;
+        double minZ = center.getZ() - radius;
+        double maxZ = center.getZ() + radius;
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        for (int attempt = 0; attempt < CHAOTIC_WARP_RANDOM_ATTEMPTS; attempt++) {
+            int x = (int) Math.floor(random.nextDouble(minX, maxX));
+            int z = (int) Math.floor(random.nextDouble(minZ, maxZ));
+            Location destination = findSafeRandomDestination(world, x, z, player.getLocation());
+            if (destination != null && border.isInside(destination)) {
+                return destination;
+            }
+        }
+        return null;
+    }
+
+    private Location findSafeRandomDestination(World world, int x, int z, Location current) {
+        int minY = world.getMinHeight() + 1;
+        int maxY = world.getMaxHeight() - 2;
+        for (int y = maxY; y >= minY; y--) {
+            Block feet = world.getBlockAt(x, y, z);
+            if (hasTeleportSpace(feet) && hasTeleportFloor(feet)) {
+                Location destination = feet.getLocation().add(0.5, 0.0, 0.5);
+                destination.setYaw(current.getYaw());
+                destination.setPitch(current.getPitch());
+                return destination;
+            }
+        }
+        return null;
+    }
+
+    private void applyWarpSuppression(Player player, long durationMillis) {
         var plugin = Bukkit.getPluginManager().getPlugin("XiceMorePotionEffects");
         if (plugin == null || !plugin.isEnabled()) {
             return;
         }
         try {
-            plugin.getClass().getMethod("applyClaimTeleportSuppression", Player.class).invoke(plugin, player);
+            plugin.getClass().getMethod("applyWarpSuppression", Player.class, long.class).invoke(plugin, player, durationMillis);
         } catch (ReflectiveOperationException exception) {
-            getLogger().warning("Failed to apply claim teleport suppression: " + exception.getMessage());
+            getLogger().warning("Failed to apply warp suppression: " + exception.getMessage());
         }
     }
 
@@ -3011,7 +3163,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if (args.length == 2 && "give".equalsIgnoreCase(args[0])) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
-            return List.of("ring", "totem", "core").stream()
+            return List.of("ring", "totem", "core", "warp_core").stream()
                     .filter(value -> value.startsWith(prefix))
                     .toList();
         }
