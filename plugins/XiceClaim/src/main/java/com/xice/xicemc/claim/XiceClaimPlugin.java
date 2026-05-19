@@ -85,6 +85,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 
 public final class XiceClaimPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final Pattern CLAIM_NAME_PATTERN = Pattern.compile("^[\\p{L}\\p{N}_-]{1,24}$");
+    private static final Material TOTEM_ITEM_MATERIAL = Material.QUARTZ_BLOCK;
     private static final Material TOTEM_CARRIER_MATERIAL = Material.JUKEBOX;
     private static final Material TOTEM_DISPLAY_MATERIAL = Material.BEACON;
 
@@ -1031,7 +1032,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private ItemStack createClaimTotem() {
-        ItemStack totem = new ItemStack(Material.BEACON);
+        ItemStack totem = new ItemStack(TOTEM_ITEM_MATERIAL);
         ItemMeta meta = totem.getItemMeta();
         meta.setDisplayName(color("&b领地图腾"));
         meta.setLore(List.of(color("&7右键放置，需要下方有方块支撑。"), color("&7放置后占用 1 x 1 x 2 空间。")));
@@ -1049,7 +1050,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private boolean isClaimTotemItem(ItemStack item) {
-        if (item == null || item.getType() != Material.BEACON || !item.hasItemMeta()) {
+        if (item == null || item.getType() != TOTEM_ITEM_MATERIAL || !item.hasItemMeta()) {
             return false;
         }
         return item.getItemMeta().getPersistentDataContainer().has(totemKey, PersistentDataType.BYTE);
