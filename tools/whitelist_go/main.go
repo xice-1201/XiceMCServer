@@ -48,41 +48,42 @@ var (
 )
 
 type config struct {
-	Host                     string
-	Port                     string
-	RconHost                 string
-	RconPort                 string
-	RconPassword             string
-	RuntimeDir               string
-	BackupDir                string
-	WhitelistPath            string
-	VerifyCodesPath          string
-	BlacklistPath            string
-	ClaimsPath               string
-	ServerLogPath            string
-	ServiceName              string
-	CommandControlConfigPath string
-	ClaimConfigPath          string
-	WebIconPath              string
-	WebFaviconPath           string
-	ClaimTotemConceptPath    string
-	ResourcePackPath         string
-	ServerDocsPath           string
-	ServerDocsMaxLength      int
-	SessionSecret            string
-	PublicSiteBaseURL        string
-	PublicSiteDomain         string
-	ICPRecordNo              string
-	ICPRecordURL             string
-	PublicSecurityRecordNo   string
-	PublicSecurityRecordURL  string
-	ProtectedOwnerUUID       string
-	DBHost                   string
-	DBPort                   string
-	DBName                   string
-	DBUser                   string
-	DBPassword               string
-	AuditRetentionDays       int
+	Host                        string
+	Port                        string
+	RconHost                    string
+	RconPort                    string
+	RconPassword                string
+	RuntimeDir                  string
+	BackupDir                   string
+	WhitelistPath               string
+	VerifyCodesPath             string
+	BlacklistPath               string
+	ClaimsPath                  string
+	ServerLogPath               string
+	ServiceName                 string
+	CommandControlConfigPath    string
+	ClaimConfigPath             string
+	MorePotionEffectsConfigPath string
+	WebIconPath                 string
+	WebFaviconPath              string
+	ClaimTotemConceptPath       string
+	ResourcePackPath            string
+	ServerDocsPath              string
+	ServerDocsMaxLength         int
+	SessionSecret               string
+	PublicSiteBaseURL           string
+	PublicSiteDomain            string
+	ICPRecordNo                 string
+	ICPRecordURL                string
+	PublicSecurityRecordNo      string
+	PublicSecurityRecordURL     string
+	ProtectedOwnerUUID          string
+	DBHost                      string
+	DBPort                      string
+	DBName                      string
+	DBUser                      string
+	DBPassword                  string
+	AuditRetentionDays          int
 }
 
 type app struct {
@@ -240,41 +241,42 @@ func loadConfig() config {
 	runtimeDir := env("XICEMC_RUNTIME_DIR", "/opt/xicemc/runtime")
 	rconPassword := env("XICEMC_RCON_PASSWORD", "")
 	return config{
-		Host:                     env("WHITELIST_WEB_HOST", "0.0.0.0"),
-		Port:                     env("WHITELIST_WEB_PORT", "8080"),
-		RconHost:                 env("XICEMC_RCON_HOST", "127.0.0.1"),
-		RconPort:                 env("XICEMC_RCON_PORT", "25575"),
-		RconPassword:             rconPassword,
-		RuntimeDir:               runtimeDir,
-		BackupDir:                env("XICEMC_BACKUP_DIR", "/opt/xicemc/backups"),
-		WhitelistPath:            env("XICEMC_WHITELIST_PATH", filepath.Join(runtimeDir, "whitelist.json")),
-		VerifyCodesPath:          env("XICEMC_VERIFY_CODES_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "verification-codes.tsv")),
-		BlacklistPath:            env("XICEMC_BLACKLIST_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "blacklist.tsv")),
-		ClaimsPath:               env("XICEMC_CLAIMS_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "claims.yml")),
-		ServerLogPath:            env("XICEMC_SERVER_LOG_PATH", filepath.Join(runtimeDir, "logs", "latest.log")),
-		ServiceName:              env("XICEMC_SERVICE_NAME", "xicemc.service"),
-		CommandControlConfigPath: env("XICEMC_COMMAND_CONTROL_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceCommandControl", "config.yml")),
-		ClaimConfigPath:          env("XICEMC_CLAIM_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "config.yml")),
-		WebIconPath:              env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
-		WebFaviconPath:           env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
-		ClaimTotemConceptPath:    env("XICEMC_CLAIM_TOTEM_CONCEPT_PATH", filepath.Join(repoRoot, "server", "assets", "xiceclaim-totem-concept.png")),
-		ResourcePackPath:         env("XICEMC_RESOURCE_PACK_PATH", filepath.Join(repoRoot, "server", "resourcepacks", "xiceclaim.zip")),
-		ServerDocsPath:           env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
-		ServerDocsMaxLength:      envInt("XICEMC_DOCS_MAX_LENGTH", 100000),
-		SessionSecret:            env("WHITELIST_WEB_SESSION_SECRET", rconPassword),
-		PublicSiteBaseURL:        strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "http://150.158.93.80"), "/"),
-		PublicSiteDomain:         env("XICEMC_PUBLIC_SITE_DOMAIN", "xicemc.site"),
-		ICPRecordNo:              env("XICEMC_ICP_RECORD_NO", ""),
-		ICPRecordURL:             env("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/"),
-		PublicSecurityRecordNo:   env("XICEMC_PUBLIC_SECURITY_RECORD_NO", ""),
-		PublicSecurityRecordURL:  env("XICEMC_PUBLIC_SECURITY_RECORD_URL", ""),
-		ProtectedOwnerUUID:       canonicalUUID(env("XICEMC_PROTECTED_OWNER_UUID", "")),
-		DBHost:                   env("XICE_AUDIT_DB_HOST", "127.0.0.1"),
-		DBPort:                   env("XICE_AUDIT_DB_PORT", "5432"),
-		DBName:                   env("XICE_AUDIT_DB_NAME", "xicemc_audit"),
-		DBUser:                   env("XICE_AUDIT_DB_USER", "xicemc_audit"),
-		DBPassword:               env("XICE_AUDIT_DB_PASSWORD", ""),
-		AuditRetentionDays:       envInt("XICE_AUDIT_RETENTION_DAYS", 3),
+		Host:                        env("WHITELIST_WEB_HOST", "0.0.0.0"),
+		Port:                        env("WHITELIST_WEB_PORT", "8080"),
+		RconHost:                    env("XICEMC_RCON_HOST", "127.0.0.1"),
+		RconPort:                    env("XICEMC_RCON_PORT", "25575"),
+		RconPassword:                rconPassword,
+		RuntimeDir:                  runtimeDir,
+		BackupDir:                   env("XICEMC_BACKUP_DIR", "/opt/xicemc/backups"),
+		WhitelistPath:               env("XICEMC_WHITELIST_PATH", filepath.Join(runtimeDir, "whitelist.json")),
+		VerifyCodesPath:             env("XICEMC_VERIFY_CODES_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "verification-codes.tsv")),
+		BlacklistPath:               env("XICEMC_BLACKLIST_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "blacklist.tsv")),
+		ClaimsPath:                  env("XICEMC_CLAIMS_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "claims.yml")),
+		ServerLogPath:               env("XICEMC_SERVER_LOG_PATH", filepath.Join(runtimeDir, "logs", "latest.log")),
+		ServiceName:                 env("XICEMC_SERVICE_NAME", "xicemc.service"),
+		CommandControlConfigPath:    env("XICEMC_COMMAND_CONTROL_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceCommandControl", "config.yml")),
+		ClaimConfigPath:             env("XICEMC_CLAIM_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "config.yml")),
+		MorePotionEffectsConfigPath: env("XICEMC_MORE_POTION_EFFECTS_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceMorePotionEffects", "config.yml")),
+		WebIconPath:                 env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
+		WebFaviconPath:              env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
+		ClaimTotemConceptPath:       env("XICEMC_CLAIM_TOTEM_CONCEPT_PATH", filepath.Join(repoRoot, "server", "assets", "xiceclaim-totem-concept.png")),
+		ResourcePackPath:            env("XICEMC_RESOURCE_PACK_PATH", filepath.Join(repoRoot, "server", "resourcepacks", "xiceclaim.zip")),
+		ServerDocsPath:              env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
+		ServerDocsMaxLength:         envInt("XICEMC_DOCS_MAX_LENGTH", 100000),
+		SessionSecret:               env("WHITELIST_WEB_SESSION_SECRET", rconPassword),
+		PublicSiteBaseURL:           strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "http://150.158.93.80"), "/"),
+		PublicSiteDomain:            env("XICEMC_PUBLIC_SITE_DOMAIN", "xicemc.site"),
+		ICPRecordNo:                 env("XICEMC_ICP_RECORD_NO", ""),
+		ICPRecordURL:                env("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/"),
+		PublicSecurityRecordNo:      env("XICEMC_PUBLIC_SECURITY_RECORD_NO", ""),
+		PublicSecurityRecordURL:     env("XICEMC_PUBLIC_SECURITY_RECORD_URL", ""),
+		ProtectedOwnerUUID:          canonicalUUID(env("XICEMC_PROTECTED_OWNER_UUID", "")),
+		DBHost:                      env("XICE_AUDIT_DB_HOST", "127.0.0.1"),
+		DBPort:                      env("XICE_AUDIT_DB_PORT", "5432"),
+		DBName:                      env("XICE_AUDIT_DB_NAME", "xicemc_audit"),
+		DBUser:                      env("XICE_AUDIT_DB_USER", "xicemc_audit"),
+		DBPassword:                  env("XICE_AUDIT_DB_PASSWORD", ""),
+		AuditRetentionDays:          envInt("XICE_AUDIT_RETENTION_DAYS", 3),
 	}
 }
 

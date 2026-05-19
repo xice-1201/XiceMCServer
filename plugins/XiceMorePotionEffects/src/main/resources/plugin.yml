@@ -1,0 +1,15 @@
+name: XiceMorePotionEffects
+version: 0.0.1
+main: com.xice.xicemc.morepotioneffects.XiceMorePotionEffectsPlugin
+api-version: '1.21'
+author: Xice
+description: More custom potion effects for XiceMCServer.
+commands:
+  morepotioneffects:
+    description: Manage custom potion effects.
+    usage: /morepotioneffects <give|clear|check|reload> <player> <effect> [duration]
+    aliases: [mpe, xicemorepotioneffects]
+permissions:
+  xicemorepotioneffects.admin:
+    description: Manage all custom potion effects.
+    default: op

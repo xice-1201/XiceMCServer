@@ -5,12 +5,12 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.xice.xicemc</groupId>
-    <artifactId>xice-warp-suppression</artifactId>
+    <artifactId>xice-more-potion-effects</artifactId>
     <version>0.0.1</version>
     <packaging>jar</packaging>
 
-    <name>XiceWarpSuppression</name>
-    <description>Simulated warp suppression effect for XiceMCServer.</description>
+    <name>XiceMorePotionEffects</name>
+    <description>More custom potion effects for XiceMCServer.</description>
 
     <properties>
         <java.version>21</java.version>
@@ -36,7 +36,7 @@
     </dependencies>
 
     <build>
-        <finalName>XiceWarpSuppression</finalName>
+        <finalName>XiceMorePotionEffects</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

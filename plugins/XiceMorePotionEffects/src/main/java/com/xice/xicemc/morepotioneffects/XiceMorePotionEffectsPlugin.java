@@ -1,9 +1,11 @@
-package com.xice.xicemc.warpsuppression;
+package com.xice.xicemc.morepotioneffects;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -18,19 +20,22 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class XiceWarpSuppressionPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
+public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
+    private static final String WARP_SUPPRESSION_ID = "warp_suppression";
+    private static final String WARP_SUPPRESSION_NAME = "跃迁抑制";
+
     private final Map<UUID, WarpSuppression> suppressions = new HashMap<>();
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         getServer().getPluginManager().registerEvents(this, this);
-        var command = getCommand("warpsuppression");
+        var command = getCommand("morepotioneffects");
         if (command != null) {
             command.setExecutor(this);
             command.setTabCompleter(this);
         }
-        getLogger().info("XiceWarpSuppression enabled.");
+        getLogger().info("XiceMorePotionEffects enabled.");
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -44,11 +49,16 @@ public final class XiceWarpSuppressionPlugin extends JavaPlugin implements Liste
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!sender.hasPermission("xicewarpsuppression.admin")) {
-            send(sender, message("no-permission"));
+        if (args.length >= 1 && "reload".equalsIgnoreCase(args[0])) {
+            if (!sender.hasPermission("xicemorepotioneffects.admin")) {
+                send(sender, message("no-permission"));
+                return true;
+            }
+            reloadConfig();
+            send(sender, message("reload-complete"));
             return true;
         }
-        if (args.length < 2) {
+        if (args.length < 3) {
             send(sender, message("usage"));
             return true;
         }
@@ -58,21 +68,30 @@ public final class XiceWarpSuppressionPlugin extends JavaPlugin implements Liste
             send(sender, message("player-not-found"), "player", args[1]);
             return true;
         }
+        CustomEffect effect = effectById(args[2]);
+        if (effect == null) {
+            send(sender, message("unknown-effect"), "effect", args[2]);
+            return true;
+        }
         switch (action) {
-            case "give", "apply", "set" -> applySuppression(sender, target, args);
-            case "clear", "remove" -> clearSuppression(sender, target);
-            case "check", "info" -> checkSuppression(sender, target);
+            case "give", "apply", "set" -> applyEffect(sender, target, effect, args);
+            case "clear", "remove" -> clearEffect(sender, target, effect);
+            case "check", "info" -> checkEffect(sender, target, effect);
             default -> send(sender, message("usage"));
         }
         return true;
     }
 
-    private void applySuppression(CommandSender sender, Player target, String[] args) {
-        if (args.length < 3) {
+    private void applyEffect(CommandSender sender, Player target, CustomEffect effect, String[] args) {
+        if (!canUseAction(sender, "give")) {
+            send(sender, message("no-permission"));
+            return;
+        }
+        if (args.length < 4) {
             send(sender, message("usage"));
             return;
         }
-        Long durationMillis = parseDurationMillis(args[2]);
+        Long durationMillis = parseDurationMillis(args[3]);
         if (durationMillis == null) {
             send(sender, message("invalid-duration"));
             return;
@@ -80,25 +99,53 @@ public final class XiceWarpSuppressionPlugin extends JavaPlugin implements Liste
         long expiresAt = System.currentTimeMillis() + durationMillis;
         suppressions.put(target.getUniqueId(), new WarpSuppression(expiresAt));
         String durationText = formatDuration(durationMillis);
-        send(sender, message("applied"), "player", target.getName(), "duration", durationText);
-        send(target, message("received"), "duration", durationText);
+        send(sender, message("applied"), "player", target.getName(), "effect", effect.displayName, "duration", durationText);
+        send(target, message("received"), "effect", effect.displayName, "duration", durationText);
     }
 
-    private void clearSuppression(CommandSender sender, Player target) {
-        suppressions.remove(target.getUniqueId());
-        send(sender, message("cleared"), "player", target.getName());
-        send(target, message("cleared-target"));
+    private void clearEffect(CommandSender sender, Player target, CustomEffect effect) {
+        if (!sender.hasPermission("xicemorepotioneffects.admin")) {
+            send(sender, message("no-permission"));
+            return;
+        }
+        if (effect == CustomEffect.WARP_SUPPRESSION) {
+            suppressions.remove(target.getUniqueId());
+        }
+        send(sender, message("cleared"), "player", target.getName(), "effect", effect.displayName);
+        send(target, message("cleared-target"), "effect", effect.displayName);
     }
 
-    private void checkSuppression(CommandSender sender, Player target) {
+    private void checkEffect(CommandSender sender, Player target, CustomEffect effect) {
+        if (!sender.hasPermission("xicemorepotioneffects.admin")) {
+            send(sender, message("no-permission"));
+            return;
+        }
         WarpSuppression suppression = suppressions.get(target.getUniqueId());
         long now = System.currentTimeMillis();
         if (suppression == null || suppression.expiresAt <= now) {
             suppressions.remove(target.getUniqueId());
-            send(sender, message("not-active"), "player", target.getName());
+            send(sender, message("not-active"), "player", target.getName(), "effect", effect.displayName);
             return;
         }
-        send(sender, message("active"), "player", target.getName(), "duration", formatDuration(suppression.expiresAt - now));
+        send(sender, message("active"), "player", target.getName(), "effect", effect.displayName, "duration", formatDuration(suppression.expiresAt - now));
+    }
+
+    private boolean canUseAction(CommandSender sender, String action) {
+        if (!(sender instanceof Player player)) {
+            return true;
+        }
+        if (player.hasPermission("xicemorepotioneffects.admin")) {
+            return true;
+        }
+        String normalized = action.toLowerCase(Locale.ROOT);
+        Set<String> allowed = new HashSet<>();
+        for (String value : getConfig().getStringList("access.default-allowed-actions")) {
+            allowed.add(value.toLowerCase(Locale.ROOT));
+        }
+        for (String value : getConfig().getStringList("access.players." + player.getUniqueId() + ".actions")) {
+            allowed.add(value.toLowerCase(Locale.ROOT));
+        }
+        return allowed.contains(normalized);
     }
 
     private boolean hasSuppression(Player player) {
@@ -169,12 +216,9 @@ public final class XiceWarpSuppressionPlugin extends JavaPlugin implements Liste
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (!sender.hasPermission("xicewarpsuppression.admin")) {
-            return List.of();
-        }
         if (args.length == 1) {
             String prefix = args[0].toLowerCase(Locale.ROOT);
-            return List.of("give", "clear", "check").stream()
+            return List.of("give", "clear", "check", "reload").stream()
                     .filter(value -> value.startsWith(prefix))
                     .toList();
         }
@@ -185,8 +229,14 @@ public final class XiceWarpSuppressionPlugin extends JavaPlugin implements Liste
                     .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
                     .toList();
         }
-        if (args.length == 3 && List.of("give", "apply", "set").contains(args[0].toLowerCase(Locale.ROOT))) {
+        if (args.length == 3) {
             String prefix = args[2].toLowerCase(Locale.ROOT);
+            return List.of(WARP_SUPPRESSION_ID, WARP_SUPPRESSION_NAME).stream()
+                    .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
+                    .toList();
+        }
+        if (args.length == 4 && List.of("give", "apply", "set").contains(args[0].toLowerCase(Locale.ROOT))) {
+            String prefix = args[3].toLowerCase(Locale.ROOT);
             return List.of("30s", "1m", "5m", "10m").stream()
                     .filter(value -> value.startsWith(prefix))
                     .toList();
@@ -195,5 +245,28 @@ public final class XiceWarpSuppressionPlugin extends JavaPlugin implements Liste
     }
 
     private record WarpSuppression(long expiresAt) {
+    }
+
+    private enum CustomEffect {
+        WARP_SUPPRESSION(WARP_SUPPRESSION_ID, WARP_SUPPRESSION_NAME);
+
+        private final String id;
+        private final String displayName;
+
+        CustomEffect(String id, String displayName) {
+            this.id = id;
+            this.displayName = displayName;
+        }
+    }
+
+    private CustomEffect effectById(String raw) {
+        String normalized = raw.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+        if (normalized.equals(WARP_SUPPRESSION_ID)
+                || normalized.equals("warp")
+                || normalized.equals("inhibit")
+                || raw.trim().equals(WARP_SUPPRESSION_NAME)) {
+            return CustomEffect.WARP_SUPPRESSION;
+        }
+        return null;
     }
 }
