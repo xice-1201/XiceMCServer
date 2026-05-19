@@ -666,6 +666,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (event.getItem() != null && isClaimRing(event.getItem()) && isRightClick(event.getAction())) {
+            if (shouldPassRingUseToBlock(event)) {
+                if (getConfig().getBoolean("protection.block-interact", true) && event.getClickedBlock() != null) {
+                    protect(event.getPlayer(), event.getClickedBlock(), event, ClaimFeature.BLOCK_INTERACT);
+                }
+                return;
+            }
             event.setCancelled(true);
             openRingMenu(event.getPlayer(), event.getItem(), event.getHand());
             return;
@@ -700,6 +706,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private boolean shouldPassTotemUseToBlock(PlayerInteractEvent event) {
+        Block clicked = event.getClickedBlock();
+        return event.getAction() == Action.RIGHT_CLICK_BLOCK && clicked != null && !event.getPlayer().isSneaking()
+                && isTotemPassThroughInteraction(clicked);
+    }
+
+    private boolean shouldPassRingUseToBlock(PlayerInteractEvent event) {
         Block clicked = event.getClickedBlock();
         return event.getAction() == Action.RIGHT_CLICK_BLOCK && clicked != null && !event.getPlayer().isSneaking()
                 && isTotemPassThroughInteraction(clicked);
@@ -1853,7 +1865,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private void applyTotemAuras() {
         for (Player player : Bukkit.getOnlinePlayers()) {
             ClaimRegion claim = claimAt(player.getLocation());
-            if (claim != null && hasActiveTotemCore(claim)) {
+            if (claim != null && hasActiveTotemCore(claim) && !claim.blocks(ClaimFeature.TOTEM_BLESSING, player)) {
                 applyTotemAuraEffects(player);
             }
         }
@@ -3198,7 +3210,38 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ClaimRegion renamed = claim.withName(ringName);
         claims.put(renamed.id, renamed);
         saveClaims();
+        synchronizeBoundRingNames(renamed);
         return renamed;
+    }
+
+    private void synchronizeBoundRingNames(ClaimRegion claim) {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            Inventory inventory = player.getInventory();
+            for (int slot = 0; slot < inventory.getSize(); slot++) {
+                ItemStack item = inventory.getItem(slot);
+                if (isRingBoundToClaim(item, claim.id)) {
+                    setRingDisplayName(item, claim.name, true);
+                    inventory.setItem(slot, item);
+                }
+            }
+            ItemStack cursor = player.getItemOnCursor();
+            if (isRingBoundToClaim(cursor, claim.id)) {
+                setRingDisplayName(cursor, claim.name, true);
+                player.setItemOnCursor(cursor);
+            }
+            RingSession session = ringSessions.get(player.getUniqueId());
+            if (session != null && isRingBoundToClaim(session.ring, claim.id)) {
+                setRingDisplayName(session.ring, claim.name, true);
+            }
+        }
+    }
+
+    private boolean isRingBoundToClaim(ItemStack item, String claimId) {
+        if (!isClaimRing(item)) {
+            return false;
+        }
+        String boundClaimId = item.getItemMeta().getPersistentDataContainer().get(ringClaimIdKey, PersistentDataType.STRING);
+        return claimId.equals(boundClaimId);
     }
 
     private void bindRing(ItemStack ring, ClaimRegion claim, RingDraft draft) {
@@ -3670,6 +3713,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         MONSTER_SPAWN("monster-spawn", Material.ROTTEN_FLESH, "&e领地内刷新怪物", PermissionState.ALLOW_ALL),
         MONSTER_DAMAGE("monster-damage", Material.IRON_SWORD, "&e伤害怪物", PermissionState.DENY_UNTRUSTED),
         PVP("pvp", Material.DIAMOND_SWORD, "&e允许PVP", PermissionState.ALLOW_ALL),
+        TOTEM_BLESSING("totem-blessing", Material.TOTEM_OF_UNDYING, "&e图腾祝福", PermissionState.ALLOW_ALL),
         TELEPORT("teleport", Material.ENDER_PEARL, "&e传送权限", PermissionState.DENY_UNTRUSTED);
 
         private final String id;
