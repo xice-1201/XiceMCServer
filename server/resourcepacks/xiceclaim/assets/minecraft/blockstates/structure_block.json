@@ -2,7 +2,7 @@
   "multipart": [
     {
       "apply": {
-        "model": "xiceclaim:block/claim_totem_placed_bottom"
+        "model": "xiceclaim:block/claim_totem_placed_top"
       }
     }
   ]
