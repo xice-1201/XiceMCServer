@@ -94,6 +94,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private static final Material TOTEM_ITEM_MATERIAL = Material.QUARTZ_BLOCK;
     private static final Material TOTEM_BOTTOM_MATERIAL = Material.JIGSAW;
     private static final Material TOTEM_TOP_MATERIAL = Material.STRUCTURE_BLOCK;
+    private static final double TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED = 0.0009D;
 
     private final Map<UUID, Selection> selections = new HashMap<>();
     private final Map<String, ClaimRegion> claims = new HashMap<>();
@@ -627,10 +628,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private boolean positionChanged(Location first, Location second) {
-        return !Objects.equals(first.getWorld(), second.getWorld())
-                || Math.abs(first.getX() - second.getX()) > 0.0001D
-                || Math.abs(first.getY() - second.getY()) > 0.0001D
-                || Math.abs(first.getZ() - second.getZ()) > 0.0001D;
+        if (!Objects.equals(first.getWorld(), second.getWorld())) {
+            return true;
+        }
+        return first.distanceSquared(second) > TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED;
     }
 
     private boolean sameBlock(Block first, Block second) {
@@ -2075,14 +2076,26 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         double progress = Math.min(1.0D, elapsedTicks / 60.0D);
-        int count = 10 + (int) Math.round(progress * 34.0D);
+        int count = 8 + (int) Math.round(progress * 28.0D);
         double phase = elapsedTicks * 0.28D;
         for (int index = 0; index < count; index++) {
             double angle = phase + index * Math.PI * 2.0D / count;
-            double radius = 0.28D + progress * 0.42D + (index % 3) * 0.04D;
-            double y = 0.08D + ((index * 0.37D + progress * 1.8D) % 1.85D);
-            Location point = base.clone().add(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
-            world.spawnParticle(Particle.DUST, point, 1, 0.02D, 0.02D, 0.02D, 0.0D, dust);
+            double baseRadius = 0.14D + (index % 4) * 0.035D;
+            double outward = 0.26D + progress * 0.42D;
+            double upward = 0.42D + progress * 0.36D + (index % 3) * 0.05D;
+            Location origin = base.clone().add(Math.cos(angle) * baseRadius, 0.06D, Math.sin(angle) * baseRadius);
+            world.spawnParticle(
+                    Particle.WITCH,
+                    origin,
+                    0,
+                    Math.cos(angle) * outward,
+                    upward,
+                    Math.sin(angle) * outward,
+                    0.85D);
+            if (index % 3 == 0) {
+                Location spark = origin.clone().add(Math.cos(angle) * 0.18D, 0.12D + progress * 0.55D, Math.sin(angle) * 0.18D);
+                world.spawnParticle(Particle.DUST, spark, 1, 0.01D, 0.01D, 0.01D, 0.0D, dust);
+            }
         }
     }
 
