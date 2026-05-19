@@ -86,6 +86,8 @@ import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -96,12 +98,15 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private static final Material TOTEM_BOTTOM_MATERIAL = Material.JIGSAW;
     private static final Material TOTEM_TOP_MATERIAL = Material.STRUCTURE_BLOCK;
     private static final int TOTEM_CORE_SLOT = 4;
+    private static final int TOTEM_AURA_PERIOD_TICKS = 200;
+    private static final int TOTEM_AURA_DURATION_TICKS = 300;
     private static final double TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED = 0.0009D;
 
     private final Map<UUID, Selection> selections = new HashMap<>();
     private final Map<String, ClaimRegion> claims = new HashMap<>();
     private final Map<UUID, RingSession> ringSessions = new HashMap<>();
     private final Map<UUID, PendingTeleport> pendingTeleports = new HashMap<>();
+    private BukkitTask totemAuraTask;
     private File claimsFile;
     private FileConfiguration claimsConfig;
     private NamespacedKey ringKey;
@@ -140,6 +145,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         loadClaims();
         getServer().getPluginManager().registerEvents(this, this);
         Bukkit.getScheduler().runTask(this, this::refreshLoadedTotemBlocks);
+        totemAuraTask = Bukkit.getScheduler().runTaskTimer(this, this::applyTotemAuras, TOTEM_AURA_PERIOD_TICKS, TOTEM_AURA_PERIOD_TICKS);
         var command = getCommand("claim");
         if (command != null) {
             command.setExecutor(this);
@@ -154,6 +160,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             pending.cancel();
         }
         pendingTeleports.clear();
+        if (totemAuraTask != null) {
+            totemAuraTask.cancel();
+            totemAuraTask = null;
+        }
     }
 
     private void initializeKeys() {
@@ -405,6 +415,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
 
         claims.put(claim.id, claim);
+        bindExistingTotemInsideClaim(claim);
         saveClaims();
         send(player, message("created"),
                 "claim", claim.name,
@@ -1699,6 +1710,65 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         notifyClaimOwner(claim, message("totem-bound", "&a领地图腾已绑定至领地 {claim}。"));
     }
 
+    private void bindExistingTotemInsideClaim(ClaimRegion claim) {
+        if (claim.totemBinding != null) {
+            return;
+        }
+        Block candidate = findBindableTotemForClaim(claim, null, "");
+        if (candidate != null) {
+            bindExistingTotemToClaim(claim, candidate);
+        }
+    }
+
+    private void applyTotemAuras() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            ClaimRegion claim = claimAt(player.getLocation());
+            if (claim != null && hasActiveTotemCore(claim)) {
+                applyTotemAuraEffects(player);
+            }
+        }
+    }
+
+    private boolean hasActiveTotemCore(ClaimRegion claim) {
+        if (!claim.totemCore || claim.totemBinding == null) {
+            return false;
+        }
+        World world = Bukkit.getWorld(claim.totemBinding.world);
+        if (world == null) {
+            return false;
+        }
+        Block bottom = world.getBlockAt(claim.totemBinding.x, claim.totemBinding.y, claim.totemBinding.z);
+        if (!isClaimTotemBottom(bottom)) {
+            return false;
+        }
+        String id = totemId(bottom);
+        Block top = bottom.getRelative(BlockFace.UP);
+        return claim.totemBinding.matches(bottom, id)
+                && isClaimTotemBlock(top)
+                && id.equals(totemId(top));
+    }
+
+    private void applyTotemAuraEffects(Player player) {
+        applyTotemAuraEffect(player, PotionEffectType.NIGHT_VISION, 0);
+        applyTotemAuraEffect(player, PotionEffectType.FIRE_RESISTANCE, 0);
+        applyTotemAuraEffect(player, PotionEffectType.WATER_BREATHING, 0);
+        applyTotemAuraEffect(player, PotionEffectType.SPEED, 0);
+        applyTotemAuraEffect(player, PotionEffectType.RESISTANCE, 0);
+        applyTotemAuraEffect(player, PotionEffectType.REGENERATION, 0);
+        applyTotemAuraEffect(player, PotionEffectType.HASTE, 0);
+        applyTotemAuraEffect(player, PotionEffectType.STRENGTH, 0);
+        applyTotemAuraEffect(player, PotionEffectType.ABSORPTION, 0);
+    }
+
+    private void applyTotemAuraEffect(Player player, PotionEffectType type, int amplifier) {
+        PotionEffect current = player.getPotionEffect(type);
+        if (current != null && (current.getAmplifier() > amplifier
+                || (current.getAmplifier() == amplifier && current.getDuration() > TOTEM_AURA_PERIOD_TICKS))) {
+            return;
+        }
+        player.addPotionEffect(new PotionEffect(type, TOTEM_AURA_DURATION_TICKS, amplifier, true, false, true), true);
+    }
+
     private void collapseUnsupportedTotemsAbove(Block possibleBottom) {
         if (isClaimTotemBottom(possibleBottom) && !hasTotemSupport(possibleBottom)) {
             collapseTotem(possibleBottom, true);
@@ -2562,6 +2632,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         claims.put(claim.id, claim);
+        bindExistingTotemInsideClaim(claim);
         saveClaims();
         bindRing(menu.session.ring, claim, draft);
         writeRingToHand(player, menu.session);
