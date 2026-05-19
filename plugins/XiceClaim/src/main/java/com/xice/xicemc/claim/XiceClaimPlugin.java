@@ -54,6 +54,7 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.hanging.HangingPlaceEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
@@ -101,6 +102,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey ringRecipeKey;
     private NamespacedKey ringItemModelKey;
     private NamespacedKey totemKey;
+    private NamespacedKey totemRecipeKey;
     private NamespacedKey totemIdKey;
     private NamespacedKey totemPartKey;
     private NamespacedKey totemOwnerUuidKey;
@@ -112,6 +114,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         initializeKeys();
         saveDefaultConfig();
         registerClaimRingRecipe();
+        registerClaimTotemRecipe();
         loadClaims();
         getServer().getPluginManager().registerEvents(this, this);
         var command = getCommand("claim");
@@ -135,6 +138,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ringRecipeKey = new NamespacedKey(this, "claim_ring_recipe");
         ringItemModelKey = new NamespacedKey(this, "claim_ring");
         totemKey = new NamespacedKey(this, "claim_totem");
+        totemRecipeKey = new NamespacedKey(this, "claim_totem_recipe");
         totemIdKey = new NamespacedKey(this, "claim_totem_id");
         totemPartKey = new NamespacedKey(this, "claim_totem_part");
         totemOwnerUuidKey = new NamespacedKey(this, "claim_totem_owner_uuid");
@@ -186,6 +190,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if ("ring".equalsIgnoreCase(args[1])) {
             item = createEmptyRing(ClaimPoint.from(player.getLocation()));
             messageKey = "ring-given";
+            unlockTotemRecipe(player);
         } else if ("totem".equalsIgnoreCase(args[1])) {
             item = createClaimTotem();
             messageKey = "totem-given";
@@ -545,6 +550,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         event.getPlayer().discoverRecipe(ringRecipeKey);
+        if (hasClaimRing(event.getPlayer())) {
+            unlockTotemRecipe(event.getPlayer());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityPickupItem(EntityPickupItemEvent event) {
+        if (event.getEntity() instanceof Player player && isClaimRing(event.getItem().getItemStack())) {
+            Bukkit.getScheduler().runTask(this, () -> unlockTotemRecipe(player));
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -585,7 +600,15 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onInventoryClose(InventoryCloseEvent event) {
-        if (!(event.getPlayer() instanceof Player player) || !(event.getInventory().getHolder() instanceof RingMenu menu)) {
+        if (!(event.getPlayer() instanceof Player player)) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (hasClaimRing(player)) {
+                unlockTotemRecipe(player);
+            }
+        });
+        if (!(event.getInventory().getHolder() instanceof RingMenu menu)) {
             return;
         }
         RingSession session = ringSessions.get(player.getUniqueId());
@@ -616,6 +639,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 event.setCancelled(true);
                 return;
             }
+        }
+        if (event.getWhoClicked() instanceof Player player && isClaimRing(event.getCurrentItem())) {
+            Bukkit.getScheduler().runTask(this, () -> unlockTotemRecipe(player));
         }
     }
 
@@ -987,11 +1013,24 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         getServer().addRecipe(recipe);
     }
 
+    private void registerClaimTotemRecipe() {
+        ShapedRecipe recipe = new ShapedRecipe(totemRecipeKey, createClaimTotem());
+        recipe.shape("Q*Q", "GEG", "SSS");
+        recipe.setIngredient('Q', Material.QUARTZ);
+        recipe.setIngredient('*', Material.NETHER_STAR);
+        recipe.setIngredient('G', Material.GOLD_INGOT);
+        recipe.setIngredient('E', Material.ENDER_PEARL);
+        recipe.setIngredient('S', Material.QUARTZ_SLAB);
+        getServer().removeRecipe(totemRecipeKey);
+        getServer().addRecipe(recipe);
+    }
+
     private ItemStack createClaimTotem() {
         ItemStack totem = new ItemStack(Material.BEACON);
         ItemMeta meta = totem.getItemMeta();
         meta.setDisplayName(color("&b领地图腾"));
-        meta.setLore(List.of(color("&7右键方块上表面放置。"), color("&7放置后占用 1 x 1 x 2 空间。")));
+        meta.setLore(List.of(color("&7右键放置，需要下方有方块支撑。"), color("&7放置后占用 1 x 1 x 2 空间。")));
+        meta.setEnchantmentGlintOverride(false);
         meta.getPersistentDataContainer().set(totemKey, PersistentDataType.BYTE, (byte) 1);
         totem.setItemMeta(meta);
         return totem;
@@ -1009,6 +1048,19 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return false;
         }
         return item.getItemMeta().getPersistentDataContainer().has(totemKey, PersistentDataType.BYTE);
+    }
+
+    private void unlockTotemRecipe(Player player) {
+        player.discoverRecipe(totemRecipeKey);
+    }
+
+    private boolean hasClaimRing(Player player) {
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (isClaimRing(item)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void placeClaimTotem(PlayerInteractEvent event) {
