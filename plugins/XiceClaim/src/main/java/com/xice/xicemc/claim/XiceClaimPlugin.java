@@ -49,6 +49,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.block.BlockFromToEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
@@ -611,6 +612,15 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 && first.getBlockZ() == second.getBlockZ();
     }
 
+    private boolean sameBlock(Block first, Block second) {
+        return first != null
+                && second != null
+                && Objects.equals(first.getWorld(), second.getWorld())
+                && first.getX() == second.getX()
+                && first.getY() == second.getY()
+                && first.getZ() == second.getZ();
+    }
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         ringSessions.remove(event.getPlayer().getUniqueId());
@@ -788,6 +798,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockFromTo(BlockFromToEvent event) {
+        ClaimFeature feature = fluidFlowFeature(event.getBlock().getType());
+        if (feature == null) {
+            return;
+        }
+        ClaimRegion claim = claimAt(event.getToBlock().getLocation());
+        if (claim != null && claim.blocksActorless(feature)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onCreatureSpawn(CreatureSpawnEvent event) {
         if (!getConfig().getBoolean("protection.entity-spawn", true)) {
             return;
@@ -944,6 +966,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if (bucket == Material.LAVA_BUCKET || bucket == Material.LAVA) {
             return ClaimFeature.LAVA_BUCKET;
+        }
+        return null;
+    }
+
+    private ClaimFeature fluidFlowFeature(Material material) {
+        if (material == Material.WATER) {
+            return ClaimFeature.WATER_FLOW;
+        }
+        if (material == Material.LAVA) {
+            return ClaimFeature.LAVA_FLOW;
         }
         return null;
     }
@@ -1448,6 +1480,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         claim.totemBinding = null;
         saveClaims();
         notifyClaimOwner(claim, message("totem-unbound", "&e领地图腾已与领地 {claim} 解绑。"));
+        scheduleClaimTotemRebind(claim, bottom, totemId);
     }
 
     private ClaimRegion claimBoundToTotem(Block bottom, String totemId) {
@@ -1464,6 +1497,68 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (owner != null) {
             send(owner, text, "claim", claim.name);
         }
+    }
+
+    private void scheduleClaimTotemRebind(ClaimRegion claim, Block removedBottom, String removedTotemId) {
+        Bukkit.getScheduler().runTask(this, () -> {
+            ClaimRegion current = claims.get(claim.id);
+            if (current == null || current.totemBinding != null) {
+                return;
+            }
+            Block candidate = findBindableTotemForClaim(current, removedBottom, removedTotemId);
+            if (candidate != null) {
+                bindExistingTotemToClaim(current, candidate);
+            }
+        });
+    }
+
+    private Block findBindableTotemForClaim(ClaimRegion claim, Block excludedBottom, String excludedTotemId) {
+        World world = Bukkit.getWorld(claim.world);
+        if (world == null) {
+            return null;
+        }
+        int minChunkX = claim.minX >> 4;
+        int maxChunkX = claim.maxX >> 4;
+        int minChunkZ = claim.minZ >> 4;
+        int maxChunkZ = claim.maxZ >> 4;
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                Chunk chunk = world.getChunkAt(chunkX, chunkZ);
+                for (BlockState state : chunk.getTileEntities()) {
+                    Block block = state.getBlock();
+                    if (isBindableTotemForClaim(claim, block, excludedBottom, excludedTotemId)) {
+                        return block;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isBindableTotemForClaim(ClaimRegion claim, Block bottom, Block excludedBottom, String excludedTotemId) {
+        if (!isClaimTotemBottom(bottom)) {
+            return false;
+        }
+        String id = totemId(bottom);
+        if (id.isBlank() || id.equals(excludedTotemId) || sameBlock(bottom, excludedBottom)) {
+            return false;
+        }
+        Block top = bottom.getRelative(BlockFace.UP);
+        if (!isClaimTotemBlock(top) || !id.equals(totemId(top))) {
+            return false;
+        }
+        String boundClaimId = totemString(bottom, totemClaimIdKey);
+        return (boundClaimId.isBlank() || boundClaimId.equals(claim.id))
+                && claimContainingTotem(bottom, top) == claim;
+    }
+
+    private void bindExistingTotemToClaim(ClaimRegion claim, Block bottom) {
+        String id = totemId(bottom);
+        TotemBinding binding = new TotemBinding(id, bottom.getWorld().getName(), bottom.getX(), bottom.getY(), bottom.getZ());
+        claim.totemBinding = binding;
+        markTotemClaim(bottom, claim.id);
+        saveClaims();
+        notifyClaimOwner(claim, message("totem-bound", "&a领地图腾已绑定至领地 {claim}。"));
     }
 
     private void collapseUnsupportedTotemsAbove(Block possibleBottom) {
@@ -1769,7 +1864,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         int[] slots = {
                 10, 11, 12, 13, 14, 15, 16,
                 19, 20, 21, 22, 23, 24, 25,
-                30, 32
+                28, 30, 32, 34
         };
         ClaimFeature[] features = ClaimFeature.values();
         for (int index = 0; index < features.length && index < slots.length; index++) {
@@ -1915,8 +2010,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         BlockFace front = totemFront(bottom);
         Block target = bottom.getRelative(front);
-        if (!isSafeTeleportTarget(target)) {
+        if (!hasTeleportSpace(target)) {
             send(player, message("teleport-target-blocked", "&c领地图腾前方没有足够空间，无法传送。"));
+            return false;
+        }
+        if (!hasTeleportFloor(target)) {
+            send(player, message("teleport-target-unsafe", "&c领地图腾前方脚下不安全，无法传送。"));
             return false;
         }
         Location destination = target.getLocation().add(0.5, 0.0, 0.5);
@@ -1929,16 +2028,23 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return true;
     }
 
-    private boolean isSafeTeleportTarget(Block feet) {
+    private boolean hasTeleportSpace(Block feet) {
         World world = feet.getWorld();
-        if (feet.getY() <= world.getMinHeight() || feet.getY() + 1 >= world.getMaxHeight()) {
+        if (feet.getY() + 1 >= world.getMaxHeight()) {
             return false;
         }
         Block head = feet.getRelative(BlockFace.UP);
-        Block floor = feet.getRelative(BlockFace.DOWN);
         return feet.isPassable()
-                && head.isPassable()
-                && floor.getBlockData().isFaceSturdy(BlockFace.UP, BlockSupport.FULL);
+                && head.isPassable();
+    }
+
+    private boolean hasTeleportFloor(Block feet) {
+        World world = feet.getWorld();
+        if (feet.getY() <= world.getMinHeight()) {
+            return false;
+        }
+        Block floor = feet.getRelative(BlockFace.DOWN);
+        return floor.getBlockData().isFaceSturdy(BlockFace.UP, BlockSupport.FULL);
     }
 
     private void handleManageRingMenuClick(Player player, RingMenu menu, String action) {
@@ -1978,11 +2084,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if ("teleport".equals(action)) {
-            if (teleportToClaimTotem(player, claim)) {
-                menu.session.discardOnClose = true;
-                ringSessions.remove(player.getUniqueId());
-                player.closeInventory();
-            }
+            teleportToClaimTotem(player, claim);
+            menu.session.discardOnClose = true;
+            ringSessions.remove(player.getUniqueId());
+            player.closeInventory();
             return;
         }
         if ("delete-confirm".equals(action)) {
@@ -2455,6 +2560,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ENTITY_INTERACT("entity-interact", Material.ARMOR_STAND, "&e交互实体", PermissionState.DENY_UNTRUSTED),
         WATER_BUCKET("water-bucket", Material.WATER_BUCKET, "&e使用水桶", PermissionState.DENY_UNTRUSTED),
         LAVA_BUCKET("lava-bucket", Material.LAVA_BUCKET, "&e使用岩浆桶", PermissionState.DENY_UNTRUSTED),
+        WATER_FLOW("water-flow", Material.WATER, "&e水流动", PermissionState.ALLOW_ALL),
+        LAVA_FLOW("lava-flow", Material.LAVA, "&e岩浆流动", PermissionState.ALLOW_ALL),
         FIRE("fire", Material.FLINT_AND_STEEL, "&e火焰蔓延和燃烧破坏", PermissionState.DENY_UNTRUSTED),
         EXPLOSION("explosion", Material.TNT, "&e爆炸破坏方块", PermissionState.DENY_UNTRUSTED),
         PISTON_USE("piston-use", Material.PISTON, "&e领地内使用活塞", PermissionState.ALLOW_ALL),

@@ -62,6 +62,7 @@ messages:
   teleport-world-missing: '&c领地图腾所在世界不可用，无法传送。'
   teleport-totem-missing: '&c该领地绑定的领地图腾不存在或不完整，无法传送。'
   teleport-target-blocked: '&c领地图腾前方没有足够空间，无法传送。'
+  teleport-target-unsafe: '&c领地图腾前方脚下不安全，无法传送。'
   teleport-failed: '&c传送失败，请稍后再试。'
   ring-claim-missing: '&c该领地戒指绑定的领地不存在，已恢复为空戒指。'
   ring-claim-deleted: '&a已删除领地 {claim}，领地戒指已恢复为空戒指。'
