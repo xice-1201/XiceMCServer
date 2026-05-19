@@ -25,6 +25,7 @@ protection:
   block-interact: true
   container-open: true
   entity-interact: true
+  pvp: true
   entity-spawn: true
   bucket: true
   fire: true
@@ -90,7 +91,7 @@ messages:
   deleted: '&a已删除领地 {claim}。'
   claim-not-found: '&c没有找到领地：{claim}'
   claim-not-found-owned: '&c没有找到你的领地：{claim}'
-  protected: '&c这里属于 {claim}，你没有操作权限。'
+  protected: '&c这里属于 {claim}，你没有 {feature} 权限。'
   claim-entered: '&7已进入领地 &a{claim}&7（所有者：{owner}）。'
   claim-left: '&7已离开领地 &e{claim}&7（所有者：{owner}）。'
   reload-complete: '&aXiceClaim 配置和领地数据已重新加载。'

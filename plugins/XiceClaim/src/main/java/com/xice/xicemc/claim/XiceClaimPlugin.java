@@ -593,7 +593,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             if (getConfig().getBoolean("protection.block-break", true) && isProtectedFrom(event.getPlayer(), event.getBlock(), ClaimFeature.BLOCK_BREAK)) {
                 ClaimRegion claim = claimAt(event.getBlock().getLocation());
                 event.setCancelled(true);
-                send(event.getPlayer(), message("protected"), "claim", claim == null ? "" : claim.name);
+                sendProtected(event.getPlayer(), claim, ClaimFeature.BLOCK_BREAK);
                 return;
             }
             event.setCancelled(true);
@@ -620,7 +620,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (getConfig().getBoolean("protection.block-break", true) && isProtectedFrom(event.getPlayer(), event.getBlock(), ClaimFeature.BLOCK_BREAK)) {
             ClaimRegion claim = claimAt(event.getBlock().getLocation());
             event.setCancelled(true);
-            send(event.getPlayer(), message("protected"), "claim", claim == null ? "" : claim.name);
+            sendProtected(event.getPlayer(), claim, ClaimFeature.BLOCK_BREAK);
             return;
         }
         event.setCancelled(true);
@@ -817,7 +817,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ClaimRegion claim = claimAt(location);
         if (claim != null && claim.blocks(ClaimFeature.CONTAINER_OPEN, player)) {
             event.setCancelled(true);
-            send(player, message("protected"), "claim", claim.name);
+            sendProtected(player, claim, ClaimFeature.CONTAINER_OPEN);
         }
     }
 
@@ -919,14 +919,19 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
-        if (!getConfig().getBoolean("protection.entity-interact", true)) {
-            return;
-        }
         Player player = damagingPlayer(event.getDamager());
         if (player == null) {
             return;
         }
-        protectEntity(player, event.getEntity(), event, damageFeature(event.getEntity()));
+        ClaimFeature feature = damageFeature(event.getEntity());
+        if (feature == ClaimFeature.PVP) {
+            if (!getConfig().getBoolean("protection.pvp", true)) {
+                return;
+            }
+        } else if (!getConfig().getBoolean("protection.entity-interact", true)) {
+            return;
+        }
+        protectEntity(player, event.getEntity(), event, feature);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -1011,7 +1016,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (claim.blocks(ClaimFeature.FIRE, player)) {
             event.setCancelled(true);
             if (player != null) {
-                send(player, message("protected"), "claim", claim.name);
+                sendProtected(player, claim, ClaimFeature.FIRE);
             }
         }
     }
@@ -1115,6 +1120,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private ClaimFeature damageFeature(Entity entity) {
+        if (entity instanceof Player) {
+            return ClaimFeature.PVP;
+        }
         if (entity instanceof Animals) {
             return ClaimFeature.ANIMAL_DAMAGE;
         }
@@ -1160,7 +1168,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         event.setCancelled(true);
-        send(player, message("protected"), "claim", claim.name);
+        sendProtected(player, claim, feature);
     }
 
     private boolean isProtectedFrom(Player player, Block block, ClaimFeature feature) {
@@ -1174,7 +1182,21 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         event.setCancelled(true);
-        send(player, message("protected"), "claim", claim.name);
+        sendProtected(player, claim, feature);
+    }
+
+    private void sendProtected(Player player, ClaimRegion claim, ClaimFeature feature) {
+        String text = message("protected");
+        if (text == null || text.isBlank()) {
+            text = "&c\u8fd9\u91cc\u5c5e\u4e8e {claim}\uff0c\u4f60\u6ca1\u6709 {feature} \u6743\u9650\u3002";
+        } else if (!text.contains("{feature}")) {
+            text = text + " &7(\u7f3a\u5c11\u6743\u9650\uff1a{feature})";
+        }
+        send(player, text, "claim", claim == null ? "" : claim.name, "feature", featureDisplayName(feature));
+    }
+
+    private String featureDisplayName(ClaimFeature feature) {
+        return ChatColor.stripColor(color(feature.displayName));
     }
 
     private ClaimRegion claimAt(Location location) {
@@ -1428,12 +1450,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (getConfig().getBoolean("protection.block-place", true)) {
             ClaimRegion bottomClaim = claimAt(bottom.getLocation());
             if (bottomClaim != null && bottomClaim.blocks(ClaimFeature.BLOCK_PLACE, player)) {
-                send(player, message("protected"), "claim", bottomClaim.name);
+                sendProtected(player, bottomClaim, ClaimFeature.BLOCK_PLACE);
                 return;
             }
             ClaimRegion topClaim = claimAt(top.getLocation());
             if (topClaim != null && topClaim.blocks(ClaimFeature.BLOCK_PLACE, player)) {
-                send(player, message("protected"), "claim", topClaim.name);
+                sendProtected(player, topClaim, ClaimFeature.BLOCK_PLACE);
                 return;
             }
         }
@@ -1968,7 +1990,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (getConfig().getBoolean("protection.container-open", true) && claim.blocks(ClaimFeature.CONTAINER_OPEN, player)) {
-            send(player, message("protected"), "claim", claim.name);
+            sendProtected(player, claim, ClaimFeature.CONTAINER_OPEN);
             return;
         }
 
@@ -2314,7 +2336,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         int[] slots = {
                 10, 11, 12, 13, 14, 15, 16,
                 19, 20, 21, 22, 23, 24, 25,
-                28, 30, 32, 34
+                28, 29, 30, 31, 32, 33, 34,
+                37, 38, 39, 40, 41, 42, 43
         };
         ClaimFeature[] features = ClaimFeature.values();
         for (int index = 0; index < features.length && index < slots.length; index++) {
@@ -3646,6 +3669,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ANIMAL_DAMAGE("animal-damage", Material.LEATHER, "&e伤害动物", PermissionState.DENY_UNTRUSTED),
         MONSTER_SPAWN("monster-spawn", Material.ROTTEN_FLESH, "&e领地内刷新怪物", PermissionState.ALLOW_ALL),
         MONSTER_DAMAGE("monster-damage", Material.IRON_SWORD, "&e伤害怪物", PermissionState.DENY_UNTRUSTED),
+        PVP("pvp", Material.DIAMOND_SWORD, "&e允许PVP", PermissionState.ALLOW_ALL),
         TELEPORT("teleport", Material.ENDER_PEARL, "&e传送权限", PermissionState.DENY_UNTRUSTED);
 
         private final String id;
