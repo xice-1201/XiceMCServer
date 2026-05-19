@@ -95,6 +95,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private static final Material TOTEM_CORE_ITEM_MATERIAL = Material.NETHER_BRICK;
     private static final Material TOTEM_BOTTOM_MATERIAL = Material.JIGSAW;
     private static final Material TOTEM_TOP_MATERIAL = Material.STRUCTURE_BLOCK;
+    private static final int TOTEM_CORE_SLOT = 4;
     private static final double TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED = 0.0009D;
 
     private final Map<UUID, Selection> selections = new HashMap<>();
@@ -594,16 +595,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             openRingMenu(event.getPlayer(), event.getItem(), event.getHand());
             return;
         }
+        if (event.getClickedBlock() != null && isClaimTotemBlock(event.getClickedBlock()) && isRightClick(event.getAction())) {
+            event.setCancelled(true);
+            openTotemMenu(event.getPlayer(), event.getClickedBlock());
+            return;
+        }
         if (event.getItem() != null && isClaimTotemItem(event.getItem()) && isRightClick(event.getAction())) {
             if (!shouldPassTotemUseToBlock(event)) {
                 event.setCancelled(true);
                 placeClaimTotem(event);
                 return;
             }
-        }
-        if (event.getClickedBlock() != null && isClaimTotemBlock(event.getClickedBlock()) && isRightClick(event.getAction())) {
-            event.setCancelled(true);
-            return;
         }
         if (event.isCancelled()) {
             return;
@@ -739,7 +741,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onInventoryClick(InventoryClickEvent event) {
-        if (!(event.getWhoClicked() instanceof Player player) || !(event.getInventory().getHolder() instanceof RingMenu menu)) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        if (event.getInventory().getHolder() instanceof TotemMenu menu) {
+            handleTotemMenuClick(player, menu, event);
+            return;
+        }
+        if (!(event.getInventory().getHolder() instanceof RingMenu menu)) {
             return;
         }
         event.setCancelled(true);
@@ -751,7 +760,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onInventoryDrag(InventoryDragEvent event) {
-        if (event.getInventory().getHolder() instanceof RingMenu) {
+        if (event.getInventory().getHolder() instanceof RingMenu || event.getInventory().getHolder() instanceof TotemMenu) {
             event.setCancelled(true);
         }
     }
@@ -766,6 +775,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 unlockPostRingRecipes(player);
             }
         });
+        if (event.getInventory().getHolder() instanceof TotemMenu menu) {
+            saveTotemMenu(menu, event.getInventory());
+            return;
+        }
         if (!(event.getInventory().getHolder() instanceof RingMenu menu)) {
             return;
         }
@@ -1380,6 +1393,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         TotemBinding binding = new TotemBinding(totemId, bottom.getWorld().getName(), bottom.getX(), bottom.getY(), bottom.getZ());
         claim.totemBinding = binding;
+        claim.totemCore = false;
         markTotemClaim(bottom, claim.id);
         saveClaims();
         notifyClaimOwner(claim, message("totem-bound", "&a领地图腾已绑定至领地 {claim}。"));
@@ -1562,6 +1576,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         Block top = bottom.getRelative(BlockFace.UP);
         Block above = top.getRelative(BlockFace.UP);
         Location dropLocation = bottom.getLocation().add(0.5, 0.5, 0.5);
+        ClaimRegion boundClaim = claimBoundToTotem(bottom, id);
+        boolean dropCore = dropItem && boundClaim != null && boundClaim.totemCore;
         unbindClaimTotem(bottom);
         removeTotemDisplays(bottom, id);
         if (isClaimTotemBlock(top) && id.equals(totemId(top))) {
@@ -1572,6 +1588,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if (dropItem) {
             bottom.getWorld().dropItemNaturally(dropLocation, createClaimTotem());
+        }
+        if (dropCore) {
+            bottom.getWorld().dropItemNaturally(dropLocation, createTotemCore());
         }
         collapseUnsupportedTotemsAbove(above);
     }
@@ -1587,6 +1606,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         claim.totemBinding = null;
+        claim.totemCore = false;
         saveClaims();
         notifyClaimOwner(claim, message("totem-unbound", "&e领地图腾已与领地 {claim} 解绑。"));
         scheduleClaimTotemRebind(claim, bottom, totemId);
@@ -1665,6 +1685,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         String id = totemId(bottom);
         TotemBinding binding = new TotemBinding(id, bottom.getWorld().getName(), bottom.getX(), bottom.getY(), bottom.getZ());
         claim.totemBinding = binding;
+        claim.totemCore = false;
         markTotemClaim(bottom, claim.id);
         saveClaims();
         notifyClaimOwner(claim, message("totem-bound", "&a领地图腾已绑定至领地 {claim}。"));
@@ -1750,6 +1771,139 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         } else {
             openCreateRingMenu(player, ring, hand);
         }
+    }
+
+    private void openTotemMenu(Player player, Block clickedBlock) {
+        Block bottom = totemBottom(clickedBlock);
+        String totemId = totemId(bottom);
+        ClaimRegion claim = claimBoundToTotem(bottom, totemId);
+        if (claim == null || claim.totemBinding == null) {
+            send(player, message("totem-not-bound", "&c该领地图腾尚未绑定领地。"));
+            return;
+        }
+        if (getConfig().getBoolean("protection.container-open", true) && claim.blocks(ClaimFeature.CONTAINER_OPEN, player)) {
+            send(player, message("protected"), "claim", claim.name);
+            return;
+        }
+
+        TotemMenu menu = new TotemMenu(claim.id, claim.totemBinding);
+        Inventory inventory = Bukkit.createInventory(menu, 9, "领地图腾");
+        menu.inventory = inventory;
+        renderTotemMenu(menu, claim);
+        player.openInventory(inventory);
+    }
+
+    private void renderTotemMenu(TotemMenu menu, ClaimRegion claim) {
+        Inventory inventory = menu.inventory;
+        inventory.clear();
+        ItemStack filler = menuItem(Material.GRAY_STAINED_GLASS_PANE, " ", List.of());
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            if (slot != TOTEM_CORE_SLOT) {
+                inventory.setItem(slot, filler);
+            }
+        }
+        if (claim.totemCore) {
+            inventory.setItem(TOTEM_CORE_SLOT, createTotemCore());
+        }
+    }
+
+    private void handleTotemMenuClick(Player player, TotemMenu menu, InventoryClickEvent event) {
+        event.setCancelled(true);
+        Inventory inventory = event.getInventory();
+        int rawSlot = event.getRawSlot();
+        boolean clickedTopInventory = rawSlot >= 0 && rawSlot < inventory.getSize();
+
+        if (!clickedTopInventory) {
+            if (event.isShiftClick()) {
+                moveOneCoreIntoTotemMenu(inventory, event.getClickedInventory(), event.getSlot(), event.getCurrentItem());
+                saveTotemMenu(menu, inventory);
+            }
+            return;
+        }
+        if (rawSlot != TOTEM_CORE_SLOT) {
+            return;
+        }
+        if (event.getHotbarButton() >= 0) {
+            moveOneHotbarCoreIntoTotemMenu(player, inventory, event.getHotbarButton());
+            saveTotemMenu(menu, inventory);
+            return;
+        }
+
+        ItemStack slotItem = inventory.getItem(TOTEM_CORE_SLOT);
+        ItemStack cursor = event.getCursor();
+        if (isAir(cursor)) {
+            if (isTotemCoreItem(slotItem)) {
+                player.setItemOnCursor(slotItem.clone());
+                inventory.setItem(TOTEM_CORE_SLOT, null);
+                saveTotemMenu(menu, inventory);
+            }
+            return;
+        }
+        if (!isTotemCoreItem(cursor) || isTotemCoreItem(slotItem)) {
+            return;
+        }
+        ItemStack singleCore = cursor.clone();
+        singleCore.setAmount(1);
+        inventory.setItem(TOTEM_CORE_SLOT, singleCore);
+        removeOneFromCursor(player, cursor);
+        saveTotemMenu(menu, inventory);
+    }
+
+    private void moveOneCoreIntoTotemMenu(Inventory menuInventory, Inventory clickedInventory, int clickedSlot, ItemStack source) {
+        if (clickedInventory == null || !isAir(menuInventory.getItem(TOTEM_CORE_SLOT)) || !isTotemCoreItem(source)) {
+            return;
+        }
+        ItemStack singleCore = source.clone();
+        singleCore.setAmount(1);
+        menuInventory.setItem(TOTEM_CORE_SLOT, singleCore);
+        decrementInventorySlot(clickedInventory, clickedSlot, source);
+    }
+
+    private void moveOneHotbarCoreIntoTotemMenu(Player player, Inventory menuInventory, int hotbarSlot) {
+        if (!isAir(menuInventory.getItem(TOTEM_CORE_SLOT))) {
+            return;
+        }
+        ItemStack source = player.getInventory().getItem(hotbarSlot);
+        if (!isTotemCoreItem(source)) {
+            return;
+        }
+        ItemStack singleCore = source.clone();
+        singleCore.setAmount(1);
+        menuInventory.setItem(TOTEM_CORE_SLOT, singleCore);
+        decrementInventorySlot(player.getInventory(), hotbarSlot, source);
+    }
+
+    private void removeOneFromCursor(Player player, ItemStack cursor) {
+        if (cursor.getAmount() <= 1) {
+            player.setItemOnCursor(null);
+            return;
+        }
+        ItemStack remaining = cursor.clone();
+        remaining.setAmount(cursor.getAmount() - 1);
+        player.setItemOnCursor(remaining);
+    }
+
+    private void decrementInventorySlot(Inventory inventory, int slot, ItemStack source) {
+        if (source.getAmount() <= 1) {
+            inventory.setItem(slot, null);
+            return;
+        }
+        ItemStack remaining = source.clone();
+        remaining.setAmount(source.getAmount() - 1);
+        inventory.setItem(slot, remaining);
+    }
+
+    private void saveTotemMenu(TotemMenu menu, Inventory inventory) {
+        ClaimRegion claim = claims.get(menu.claimId);
+        if (claim == null || claim.totemBinding == null || !claim.totemBinding.equals(menu.binding)) {
+            return;
+        }
+        claim.totemCore = isTotemCoreItem(inventory.getItem(TOTEM_CORE_SLOT));
+        saveClaims();
+    }
+
+    private boolean isAir(ItemStack item) {
+        return item == null || item.getType().isAir();
     }
 
     private void openCreateRingMenu(Player player, ItemStack ring, EquipmentSlot hand) {
@@ -2620,6 +2774,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 claimsConfig.set(path + ".totem.x", claim.totemBinding.x);
                 claimsConfig.set(path + ".totem.y", claim.totemBinding.y);
                 claimsConfig.set(path + ".totem.z", claim.totemBinding.z);
+                claimsConfig.set(path + ".totem.core", claim.totemCore);
             }
             claimsConfig.set(path + ".allowed-features", null);
             claimsConfig.set(path + ".disabled-features", null);
@@ -2913,6 +3068,22 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
     }
 
+    private static final class TotemMenu implements InventoryHolder {
+        private final String claimId;
+        private final TotemBinding binding;
+        private Inventory inventory;
+
+        private TotemMenu(String claimId, TotemBinding binding) {
+            this.claimId = claimId;
+            this.binding = binding;
+        }
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
+        }
+    }
+
     private static final class RingDraft {
         private String world;
         private int x1;
@@ -3041,6 +3212,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private final Map<UUID, String> memberNames;
         private final Map<String, PermissionState> featureStates;
         private TotemBinding totemBinding;
+        private boolean totemCore;
 
         private ClaimRegion(
                 String id,
@@ -3058,7 +3230,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 Set<UUID> members,
                 Map<UUID, String> memberNames,
                 Map<String, PermissionState> featureStates,
-                TotemBinding totemBinding
+                TotemBinding totemBinding,
+                boolean totemCore
         ) {
             this.id = id;
             this.name = name;
@@ -3076,6 +3249,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             this.memberNames = memberNames;
             this.featureStates = featureStates;
             this.totemBinding = totemBinding;
+            this.totemCore = totemBinding != null && totemCore;
         }
 
         private static ClaimRegion fromSelection(
@@ -3102,7 +3276,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     new HashSet<>(),
                     new HashMap<>(),
                     new HashMap<>(),
-                    null);
+                    null,
+                    false);
         }
 
         private static ClaimRegion fromConfig(String id, ConfigurationSection section) {
@@ -3146,6 +3321,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 }
             }
             TotemBinding totemBinding = null;
+            boolean totemCore = false;
             ConfigurationSection totemSection = section.getConfigurationSection("totem");
             if (totemSection != null) {
                 String totemId = totemSection.getString("id", "");
@@ -3156,6 +3332,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                         totemSection.getInt("x"),
                         totemSection.getInt("y"),
                         totemSection.getInt("z"));
+                totemCore = totemSection.getBoolean("core", false);
             }
             return new ClaimRegion(
                     id,
@@ -3173,7 +3350,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     members,
                     memberNames,
                     featureStates,
-                    totemBinding);
+                    totemBinding,
+                    totemCore);
         }
 
         private boolean contains(Location location) {
@@ -3249,7 +3427,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     members,
                     memberNames,
                     featureStates,
-                    totemBinding);
+                    totemBinding,
+                    totemCore);
         }
 
         private int sizeX() {
