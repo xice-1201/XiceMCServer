@@ -106,6 +106,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey ringRecipeKey;
     private NamespacedKey ringItemModelKey;
     private NamespacedKey totemKey;
+    private NamespacedKey totemItemModelKey;
     private NamespacedKey totemRecipeKey;
     private NamespacedKey totemIdKey;
     private NamespacedKey totemPartKey;
@@ -143,6 +144,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ringRecipeKey = new NamespacedKey(this, "claim_ring_recipe");
         ringItemModelKey = new NamespacedKey(this, "claim_ring");
         totemKey = new NamespacedKey(this, "claim_totem");
+        totemItemModelKey = new NamespacedKey(this, "claim_totem");
         totemRecipeKey = new NamespacedKey(this, "claim_totem_recipe");
         totemIdKey = new NamespacedKey(this, "claim_totem_id");
         totemPartKey = new NamespacedKey(this, "claim_totem_part");
@@ -1037,6 +1039,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         meta.setDisplayName(color("&b领地图腾"));
         meta.setLore(List.of(color("&7右键放置，需要下方有方块支撑。"), color("&7放置后占用 1 x 1 x 2 空间。")));
         meta.setEnchantmentGlintOverride(false);
+        applyTotemItemModel(meta);
         meta.getPersistentDataContainer().set(totemKey, PersistentDataType.BYTE, (byte) 1);
         totem.setItemMeta(meta);
         return totem;
@@ -1825,6 +1828,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private void applyRingItemModel(ItemMeta meta) {
         meta.setItemModel(ringItemModelKey);
+    }
+
+    private void applyTotemItemModel(ItemMeta meta) {
+        meta.setItemModel(totemItemModelKey);
     }
 
     private EquipmentSlot normalizeHand(EquipmentSlot hand) {

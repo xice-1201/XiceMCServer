@@ -65,6 +65,7 @@ type config struct {
 	ClaimConfigPath          string
 	WebIconPath              string
 	WebFaviconPath           string
+	ClaimTotemConceptPath    string
 	ResourcePackPath         string
 	ServerDocsPath           string
 	ServerDocsMaxLength      int
@@ -247,6 +248,7 @@ func loadConfig() config {
 		ClaimConfigPath:          env("XICEMC_CLAIM_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "config.yml")),
 		WebIconPath:              env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
 		WebFaviconPath:           env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
+		ClaimTotemConceptPath:    env("XICEMC_CLAIM_TOTEM_CONCEPT_PATH", filepath.Join(repoRoot, "server", "assets", "xiceclaim-totem-concept.png")),
 		ResourcePackPath:         env("XICEMC_RESOURCE_PACK_PATH", filepath.Join(repoRoot, "server", "resourcepacks", "xiceclaim.zip")),
 		ServerDocsPath:           env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
 		ServerDocsMaxLength:      envInt("XICEMC_DOCS_MAX_LENGTH", 100000),
@@ -313,6 +315,7 @@ func openDB(cfg config) (*sql.DB, error) {
 func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /favicon.png", a.fileHandler(a.cfg.WebIconPath, "image/png"))
 	mux.HandleFunc("GET /favicon.ico", a.fileHandler(a.cfg.WebFaviconPath, "image/x-icon"))
+	mux.HandleFunc("GET /assets/xiceclaim-totem-concept.png", a.fileHandler(a.cfg.ClaimTotemConceptPath, "image/png"))
 	mux.HandleFunc("GET /resourcepacks/xiceclaim.zip", a.fileHandler(a.cfg.ResourcePackPath, "application/zip"))
 	mux.HandleFunc("GET /", a.handlePublicHome)
 	mux.HandleFunc("GET /tech", a.handlePublicStatic("publicTech", "技术实现", "public-tech"))
@@ -1617,6 +1620,9 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .markdown-doc h3 { margin:20px 0 8px; font-size:17px; }
     .markdown-doc ul { margin:8px 0 18px; padding-left:22px; color:var(--muted); line-height:1.7; }
     .markdown-doc li { margin:4px 0; }
+    .concept-figure { margin:30px 0 0; }
+    .concept-figure img { display:block; width:min(100%,620px); height:auto; border:1px solid var(--line); border-radius:8px; background:#f8fafc; }
+    .concept-figure figcaption { margin-top:10px; color:var(--muted); font-size:14px; line-height:1.6; }
     .plugin-table { width:100%; max-width:900px; margin-top:22px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
     .plugin-table table { margin:0; }
     .plugin-table tr:last-child td { border-bottom:0; }
@@ -1781,6 +1787,9 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .markdown-doc h3 { margin:20px 0 8px; font-size:17px; }
     .markdown-doc ul { margin:8px 0 18px; padding-left:22px; color:var(--muted); line-height:1.7; }
     .markdown-doc li { margin:4px 0; }
+    .concept-figure { margin:30px 0 0; }
+    .concept-figure img { display:block; width:min(100%,620px); height:auto; border:1px solid var(--line); border-radius:8px; background:#f8fafc; }
+    .concept-figure figcaption { margin-top:10px; color:var(--muted); font-size:14px; line-height:1.6; }
     .plugin-table { width:100%; max-width:900px; margin-top:22px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
     .plugin-table table { margin:0; }
     .plugin-table tr:last-child td { border-bottom:0; }
@@ -1946,7 +1955,11 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     <h2>部署方式</h2>
     <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceClaim.jar</code>。</p>
     <p>插件运行时配置目录为 <code>/opt/xicemc/runtime/plugins/XiceClaim/</code>。主要配置文件是 <code>config.yml</code>，包含领地数量、尺寸限制、世界边界、粒子预览参数、默认保护策略、<code>/claim give</code> 发放权限和提示文案。领地数据保存为 <code>/opt/xicemc/runtime/plugins/XiceClaim/claims.yml</code>。</p>
-    <p>领地戒指使用服务器资源包中的自定义图标；玩家侧能看到的物品外观由资源包提供，插件侧负责识别领地戒指物品、保存绑定数据并处理右键交互。</p>
+    <p>领地戒指和领地图腾使用服务器资源包中的自定义图标；玩家侧能看到的物品外观由资源包提供，插件侧负责识别领地物品、保存绑定数据并处理右键交互。</p>
+    <figure class="concept-figure">
+      <img src="/assets/xiceclaim-totem-concept.png" alt="领地图腾概念图">
+      <figcaption>领地图腾概念图：以石英、金质镶边、嵌入式末影珍珠和浮空能量碎片构成的 1 x 1 x 2 竖向图腾。</figcaption>
+    </figure>
   </article>
 </section>
 {{end}}
