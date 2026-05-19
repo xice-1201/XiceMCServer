@@ -2589,7 +2589,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 topUpChaoticWarpQueue(world);
                 return;
             }
-            Location destination = findSafeRandomDestination(world, x, z, new Location(world, 0.0D, 0.0D, 0.0D));
+            SafeRandomDestinationResult result = findSafeRandomDestination(world, x, z, new Location(world, 0.0D, 0.0D, 0.0D));
+            Location destination = result.destination();
             if (destination != null && border.isInside(destination)) {
                 WarpDestination warpDestination = new WarpDestination(
                         world.getName(),
@@ -2607,7 +2608,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 topUpChaoticWarpQueue(world);
                 return;
             }
-            logChaoticWarpQueue(world, queue, "candidate-rejected attempt=" + attempt + " reason=no-safe-landing");
+            String reason = destination == null ? result.failureReason() : "outside-world-border";
+            logChaoticWarpQueue(world, queue, "candidate-rejected attempt=" + attempt
+                    + " reason=" + reason
+                    + " scanned=" + result.scannedBlocks()
+                    + " spaceOk=" + result.spaceOk()
+                    + " floorOk=" + result.floorOk()
+                    + " feetBlocked=" + result.feetBlocked()
+                    + " headBlocked=" + result.headBlocked());
             topUpChaoticWarpQueue(world);
         }));
     }
@@ -2743,19 +2751,39 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return (int) key;
     }
 
-    private Location findSafeRandomDestination(World world, int x, int z, Location current) {
+    private SafeRandomDestinationResult findSafeRandomDestination(World world, int x, int z, Location current) {
         int minY = world.getMinHeight() + 1;
         int maxY = world.getMaxHeight() - 2;
+        int scannedBlocks = 0;
+        int spaceOk = 0;
+        int floorOk = 0;
+        int feetBlocked = 0;
+        int headBlocked = 0;
         for (int y = maxY; y >= minY; y--) {
             Block feet = world.getBlockAt(x, y, z);
-            if (hasTeleportSpace(feet) && hasTeleportFloor(feet)) {
+            Block head = feet.getRelative(BlockFace.UP);
+            scannedBlocks++;
+            boolean feetPassable = feet.isPassable();
+            boolean headPassable = head.isPassable();
+            if (!feetPassable) {
+                feetBlocked++;
+            }
+            if (!headPassable) {
+                headBlocked++;
+            }
+            if (!feetPassable || !headPassable) {
+                continue;
+            }
+            spaceOk++;
+            if (hasTeleportFloor(feet)) {
+                floorOk++;
                 Location destination = feet.getLocation().add(0.5, 0.0, 0.5);
                 destination.setYaw(current.getYaw());
                 destination.setPitch(current.getPitch());
-                return destination;
+                return new SafeRandomDestinationResult(destination, scannedBlocks, spaceOk, floorOk, feetBlocked, headBlocked);
             }
         }
-        return null;
+        return new SafeRandomDestinationResult(null, scannedBlocks, spaceOk, floorOk, feetBlocked, headBlocked);
     }
 
     private void applyWarpSuppression(Player player, long durationMillis) {
@@ -3731,6 +3759,24 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private record ConsumedWarpDestination(WarpDestination destination, Location location) {
+    }
+
+    private record SafeRandomDestinationResult(
+            Location destination,
+            int scannedBlocks,
+            int spaceOk,
+            int floorOk,
+            int feetBlocked,
+            int headBlocked) {
+        private String failureReason() {
+            if (spaceOk <= 0) {
+                return "no-passable-space";
+            }
+            if (floorOk <= 0) {
+                return "no-full-support";
+            }
+            return "no-safe-landing";
+        }
     }
 
     private static final class ChaoticWarpQueue {
