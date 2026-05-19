@@ -547,7 +547,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 return;
             }
             event.setCancelled(true);
-            collapseTotem(event.getBlock(), event.getPlayer().getGameMode() != GameMode.CREATIVE);
+            collapseTotem(event.getBlock(), event.getPlayer().getGameMode() != GameMode.CREATIVE, true);
             return;
         }
         if (getConfig().getBoolean("protection.block-break", true)) {
@@ -574,7 +574,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         event.setCancelled(true);
-        collapseTotem(event.getBlock(), event.getPlayer().getGameMode() != GameMode.CREATIVE);
+        collapseTotem(event.getBlock(), event.getPlayer().getGameMode() != GameMode.CREATIVE, true);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -590,14 +590,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerInteract(PlayerInteractEvent event) {
+        if (event.getClickedBlock() != null && isClaimTotemBlock(event.getClickedBlock()) && isRightClick(event.getAction())) {
+            event.setCancelled(true);
+            if (event.getHand() == EquipmentSlot.HAND) {
+                Player player = event.getPlayer();
+                Block clickedBlock = event.getClickedBlock();
+                Bukkit.getScheduler().runTask(this, () -> openTotemMenu(player, clickedBlock));
+            }
+            return;
+        }
         if (event.getItem() != null && isClaimRing(event.getItem()) && isRightClick(event.getAction())) {
             event.setCancelled(true);
             openRingMenu(event.getPlayer(), event.getItem(), event.getHand());
-            return;
-        }
-        if (event.getClickedBlock() != null && isClaimTotemBlock(event.getClickedBlock()) && isRightClick(event.getAction())) {
-            event.setCancelled(true);
-            openTotemMenu(event.getPlayer(), event.getClickedBlock());
             return;
         }
         if (event.getItem() != null && isClaimTotemItem(event.getItem()) && isRightClick(event.getAction())) {
@@ -1571,13 +1575,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private void collapseTotem(Block block, boolean dropItem) {
+        collapseTotem(block, dropItem, dropItem);
+    }
+
+    private void collapseTotem(Block block, boolean dropItem, boolean dropCoreItem) {
         Block bottom = totemBottom(block);
         String id = totemId(bottom);
         Block top = bottom.getRelative(BlockFace.UP);
         Block above = top.getRelative(BlockFace.UP);
         Location dropLocation = bottom.getLocation().add(0.5, 0.5, 0.5);
         ClaimRegion boundClaim = claimBoundToTotem(bottom, id);
-        boolean dropCore = dropItem && boundClaim != null && boundClaim.totemCore;
+        boolean dropCore = dropCoreItem && boundClaim != null && boundClaim.totemCore;
         unbindClaimTotem(bottom);
         removeTotemDisplays(bottom, id);
         if (isClaimTotemBlock(top) && id.equals(totemId(top))) {
