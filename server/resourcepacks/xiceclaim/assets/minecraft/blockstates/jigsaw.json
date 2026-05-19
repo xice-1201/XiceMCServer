@@ -1,9 +1,8 @@
 {
-  "multipart": [
-    {
-      "apply": {
-        "model": "xiceclaim:block/claim_totem_placed_bottom"
-      }
-    }
-  ]
+  "variants": {
+    "orientation=north_up": { "model": "xiceclaim:block/claim_totem_placed_bottom" },
+    "orientation=east_up": { "model": "xiceclaim:block/claim_totem_placed_bottom", "y": 90 },
+    "orientation=south_up": { "model": "xiceclaim:block/claim_totem_placed_bottom", "y": 180 },
+    "orientation=west_up": { "model": "xiceclaim:block/claim_totem_placed_bottom", "y": 270 }
+  }
 }

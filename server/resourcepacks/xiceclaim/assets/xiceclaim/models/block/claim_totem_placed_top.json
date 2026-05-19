@@ -10,7 +10,9 @@
     "front_lower": "xiceclaim:block/claim_totem_front_lower",
     "front_upper": "xiceclaim:block/claim_totem_front_upper",
     "side_panel": "xiceclaim:block/claim_totem_side_panel",
-    "altar": "xiceclaim:block/claim_totem_altar"
+    "altar": "xiceclaim:block/claim_totem_altar",
+    "back_lower": "xiceclaim:block/claim_totem_back_lower",
+    "back_upper": "xiceclaim:block/claim_totem_back_upper"
   },
   "elements": [
     {
@@ -35,7 +37,7 @@
           "texture": "#front_upper"
         },
         "south": {
-          "texture": "#front_upper"
+          "texture": "#back_upper"
         },
         "west": {
           "texture": "#side_panel"

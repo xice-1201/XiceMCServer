@@ -112,6 +112,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey totemRecipeKey;
     private NamespacedKey totemIdKey;
     private NamespacedKey totemPartKey;
+    private NamespacedKey totemFrontKey;
     private NamespacedKey totemOwnerUuidKey;
     private NamespacedKey totemOwnerNameKey;
     private NamespacedKey totemPlacedAtKey;
@@ -151,6 +152,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         totemRecipeKey = new NamespacedKey(this, "claim_totem_recipe");
         totemIdKey = new NamespacedKey(this, "claim_totem_id");
         totemPartKey = new NamespacedKey(this, "claim_totem_part");
+        totemFrontKey = new NamespacedKey(this, "claim_totem_front");
         totemOwnerUuidKey = new NamespacedKey(this, "claim_totem_owner_uuid");
         totemOwnerNameKey = new NamespacedKey(this, "claim_totem_owner_name");
         totemPlacedAtKey = new NamespacedKey(this, "claim_totem_placed_at");
@@ -1120,10 +1122,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
         String totemId = UUID.randomUUID().toString();
         long placedAt = System.currentTimeMillis();
-        bottom.setType(TOTEM_BOTTOM_MATERIAL, false);
-        top.setType(TOTEM_TOP_MATERIAL, false);
-        markTotemBlock(bottom, totemId, "bottom", player, placedAt);
-        markTotemBlock(top, totemId, "top", player, placedAt);
+        BlockFace front = totemFrontFor(player);
+        setTotemBlockData(bottom, "bottom", front);
+        setTotemBlockData(top, "top", front);
+        markTotemBlock(bottom, totemId, "bottom", front, player, placedAt);
+        markTotemBlock(top, totemId, "top", front, player, placedAt);
         if (player.getGameMode() != GameMode.CREATIVE) {
             consumeOneTotem(player, event.getHand());
         }
@@ -1144,11 +1147,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         item.setAmount(item.getAmount() - 1);
     }
 
-    private void markTotemBlock(Block block, String totemId, String part, Player owner, long placedAt) {
-        markTotemBlock(block, totemId, part, owner.getUniqueId().toString(), owner.getName(), placedAt);
+    private void markTotemBlock(Block block, String totemId, String part, BlockFace front, Player owner, long placedAt) {
+        markTotemBlock(block, totemId, part, front, owner.getUniqueId().toString(), owner.getName(), placedAt);
     }
 
-    private void markTotemBlock(Block block, String totemId, String part, String ownerUuid, String ownerName, long placedAt) {
+    private void markTotemBlock(Block block, String totemId, String part, BlockFace front, String ownerUuid, String ownerName, long placedAt) {
         BlockState state = block.getState();
         if (!(state instanceof TileState tileState)) {
             return;
@@ -1157,6 +1160,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         data.set(totemKey, PersistentDataType.BYTE, (byte) 1);
         data.set(totemIdKey, PersistentDataType.STRING, totemId);
         data.set(totemPartKey, PersistentDataType.STRING, part);
+        data.set(totemFrontKey, PersistentDataType.STRING, front.name().toLowerCase(Locale.ROOT));
         data.set(totemOwnerUuidKey, PersistentDataType.STRING, ownerUuid);
         data.set(totemOwnerNameKey, PersistentDataType.STRING, ownerName);
         data.set(totemPlacedAtKey, PersistentDataType.LONG, placedAt);
@@ -1205,18 +1209,55 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (!isClaimTotemBlock(top) || !id.equals(totemId(top))) {
             return;
         }
+        BlockFace front = totemFront(bottom);
         removeTotemDisplays(bottom, id);
-        if (bottom.getType() == TOTEM_BOTTOM_MATERIAL && top.getType() == TOTEM_TOP_MATERIAL) {
+        if (isTotemBlockData(bottom, "bottom", front) && isTotemBlockData(top, "top", front)) {
             return;
         }
 
         String ownerUuid = totemString(bottom, totemOwnerUuidKey);
         String ownerName = totemString(bottom, totemOwnerNameKey);
         long placedAt = totemLong(bottom, totemPlacedAtKey);
-        bottom.setType(TOTEM_BOTTOM_MATERIAL, false);
-        top.setType(TOTEM_TOP_MATERIAL, false);
-        markTotemBlock(bottom, id, "bottom", ownerUuid, ownerName, placedAt);
-        markTotemBlock(top, id, "top", ownerUuid, ownerName, placedAt);
+        setTotemBlockData(bottom, "bottom", front);
+        setTotemBlockData(top, "top", front);
+        markTotemBlock(bottom, id, "bottom", front, ownerUuid, ownerName, placedAt);
+        markTotemBlock(top, id, "top", front, ownerUuid, ownerName, placedAt);
+    }
+
+    private void setTotemBlockData(Block block, String part, BlockFace front) {
+        block.setBlockData(Bukkit.createBlockData(totemBlockData(part, front)), false);
+    }
+
+    private boolean isTotemBlockData(Block block, String part, BlockFace front) {
+        Material expectedType = "top".equals(part) ? TOTEM_TOP_MATERIAL : TOTEM_BOTTOM_MATERIAL;
+        return block.getType() == expectedType && block.getBlockData().matches(Bukkit.createBlockData(totemBlockData(part, front)));
+    }
+
+    private String totemBlockData(String part, BlockFace front) {
+        if ("top".equals(part)) {
+            return switch (front) {
+                case EAST -> "minecraft:structure_block[mode=load]";
+                case SOUTH -> "minecraft:structure_block[mode=corner]";
+                case WEST -> "minecraft:structure_block[mode=data]";
+                default -> "minecraft:structure_block[mode=save]";
+            };
+        }
+        return switch (front) {
+            case EAST -> "minecraft:jigsaw[orientation=east_up]";
+            case SOUTH -> "minecraft:jigsaw[orientation=south_up]";
+            case WEST -> "minecraft:jigsaw[orientation=west_up]";
+            default -> "minecraft:jigsaw[orientation=north_up]";
+        };
+    }
+
+    private BlockFace totemFrontFor(Player player) {
+        return switch (player.getFacing()) {
+            case NORTH -> BlockFace.SOUTH;
+            case EAST -> BlockFace.WEST;
+            case SOUTH -> BlockFace.NORTH;
+            case WEST -> BlockFace.EAST;
+            default -> BlockFace.NORTH;
+        };
     }
 
     private boolean isClaimTotemBlock(Block block) {
@@ -1244,6 +1285,19 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return "";
         }
         return tileState.getPersistentDataContainer().getOrDefault(totemIdKey, PersistentDataType.STRING, "");
+    }
+
+    private BlockFace totemFront(Block block) {
+        String value = totemString(block, totemFrontKey).toUpperCase(Locale.ROOT);
+        try {
+            BlockFace face = BlockFace.valueOf(value);
+            return switch (face) {
+                case NORTH, EAST, SOUTH, WEST -> face;
+                default -> BlockFace.NORTH;
+            };
+        } catch (IllegalArgumentException ignored) {
+            return BlockFace.NORTH;
+        }
     }
 
     private String totemString(Block block, NamespacedKey key) {
