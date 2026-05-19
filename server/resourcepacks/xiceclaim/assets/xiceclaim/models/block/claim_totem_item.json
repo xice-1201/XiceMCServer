@@ -1,0 +1,165 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "minecraft:block/quartz_block_side",
+    "quartz": "minecraft:block/quartz_block_side",
+    "quartz_top": "minecraft:block/quartz_block_top",
+    "gold": "minecraft:block/gold_block",
+    "pearl": "xiceclaim:block/claim_totem_pearl",
+    "magic": "xiceclaim:block/claim_totem_magic"
+  },
+  "elements": [
+    {
+      "from": [1, 0, 1],
+      "to": [15, 3, 15],
+      "faces": {
+        "down": { "texture": "#quartz" },
+        "up": { "texture": "#quartz_top" },
+        "north": { "texture": "#quartz" },
+        "south": { "texture": "#quartz" },
+        "west": { "texture": "#quartz" },
+        "east": { "texture": "#quartz" }
+      }
+    },
+    {
+      "from": [2, 3, 2],
+      "to": [14, 15, 14],
+      "faces": {
+        "down": { "texture": "#quartz" },
+        "up": { "texture": "#quartz_top" },
+        "north": { "texture": "#quartz" },
+        "south": { "texture": "#quartz" },
+        "west": { "texture": "#quartz" },
+        "east": { "texture": "#quartz" }
+      }
+    },
+    {
+      "from": [0, 0, 0],
+      "to": [16, 2, 2],
+      "faces": {
+        "north": { "texture": "#gold" },
+        "south": { "texture": "#gold" },
+        "west": { "texture": "#gold" },
+        "east": { "texture": "#gold" },
+        "up": { "texture": "#gold" },
+        "down": { "texture": "#gold" }
+      }
+    },
+    {
+      "from": [0, 0, 14],
+      "to": [16, 2, 16],
+      "faces": {
+        "north": { "texture": "#gold" },
+        "south": { "texture": "#gold" },
+        "west": { "texture": "#gold" },
+        "east": { "texture": "#gold" },
+        "up": { "texture": "#gold" },
+        "down": { "texture": "#gold" }
+      }
+    },
+    {
+      "from": [6, 5, 0],
+      "to": [10, 11, 1],
+      "faces": {
+        "north": { "texture": "#pearl" },
+        "south": { "texture": "#pearl" },
+        "west": { "texture": "#gold" },
+        "east": { "texture": "#gold" },
+        "up": { "texture": "#gold" },
+        "down": { "texture": "#gold" }
+      }
+    },
+    {
+      "from": [6, 5, 15],
+      "to": [10, 11, 16],
+      "faces": {
+        "north": { "texture": "#pearl" },
+        "south": { "texture": "#pearl" },
+        "west": { "texture": "#gold" },
+        "east": { "texture": "#gold" },
+        "up": { "texture": "#gold" },
+        "down": { "texture": "#gold" }
+      }
+    },
+    {
+      "from": [3, 15, 3],
+      "to": [13, 17, 13],
+      "faces": {
+        "down": { "texture": "#quartz" },
+        "up": { "texture": "#magic" },
+        "north": { "texture": "#quartz" },
+        "south": { "texture": "#quartz" },
+        "west": { "texture": "#quartz" },
+        "east": { "texture": "#quartz" }
+      }
+    },
+    {
+      "from": [7, 17, 7],
+      "to": [9, 23, 9],
+      "faces": {
+        "down": { "texture": "#magic" },
+        "up": { "texture": "#magic" },
+        "north": { "texture": "#magic" },
+        "south": { "texture": "#magic" },
+        "west": { "texture": "#magic" },
+        "east": { "texture": "#magic" }
+      }
+    },
+    {
+      "from": [4, 17, 7],
+      "to": [5, 21, 8],
+      "faces": {
+        "down": { "texture": "#magic" },
+        "up": { "texture": "#magic" },
+        "north": { "texture": "#magic" },
+        "south": { "texture": "#magic" },
+        "west": { "texture": "#magic" },
+        "east": { "texture": "#magic" }
+      }
+    },
+    {
+      "from": [11, 17, 8],
+      "to": [12, 21, 9],
+      "faces": {
+        "down": { "texture": "#magic" },
+        "up": { "texture": "#magic" },
+        "north": { "texture": "#magic" },
+        "south": { "texture": "#magic" },
+        "west": { "texture": "#magic" },
+        "east": { "texture": "#magic" }
+      }
+    }
+  ],
+  "display": {
+    "gui": {
+      "rotation": [30, 225, 0],
+      "translation": [0, -1, 0],
+      "scale": [0.55, 0.55, 0.55]
+    },
+    "ground": {
+      "translation": [0, 3, 0],
+      "scale": [0.25, 0.25, 0.25]
+    },
+    "fixed": {
+      "scale": [0.5, 0.5, 0.5]
+    },
+    "thirdperson_righthand": {
+      "rotation": [75, 45, 0],
+      "translation": [0, 2.5, 0],
+      "scale": [0.35, 0.35, 0.35]
+    },
+    "thirdperson_lefthand": {
+      "rotation": [75, 45, 0],
+      "translation": [0, 2.5, 0],
+      "scale": [0.35, 0.35, 0.35]
+    },
+    "firstperson_righthand": {
+      "rotation": [0, 45, 0],
+      "scale": [0.38, 0.38, 0.38]
+    },
+    "firstperson_lefthand": {
+      "rotation": [0, 225, 0],
+      "scale": [0.38, 0.38, 0.38]
+    }
+  }
+}
