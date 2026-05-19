@@ -507,6 +507,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
+        if (isClaimTotemItem(event.getItemInHand())) {
+            event.setCancelled(true);
+            return;
+        }
         if (getConfig().getBoolean("protection.block-place", true)) {
             protect(event.getPlayer(), event.getBlockPlaced(), event, ClaimFeature.BLOCK_PLACE);
         }
@@ -545,10 +549,34 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private boolean shouldPassTotemUseToBlock(PlayerInteractEvent event) {
         Block clicked = event.getClickedBlock();
-        return event.getAction() == Action.RIGHT_CLICK_BLOCK
-                && clicked != null
-                && clicked.getType().isInteractable()
-                && !event.getPlayer().isSneaking();
+        return event.getAction() == Action.RIGHT_CLICK_BLOCK && clicked != null && !event.getPlayer().isSneaking()
+                && isTotemPassThroughInteraction(clicked);
+    }
+
+    private boolean isTotemPassThroughInteraction(Block block) {
+        Material type = block.getType();
+        String name = type.name();
+        return block.getState() instanceof InventoryHolder
+                || name.endsWith("_BUTTON")
+                || name.equals("LEVER")
+                || name.endsWith("_DOOR")
+                || name.endsWith("_TRAPDOOR")
+                || name.endsWith("_FENCE_GATE")
+                || name.endsWith("_CHEST")
+                || name.endsWith("_BED")
+                || name.endsWith("_ANVIL")
+                || name.equals("CRAFTING_TABLE")
+                || name.equals("CARTOGRAPHY_TABLE")
+                || name.equals("SMITHING_TABLE")
+                || name.equals("STONECUTTER")
+                || name.equals("GRINDSTONE")
+                || name.equals("LOOM")
+                || name.equals("ENCHANTING_TABLE")
+                || name.equals("BREWING_STAND")
+                || name.equals("NOTE_BLOCK")
+                || name.equals("JUKEBOX")
+                || name.equals("REPEATER")
+                || name.equals("COMPARATOR");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
