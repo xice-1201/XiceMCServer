@@ -35,6 +35,7 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Animals;
+import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
@@ -84,6 +85,8 @@ import org.bukkit.scheduler.BukkitRunnable;
 
 public final class XiceClaimPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final Pattern CLAIM_NAME_PATTERN = Pattern.compile("^[\\p{L}\\p{N}_-]{1,24}$");
+    private static final Material TOTEM_CARRIER_MATERIAL = Material.JUKEBOX;
+    private static final Material TOTEM_DISPLAY_MATERIAL = Material.BEACON;
 
     private final Map<UUID, Selection> selections = new HashMap<>();
     private final Map<String, ClaimRegion> claims = new HashMap<>();
@@ -108,6 +111,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey totemOwnerUuidKey;
     private NamespacedKey totemOwnerNameKey;
     private NamespacedKey totemPlacedAtKey;
+    private NamespacedKey totemDisplayKey;
 
     @Override
     public void onEnable() {
@@ -144,6 +148,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         totemOwnerUuidKey = new NamespacedKey(this, "claim_totem_owner_uuid");
         totemOwnerNameKey = new NamespacedKey(this, "claim_totem_owner_name");
         totemPlacedAtKey = new NamespacedKey(this, "claim_totem_placed_at");
+        totemDisplayKey = new NamespacedKey(this, "claim_totem_display");
     }
 
     @Override
@@ -1093,10 +1098,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
         String totemId = UUID.randomUUID().toString();
         long placedAt = System.currentTimeMillis();
-        bottom.setType(Material.BEACON, false);
-        top.setType(Material.BEACON, false);
+        bottom.setType(TOTEM_CARRIER_MATERIAL, false);
+        top.setType(TOTEM_CARRIER_MATERIAL, false);
         markTotemBlock(bottom, totemId, "bottom", player, placedAt);
         markTotemBlock(top, totemId, "top", player, placedAt);
+        spawnTotemDisplay(bottom, totemId, "bottom");
+        spawnTotemDisplay(top, totemId, "top");
         if (player.getGameMode() != GameMode.CREATIVE) {
             consumeOneTotem(player, event.getHand());
         }
@@ -1132,8 +1139,37 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         tileState.update(true, false);
     }
 
+    private void spawnTotemDisplay(Block block, String totemId, String part) {
+        Location location = block.getLocation();
+        BlockDisplay display = block.getWorld().spawn(location, BlockDisplay.class, entity -> {
+            entity.setBlock(Bukkit.createBlockData(TOTEM_DISPLAY_MATERIAL));
+            entity.setPersistent(true);
+            entity.setInvulnerable(true);
+            entity.setGlowing(false);
+            PersistentDataContainer data = entity.getPersistentDataContainer();
+            data.set(totemDisplayKey, PersistentDataType.BYTE, (byte) 1);
+            data.set(totemIdKey, PersistentDataType.STRING, totemId);
+            data.set(totemPartKey, PersistentDataType.STRING, part);
+        });
+        display.setGravity(false);
+    }
+
+    private void removeTotemDisplays(Block bottom, String totemId) {
+        Location center = bottom.getLocation().add(0.5, 1.0, 0.5);
+        for (Entity entity : bottom.getWorld().getNearbyEntities(center, 2.0, 2.5, 2.0)) {
+            if (!(entity instanceof BlockDisplay display)) {
+                continue;
+            }
+            PersistentDataContainer data = display.getPersistentDataContainer();
+            if (data.has(totemDisplayKey, PersistentDataType.BYTE)
+                    && totemId.equals(data.get(totemIdKey, PersistentDataType.STRING))) {
+                display.remove();
+            }
+        }
+    }
+
     private boolean isClaimTotemBlock(Block block) {
-        if (block == null || block.getType() != Material.BEACON) {
+        if (block == null) {
             return false;
         }
         BlockState state = block.getState();
@@ -1146,14 +1182,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private String totemPart(Block block) {
-        if (block == null || block.getType() != Material.BEACON || !(block.getState() instanceof TileState tileState)) {
+        if (block == null || !(block.getState() instanceof TileState tileState)) {
             return "";
         }
         return tileState.getPersistentDataContainer().getOrDefault(totemPartKey, PersistentDataType.STRING, "");
     }
 
     private String totemId(Block block) {
-        if (block == null || block.getType() != Material.BEACON || !(block.getState() instanceof TileState tileState)) {
+        if (block == null || !(block.getState() instanceof TileState tileState)) {
             return "";
         }
         return tileState.getPersistentDataContainer().getOrDefault(totemIdKey, PersistentDataType.STRING, "");
@@ -1177,6 +1213,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         String id = totemId(bottom);
         Block top = bottom.getRelative(BlockFace.UP);
         Location dropLocation = bottom.getLocation().add(0.5, 0.5, 0.5);
+        removeTotemDisplays(bottom, id);
         if (isClaimTotemBlock(top) && id.equals(totemId(top))) {
             top.setType(Material.AIR, false);
         }
