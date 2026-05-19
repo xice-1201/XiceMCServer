@@ -6,6 +6,10 @@ access:
       actions:
         - give
 
+sidebar:
+  title: '&d自定义药水效果'
+  line-format: '&5{effect} &f{seconds}s'
+
 messages:
   prefix: '&5[更多药水效果] &f'
   no-permission: '&c你没有使用该指令的权限。'

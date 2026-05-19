@@ -17,14 +17,24 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.scoreboard.DisplaySlot;
+import org.bukkit.scoreboard.Objective;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.ScoreboardManager;
 
 public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final String WARP_SUPPRESSION_ID = "warp_suppression";
     private static final String WARP_SUPPRESSION_NAME = "跃迁抑制";
+    private static final String SIDEBAR_OBJECTIVE = "xice_mpe";
 
     private final Map<UUID, WarpSuppression> suppressions = new HashMap<>();
+    private final Map<UUID, Scoreboard> sidebarBoards = new HashMap<>();
+    private final Map<UUID, Scoreboard> previousBoards = new HashMap<>();
+    private BukkitTask sidebarTask;
 
     @Override
     public void onEnable() {
@@ -35,7 +45,21 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             command.setExecutor(this);
             command.setTabCompleter(this);
         }
+        sidebarTask = Bukkit.getScheduler().runTaskTimer(this, this::updateAllSidebars, 20L, 20L);
         getLogger().info("XiceMorePotionEffects enabled.");
+    }
+
+    @Override
+    public void onDisable() {
+        if (sidebarTask != null) {
+            sidebarTask.cancel();
+            sidebarTask = null;
+        }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            restoreSidebar(player);
+        }
+        sidebarBoards.clear();
+        previousBoards.clear();
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -45,6 +69,13 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         }
         event.setCancelled(true);
         send(event.getPlayer(), message("teleport-blocked"));
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        UUID uuid = event.getPlayer().getUniqueId();
+        sidebarBoards.remove(uuid);
+        previousBoards.remove(uuid);
     }
 
     @Override
@@ -101,6 +132,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         String durationText = formatDuration(durationMillis);
         send(sender, message("applied"), "player", target.getName(), "effect", effect.displayName, "duration", durationText);
         send(target, message("received"), "effect", effect.displayName, "duration", durationText);
+        updateSidebar(target);
     }
 
     private void clearEffect(CommandSender sender, Player target, CustomEffect effect) {
@@ -113,6 +145,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         }
         send(sender, message("cleared"), "player", target.getName(), "effect", effect.displayName);
         send(target, message("cleared-target"), "effect", effect.displayName);
+        updateSidebar(target);
     }
 
     private void checkEffect(CommandSender sender, Player target, CustomEffect effect) {
@@ -158,6 +191,91 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             return false;
         }
         return true;
+    }
+
+    private void updateAllSidebars() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            updateSidebar(player);
+        }
+    }
+
+    private void updateSidebar(Player player) {
+        List<ActiveEffect> activeEffects = activeEffects(player);
+        if (activeEffects.isEmpty()) {
+            restoreSidebar(player);
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
+        Scoreboard board = sidebarBoards.computeIfAbsent(uuid, ignored -> createSidebarBoard());
+        if (player.getScoreboard() != board) {
+            previousBoards.putIfAbsent(uuid, player.getScoreboard());
+            player.setScoreboard(board);
+        }
+
+        Objective objective = board.getObjective(SIDEBAR_OBJECTIVE);
+        if (objective == null) {
+            objective = board.registerNewObjective(SIDEBAR_OBJECTIVE, "dummy", color(getConfig().getString("sidebar.title", "&d自定义药水效果")));
+            objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+        }
+        objective.setDisplayName(color(getConfig().getString("sidebar.title", "&d自定义药水效果")));
+
+        for (String entry : board.getEntries()) {
+            board.resetScores(entry);
+        }
+        int score = activeEffects.size();
+        for (ActiveEffect effect : activeEffects) {
+            objective.getScore(color(sidebarLine(effect))).setScore(score--);
+        }
+    }
+
+    private void restoreSidebar(Player player) {
+        UUID uuid = player.getUniqueId();
+        Scoreboard board = sidebarBoards.remove(uuid);
+        Scoreboard previous = previousBoards.remove(uuid);
+        if (board == null || player.getScoreboard() != board) {
+            return;
+        }
+        if (previous != null) {
+            player.setScoreboard(previous);
+            return;
+        }
+        ScoreboardManager manager = Bukkit.getScoreboardManager();
+        if (manager != null) {
+            player.setScoreboard(manager.getMainScoreboard());
+        }
+    }
+
+    private Scoreboard createSidebarBoard() {
+        ScoreboardManager manager = Bukkit.getScoreboardManager();
+        if (manager == null) {
+            throw new IllegalStateException("Scoreboard manager is not available");
+        }
+        return manager.getNewScoreboard();
+    }
+
+    private List<ActiveEffect> activeEffects(Player player) {
+        WarpSuppression suppression = suppressions.get(player.getUniqueId());
+        if (suppression == null) {
+            return List.of();
+        }
+        long remainingMillis = suppression.expiresAt - System.currentTimeMillis();
+        if (remainingMillis <= 0L) {
+            suppressions.remove(player.getUniqueId());
+            return List.of();
+        }
+        return List.of(new ActiveEffect(CustomEffect.WARP_SUPPRESSION, remainingSeconds(remainingMillis)));
+    }
+
+    private String sidebarLine(ActiveEffect effect) {
+        String template = getConfig().getString("sidebar.line-format", "&5{effect} &f{seconds}s");
+        return template
+                .replace("{effect}", effect.effect.displayName)
+                .replace("{seconds}", Long.toString(effect.seconds));
+    }
+
+    private long remainingSeconds(long remainingMillis) {
+        return Math.max(1L, (remainingMillis + 999L) / 1000L);
     }
 
     private Long parseDurationMillis(String value) {
@@ -245,6 +363,9 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     }
 
     private record WarpSuppression(long expiresAt) {
+    }
+
+    private record ActiveEffect(CustomEffect effect, long seconds) {
     }
 
     private enum CustomEffect {
