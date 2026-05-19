@@ -7,7 +7,7 @@ description: More custom potion effects for XiceMCServer.
 commands:
   morepotioneffects:
     description: Manage custom potion effects.
-    usage: /morepotioneffects <give|clear|check|reload> <player> <effect> [duration]
+    usage: /morepotioneffects <give|clear|check|reload> <player|selector> <effect> [duration]
     aliases: [mpe, xicemorepotioneffects]
 permissions:
   xicemorepotioneffects.admin:

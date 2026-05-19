@@ -191,13 +191,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(sender, message("reload-complete"));
             return true;
         }
+        if ("give".equalsIgnoreCase(args[0])) {
+            giveClaimItem(sender, args);
+            return true;
+        }
         if (!(sender instanceof Player player)) {
             send(sender, message("player-only"));
             return true;
         }
 
         switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "give" -> giveClaimItem(player, args);
             case "pos1", "pos2", "create", "info", "list", "trust", "untrust", "delete", "remove" ->
                     send(player, message("command-disabled"));
             default -> sendUsage(sender);
@@ -205,36 +208,52 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return true;
     }
 
-    private void giveClaimItem(Player player, String[] args) {
-        if (!canUseAction(player, "give")) {
-            send(player, message("no-permission"));
+    private void giveClaimItem(CommandSender sender, String[] args) {
+        if (!canUseAction(sender, "give")) {
+            send(sender, message("no-permission"));
             return;
         }
         if (args.length < 2) {
-            send(player, message("give-usage"));
+            send(sender, message("give-usage"));
             return;
         }
-        ItemStack item;
+        List<Player> targets = claimGiveTargets(sender, args);
+        if (targets.isEmpty()) {
+            send(sender, message("player-not-found", "&c没有找到目标玩家。"));
+            return;
+        }
         String messageKey;
         if ("ring".equalsIgnoreCase(args[1])) {
-            item = createEmptyRing(ClaimPoint.from(player.getLocation()));
             messageKey = "ring-given";
-            unlockTotemRecipe(player);
         } else if ("totem".equalsIgnoreCase(args[1])) {
-            item = createClaimTotem();
             messageKey = "totem-given";
         } else {
-            send(player, message("give-usage"));
+            send(sender, message("give-usage"));
             return;
         }
-        Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
-        for (ItemStack leftoverItem : leftover.values()) {
-            player.getWorld().dropItemNaturally(player.getLocation(), leftoverItem);
+        for (Player target : targets) {
+            ItemStack item;
+            if ("ring".equalsIgnoreCase(args[1])) {
+                item = createEmptyRing(ClaimPoint.from(target.getLocation()));
+                unlockTotemRecipe(target);
+            } else {
+                item = createClaimTotem();
+            }
+            Map<Integer, ItemStack> leftover = target.getInventory().addItem(item);
+            for (ItemStack leftoverItem : leftover.values()) {
+                target.getWorld().dropItemNaturally(target.getLocation(), leftoverItem);
+            }
+            send(target, message(messageKey));
         }
-        send(player, message(messageKey));
+        if (!(sender instanceof Player player) || !targets.contains(player) || targets.size() > 1) {
+            send(sender, message("give-summary", "&a已向 {count} 名玩家发放物品。"), "count", targets.size());
+        }
     }
 
-    private boolean canUseAction(Player player, String action) {
+    private boolean canUseAction(CommandSender sender, String action) {
+        if (!(sender instanceof Player player)) {
+            return true;
+        }
         String normalized = action.toLowerCase(Locale.ROOT);
         Set<String> allowed = new HashSet<>();
         for (String value : getConfig().getStringList("access.default-allowed-actions")) {
@@ -244,6 +263,31 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             allowed.add(value.toLowerCase(Locale.ROOT));
         }
         return allowed.contains(normalized);
+    }
+
+    private List<Player> claimGiveTargets(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            if (sender instanceof Player player) {
+                return List.of(player);
+            }
+            return List.of();
+        }
+        return resolveTargetPlayers(sender, args[2]);
+    }
+
+    private List<Player> resolveTargetPlayers(CommandSender sender, String selector) {
+        if (selector.startsWith("@")) {
+            try {
+                return Bukkit.selectEntities(sender, selector).stream()
+                        .filter(Player.class::isInstance)
+                        .map(Player.class::cast)
+                        .toList();
+            } catch (IllegalArgumentException ignored) {
+                return List.of();
+            }
+        }
+        Player player = Bukkit.getPlayer(selector);
+        return player == null ? List.of() : List.of(player);
     }
 
     private void setPosition(Player player, String[] args, boolean first) {
@@ -2049,8 +2093,21 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             }
             departure.getWorld().playSound(departure, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
             destination.getWorld().playSound(destination, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
+            applyClaimTeleportSuppression(player);
             send(player, message("teleport-success", "&a已传送至领地 {claim}。"), "claim", current.name);
         }, 60L);
+    }
+
+    private void applyClaimTeleportSuppression(Player player) {
+        var plugin = Bukkit.getPluginManager().getPlugin("XiceMorePotionEffects");
+        if (plugin == null || !plugin.isEnabled()) {
+            return;
+        }
+        try {
+            plugin.getClass().getMethod("applyClaimTeleportSuppression", Player.class).invoke(plugin, player);
+        } catch (ReflectiveOperationException exception) {
+            getLogger().warning("Failed to apply claim teleport suppression: " + exception.getMessage());
+        }
     }
 
     private BukkitTask startTeleportParticles(Player player) {
@@ -2658,6 +2715,17 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             String prefix = args[1].toLowerCase(Locale.ROOT);
             return List.of("ring", "totem").stream()
                     .filter(value -> value.startsWith(prefix))
+                    .toList();
+        }
+        if (args.length == 3 && "give".equalsIgnoreCase(args[0])) {
+            String prefix = args[2].toLowerCase(Locale.ROOT);
+            List<String> suggestions = new ArrayList<>(List.of("@s", "@a", "@p", "@r"));
+            suggestions.addAll(Bukkit.getOnlinePlayers().stream()
+                    .map(Player::getName)
+                    .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
+                    .toList());
+            return suggestions.stream()
+                    .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
                     .toList();
         }
         return List.of();

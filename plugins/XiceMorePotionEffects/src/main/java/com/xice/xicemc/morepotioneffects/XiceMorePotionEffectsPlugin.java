@@ -1,5 +1,6 @@
 package com.xice.xicemc.morepotioneffects;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -17,6 +19,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -30,6 +33,9 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     private static final String WARP_SUPPRESSION_ID = "warp_suppression";
     private static final String WARP_SUPPRESSION_NAME = "跃迁抑制";
     private static final String SIDEBAR_OBJECTIVE = "xice_mpe";
+    private static final long CLAIM_TELEPORT_SUPPRESSION_MILLIS = 30_000L;
+    private static final long PORTAL_TELEPORT_SUPPRESSION_MILLIS = 20_000L;
+    private static final long ITEM_TELEPORT_SUPPRESSION_MILLIS = 5_000L;
 
     private final Map<UUID, WarpSuppression> suppressions = new HashMap<>();
     private final Map<UUID, Scoreboard> sidebarBoards = new HashMap<>();
@@ -71,6 +77,23 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         send(event.getPlayer(), message("teleport-blocked"));
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerTeleportComplete(PlayerTeleportEvent event) {
+        long durationMillis = suppressionDurationFor(event.getCause());
+        if (durationMillis <= 0L) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(this, () -> applyWarpSuppression(event.getPlayer(), durationMillis));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerConsume(PlayerItemConsumeEvent event) {
+        if (event.getItem().getType() != Material.MILK_BUCKET) {
+            return;
+        }
+        clearAllCustomEffects(event.getPlayer());
+    }
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         UUID uuid = event.getPlayer().getUniqueId();
@@ -94,8 +117,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             return true;
         }
         String action = args[0].toLowerCase(Locale.ROOT);
-        Player target = Bukkit.getPlayer(args[1]);
-        if (target == null) {
+        List<Player> targets = resolveTargetPlayers(sender, args[1]);
+        if (targets.isEmpty()) {
             send(sender, message("player-not-found"), "player", args[1]);
             return true;
         }
@@ -105,15 +128,26 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             return true;
         }
         switch (action) {
-            case "give", "apply", "set" -> applyEffect(sender, target, effect, args);
-            case "clear", "remove" -> clearEffect(sender, target, effect);
-            case "check", "info" -> checkEffect(sender, target, effect);
+            case "give", "apply", "set" -> applyEffect(sender, targets, effect, args);
+            case "clear", "remove" -> clearEffect(sender, targets, effect);
+            case "check", "info" -> checkEffect(sender, targets, effect);
             default -> send(sender, message("usage"));
         }
         return true;
     }
 
-    private void applyEffect(CommandSender sender, Player target, CustomEffect effect, String[] args) {
+    public void applyWarpSuppression(Player player, long durationMillis) {
+        if (player == null || !player.isOnline() || durationMillis <= 0L) {
+            return;
+        }
+        applyEffectSilently(player, CustomEffect.WARP_SUPPRESSION, durationMillis);
+    }
+
+    public void applyClaimTeleportSuppression(Player player) {
+        applyWarpSuppression(player, CLAIM_TELEPORT_SUPPRESSION_MILLIS);
+    }
+
+    private void applyEffect(CommandSender sender, List<Player> targets, CustomEffect effect, String[] args) {
         if (!canUseAction(sender, "give")) {
             send(sender, message("no-permission"));
             return;
@@ -127,40 +161,70 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             send(sender, message("invalid-duration"));
             return;
         }
-        long expiresAt = System.currentTimeMillis() + durationMillis;
-        suppressions.put(target.getUniqueId(), new WarpSuppression(expiresAt));
+        for (Player target : targets) {
+            applyEffectSilently(target, effect, durationMillis);
+        }
         String durationText = formatDuration(durationMillis);
-        send(sender, message("applied"), "player", target.getName(), "effect", effect.displayName, "duration", durationText);
-        send(target, message("received"), "effect", effect.displayName, "duration", durationText);
-        updateSidebar(target);
+        send(sender, message("applied"), "player", describeTargets(targets), "effect", effect.displayName, "duration", durationText);
     }
 
-    private void clearEffect(CommandSender sender, Player target, CustomEffect effect) {
+    private void clearEffect(CommandSender sender, List<Player> targets, CustomEffect effect) {
         if (!sender.hasPermission("xicemorepotioneffects.admin")) {
             send(sender, message("no-permission"));
             return;
         }
+        for (Player target : targets) {
+            if (effect == CustomEffect.WARP_SUPPRESSION) {
+                suppressions.remove(target.getUniqueId());
+            }
+            updateSidebar(target);
+        }
+        send(sender, message("cleared"), "player", describeTargets(targets), "effect", effect.displayName);
+    }
+
+    private void checkEffect(CommandSender sender, List<Player> targets, CustomEffect effect) {
+        if (!sender.hasPermission("xicemorepotioneffects.admin")) {
+            send(sender, message("no-permission"));
+            return;
+        }
+        for (Player target : targets) {
+            WarpSuppression suppression = suppressions.get(target.getUniqueId());
+            long now = System.currentTimeMillis();
+            if (suppression == null || suppression.expiresAt <= now) {
+                suppressions.remove(target.getUniqueId());
+                send(sender, message("not-active"), "player", target.getName(), "effect", effect.displayName);
+                updateSidebar(target);
+                continue;
+            }
+            send(sender, message("active"), "player", target.getName(), "effect", effect.displayName, "duration", formatDuration(suppression.expiresAt - now));
+        }
+    }
+
+    private void applyEffectSilently(Player target, CustomEffect effect, long durationMillis) {
         if (effect == CustomEffect.WARP_SUPPRESSION) {
-            suppressions.remove(target.getUniqueId());
+            long expiresAt = System.currentTimeMillis() + durationMillis;
+            suppressions.put(target.getUniqueId(), new WarpSuppression(expiresAt));
         }
-        send(sender, message("cleared"), "player", target.getName(), "effect", effect.displayName);
-        send(target, message("cleared-target"), "effect", effect.displayName);
         updateSidebar(target);
     }
 
-    private void checkEffect(CommandSender sender, Player target, CustomEffect effect) {
-        if (!sender.hasPermission("xicemorepotioneffects.admin")) {
-            send(sender, message("no-permission"));
-            return;
+    private void clearAllCustomEffects(Player player) {
+        suppressions.remove(player.getUniqueId());
+        updateSidebar(player);
+    }
+
+    private long suppressionDurationFor(PlayerTeleportEvent.TeleportCause cause) {
+        if (cause == PlayerTeleportEvent.TeleportCause.NETHER_PORTAL
+                || cause == PlayerTeleportEvent.TeleportCause.END_PORTAL
+                || cause == PlayerTeleportEvent.TeleportCause.END_GATEWAY) {
+            return PORTAL_TELEPORT_SUPPRESSION_MILLIS;
         }
-        WarpSuppression suppression = suppressions.get(target.getUniqueId());
-        long now = System.currentTimeMillis();
-        if (suppression == null || suppression.expiresAt <= now) {
-            suppressions.remove(target.getUniqueId());
-            send(sender, message("not-active"), "player", target.getName(), "effect", effect.displayName);
-            return;
+        if (cause == PlayerTeleportEvent.TeleportCause.ENDER_PEARL
+                || "CHORUS_FRUIT".equals(cause.name())
+                || "CONSUMABLE_EFFECT".equals(cause.name())) {
+            return ITEM_TELEPORT_SUPPRESSION_MILLIS;
         }
-        send(sender, message("active"), "player", target.getName(), "effect", effect.displayName, "duration", formatDuration(suppression.expiresAt - now));
+        return 0L;
     }
 
     private boolean canUseAction(CommandSender sender, String action) {
@@ -332,6 +396,28 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         return ChatColor.translateAlternateColorCodes('&', value);
     }
 
+    private List<Player> resolveTargetPlayers(CommandSender sender, String selector) {
+        if (selector.startsWith("@")) {
+            try {
+                return Bukkit.selectEntities(sender, selector).stream()
+                        .filter(Player.class::isInstance)
+                        .map(Player.class::cast)
+                        .toList();
+            } catch (IllegalArgumentException ignored) {
+                return List.of();
+            }
+        }
+        Player player = Bukkit.getPlayer(selector);
+        return player == null ? List.of() : List.of(player);
+    }
+
+    private String describeTargets(List<Player> targets) {
+        if (targets.size() == 1) {
+            return targets.getFirst().getName();
+        }
+        return targets.size() + " 名玩家";
+    }
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
@@ -342,8 +428,12 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         }
         if (args.length == 2) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
-            return Bukkit.getOnlinePlayers().stream()
+            List<String> suggestions = new ArrayList<>(List.of("@s", "@a", "@p", "@r"));
+            suggestions.addAll(Bukkit.getOnlinePlayers().stream()
                     .map(Player::getName)
+                    .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
+                    .toList());
+            return suggestions.stream()
                     .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
                     .toList();
         }
