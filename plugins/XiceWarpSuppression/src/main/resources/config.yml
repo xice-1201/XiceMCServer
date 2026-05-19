@@ -1,0 +1,13 @@
+messages:
+  prefix: '&5[跃迁抑制] &f'
+  no-permission: '&c你没有使用该指令的权限。'
+  usage: '&c用法：/warpsuppression <give|clear|check> <玩家> [时长]'
+  player-not-found: '&c没有找到在线玩家：{player}'
+  invalid-duration: '&c时长格式错误，请使用 30s、5m、1h 或纯数字秒。'
+  applied: '&a已赋予 {player} 跃迁抑制，持续 {duration}。'
+  received: '&c你受到了跃迁抑制，持续 {duration}。'
+  cleared: '&a已移除 {player} 的跃迁抑制。'
+  cleared-target: '&a你的跃迁抑制已被移除。'
+  not-active: '&7{player} 当前没有跃迁抑制。'
+  active: '&e{player} 当前受到跃迁抑制，剩余 {duration}。'
+  teleport-blocked: '&c你受到跃迁抑制影响，无法传送。'

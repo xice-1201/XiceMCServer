@@ -1,0 +1,15 @@
+name: XiceWarpSuppression
+version: 0.0.1
+main: com.xice.xicemc.warpsuppression.XiceWarpSuppressionPlugin
+api-version: '1.21'
+author: Xice
+description: Simulated warp suppression effect for XiceMCServer.
+commands:
+  warpsuppression:
+    description: Manage warp suppression effect.
+    usage: /warpsuppression <give|clear|check> <player> [duration]
+    aliases: [xicewarpsuppression, warpinhibit]
+permissions:
+  xicewarpsuppression.admin:
+    description: Manage warp suppression effects.
+    default: op
