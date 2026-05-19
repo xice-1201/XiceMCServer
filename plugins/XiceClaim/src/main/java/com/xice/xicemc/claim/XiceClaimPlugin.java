@@ -1,6 +1,7 @@
 package com.xice.xicemc.claim;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -111,6 +113,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private static final int CHAOTIC_WARP_RANDOM_ATTEMPTS = 64;
     private static final int CHAOTIC_WARP_MAX_CONCURRENT_SEARCHES = 2;
     private static final int CHAOTIC_WARP_QUEUE_EXTRA_SIZE = 2;
+    private static final int DEFAULT_SERVER_MAX_WORLD_SIZE = 29_999_984;
+    private static final int DEFAULT_CLAIM_WORLD_BORDER = 50_000;
     private static final double TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED = 0.0009D;
 
     private final Map<UUID, Selection> selections = new HashMap<>();
@@ -120,6 +124,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private final Map<String, ChaoticWarpQueue> chaoticWarpQueues = new HashMap<>();
     private BukkitTask totemAuraTask;
     private int maxOnlineSinceStart;
+    private int serverMaxWorldSize = DEFAULT_SERVER_MAX_WORLD_SIZE;
+    private int claimWorldBorder = DEFAULT_CLAIM_WORLD_BORDER;
     private File claimsFile;
     private File chaoticWarpQueuesFile;
     private FileConfiguration claimsConfig;
@@ -161,6 +167,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         registerChaoticWarpCoreRecipe();
         loadClaims();
         maxOnlineSinceStart = Bukkit.getOnlinePlayers().size();
+        configureChaoticWarpBounds();
         loadChaoticWarpQueues();
         getServer().getPluginManager().registerEvents(this, this);
         Bukkit.getScheduler().runTask(this, this::refreshLoadedTotemBlocks);
@@ -2533,6 +2540,61 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
     }
 
+    private void configureChaoticWarpBounds() {
+        serverMaxWorldSize = readServerMaxWorldSize();
+        claimWorldBorder = Math.max(1, getConfig().getInt("limits.world-border", DEFAULT_CLAIM_WORLD_BORDER));
+        getLogger().info("Chaotic warp bounds configured: serverMaxWorldSize=" + serverMaxWorldSize
+                + ", claimWorldBorder=" + claimWorldBorder);
+    }
+
+    private int readServerMaxWorldSize() {
+        File serverProperties = new File(Bukkit.getWorldContainer(), "server.properties");
+        if (!serverProperties.exists()) {
+            getLogger().warning("server.properties not found while configuring chaotic warp bounds: " + serverProperties.getAbsolutePath());
+            return DEFAULT_SERVER_MAX_WORLD_SIZE;
+        }
+        Properties properties = new Properties();
+        try (FileInputStream input = new FileInputStream(serverProperties)) {
+            properties.load(input);
+        } catch (IOException exception) {
+            getLogger().warning("Failed to read server.properties for chaotic warp bounds: " + exception.getMessage());
+            return DEFAULT_SERVER_MAX_WORLD_SIZE;
+        }
+        String rawValue = properties.getProperty("max-world-size");
+        if (rawValue == null || rawValue.isBlank()) {
+            return DEFAULT_SERVER_MAX_WORLD_SIZE;
+        }
+        try {
+            return Math.max(1, Integer.parseInt(rawValue.trim()));
+        } catch (NumberFormatException exception) {
+            getLogger().warning("Invalid max-world-size in server.properties: " + rawValue);
+            return DEFAULT_SERVER_MAX_WORLD_SIZE;
+        }
+    }
+
+    private ChaoticWarpBounds chaoticWarpBounds(World world) {
+        WorldBorder border = world.getWorldBorder();
+        Location center = border.getCenter();
+        double bukkitRadius = Math.max(1.0D, border.getSize() / 2.0D - 1.0D);
+        double minX = Math.max(center.getX() - bukkitRadius, -serverMaxWorldSize);
+        double maxX = Math.min(center.getX() + bukkitRadius, serverMaxWorldSize);
+        double minZ = Math.max(center.getZ() - bukkitRadius, -serverMaxWorldSize);
+        double maxZ = Math.min(center.getZ() + bukkitRadius, serverMaxWorldSize);
+        minX = Math.max(minX, -claimWorldBorder);
+        maxX = Math.min(maxX, claimWorldBorder);
+        minZ = Math.max(minZ, -claimWorldBorder);
+        maxZ = Math.min(maxZ, claimWorldBorder);
+        if (maxX - minX < 1.0D || maxZ - minZ < 1.0D) {
+            getLogger().warning("No usable chaotic warp bounds for world " + world.getName()
+                    + ": bukkitCenter=" + center.getBlockX() + "," + center.getBlockZ()
+                    + ", bukkitSize=" + border.getSize()
+                    + ", serverMaxWorldSize=" + serverMaxWorldSize
+                    + ", claimWorldBorder=" + claimWorldBorder);
+            return null;
+        }
+        return new ChaoticWarpBounds(minX, maxX, minZ, maxZ);
+    }
+
     private void topUpChaoticWarpQueue(World world) {
         if (world == null) {
             return;
@@ -2561,23 +2623,22 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             scheduleChaoticWarpQueueRetry(world, queue);
             return;
         }
-        WorldBorder border = world.getWorldBorder();
-        Location center = border.getCenter();
-        double radius = Math.max(1.0D, border.getSize() / 2.0D - 1.0D);
-        double minX = center.getX() - radius;
-        double maxX = center.getX() + radius;
-        double minZ = center.getZ() - radius;
-        double maxZ = center.getZ() + radius;
+        ChaoticWarpBounds bounds = chaoticWarpBounds(world);
+        if (bounds == null) {
+            scheduleChaoticWarpQueueRetry(world, queue);
+            return;
+        }
         ThreadLocalRandom random = ThreadLocalRandom.current();
-        int x = (int) Math.floor(random.nextDouble(minX, maxX));
-        int z = (int) Math.floor(random.nextDouble(minZ, maxZ));
+        int x = (int) Math.floor(random.nextDouble(bounds.minX(), bounds.maxX()));
+        int z = (int) Math.floor(random.nextDouble(bounds.minZ(), bounds.maxZ()));
         int attempt = ++queue.searchAttempts;
         int chunkX = x >> 4;
         int chunkZ = z >> 4;
         queue.inFlightSearches++;
         logChaoticWarpQueue(world, queue, "candidate-start attempt=" + attempt
                 + " block=" + x + "," + z
-                + " chunk=" + chunkX + "," + chunkZ);
+                + " chunk=" + chunkX + "," + chunkZ
+                + " bounds=" + bounds.describe());
         world.getChunkAtAsync(chunkX, chunkZ, true).whenComplete((chunk, throwable) -> Bukkit.getScheduler().runTask(this, () -> {
             if (!isEnabled() || queue != chaoticWarpQueues.get(world.getName())) {
                 return;
@@ -2591,7 +2652,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             }
             SafeRandomDestinationResult result = findSafeRandomDestination(world, x, z, new Location(world, 0.0D, 0.0D, 0.0D));
             Location destination = result.destination();
-            if (destination != null && border.isInside(destination)) {
+            if (destination != null && bounds.contains(destination) && world.getWorldBorder().isInside(destination)) {
                 WarpDestination warpDestination = new WarpDestination(
                         world.getName(),
                         destination.getBlockX(),
@@ -2608,9 +2669,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 topUpChaoticWarpQueue(world);
                 return;
             }
-            String reason = destination == null ? result.failureReason() : "outside-world-border";
+            String reason = destination == null
+                    ? result.failureReason()
+                    : (bounds.contains(destination) ? "outside-bukkit-world-border" : "outside-effective-bounds");
             logChaoticWarpQueue(world, queue, "candidate-rejected attempt=" + attempt
                     + " reason=" + reason
+                    + " bounds=" + bounds.describe()
                     + " scanned=" + result.scannedBlocks()
                     + " spaceOk=" + result.spaceOk()
                     + " floorOk=" + result.floorOk()
@@ -2677,7 +2741,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         Block feet = world.getBlockAt(destination.x, destination.y, destination.z);
         Location location = feet.getLocation().add(0.5D, 0.0D, 0.5D);
-        if (!world.getWorldBorder().isInside(location) || !hasTeleportSpace(feet) || !hasTeleportFloor(feet)) {
+        ChaoticWarpBounds bounds = chaoticWarpBounds(world);
+        if (bounds == null
+                || !bounds.contains(location)
+                || !world.getWorldBorder().isInside(location)
+                || !hasTeleportSpace(feet)
+                || !hasTeleportFloor(feet)) {
             return null;
         }
         location.setYaw(player.getLocation().getYaw());
@@ -3301,10 +3370,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         int loaded = 0;
+        boolean changed = false;
         for (String worldName : root.getKeys(false)) {
             World world = Bukkit.getWorld(worldName);
             if (world == null) {
                 getLogger().warning("Skipping chaotic warp queue for missing world: " + worldName);
+                changed = true;
                 continue;
             }
             ConfigurationSection section = root.getConfigurationSection(worldName);
@@ -3328,6 +3399,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 int chunkX = destinationSection.isInt("chunk-x") ? destinationSection.getInt("chunk-x") : x >> 4;
                 int chunkZ = destinationSection.isInt("chunk-z") ? destinationSection.getInt("chunk-z") : z >> 4;
                 WarpDestination destination = new WarpDestination(worldName, x, y, z, chunkX, chunkZ);
+                ChaoticWarpBounds bounds = chaoticWarpBounds(world);
+                if (bounds == null || !bounds.contains(x, z)) {
+                    changed = true;
+                    continue;
+                }
                 retainChaoticWarpDestination(destination);
                 queue.destinations.addLast(destination);
                 loaded++;
@@ -3338,6 +3414,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if (loaded > 0) {
             getLogger().info("Loaded " + loaded + " chaotic warp queued destinations from " + chaoticWarpQueuesFile.getName());
+        }
+        if (changed) {
+            saveChaoticWarpQueues();
         }
     }
 
@@ -3776,6 +3855,20 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 return "no-full-support";
             }
             return "no-safe-landing";
+        }
+    }
+
+    private record ChaoticWarpBounds(double minX, double maxX, double minZ, double maxZ) {
+        private boolean contains(Location location) {
+            return contains(location.getX(), location.getZ());
+        }
+
+        private boolean contains(double x, double z) {
+            return x >= minX && x <= maxX && z >= minZ && z <= maxZ;
+        }
+
+        private String describe() {
+            return Math.floor(minX) + ".." + Math.ceil(maxX) + "," + Math.floor(minZ) + ".." + Math.ceil(maxZ);
         }
     }
 
