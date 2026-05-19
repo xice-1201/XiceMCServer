@@ -1984,19 +1984,46 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         player.closeInventory();
     }
 
-    private boolean teleportToClaimTotem(Player player, ClaimRegion claim) {
+    private void startClaimTotemTeleport(Player player, ClaimRegion claim) {
+        TeleportTarget firstCheck = validateClaimTotemTeleport(player, claim);
+        if (!firstCheck.allowed()) {
+            send(player, firstCheck.message());
+            return;
+        }
+        send(player, message("teleport-countdown-started", "&e传送将在 3 秒后开始。"));
+        String claimId = claim.id;
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (!player.isOnline()) {
+                return;
+            }
+            ClaimRegion current = claims.get(claimId);
+            if (current == null) {
+                send(player, message("ring-claim-missing"));
+                return;
+            }
+            TeleportTarget secondCheck = validateClaimTotemTeleport(player, current);
+            if (!secondCheck.allowed()) {
+                send(player, secondCheck.message());
+                return;
+            }
+            if (!player.teleport(secondCheck.destination())) {
+                send(player, message("teleport-failed", "&c传送失败，请稍后再试。"));
+                return;
+            }
+            send(player, message("teleport-success", "&a已传送至领地 {claim}。"), "claim", current.name);
+        }, 60L);
+    }
+
+    private TeleportTarget validateClaimTotemTeleport(Player player, ClaimRegion claim) {
         if (claim.blocks(ClaimFeature.TELEPORT, player)) {
-            send(player, message("teleport-no-permission", "&c你没有传送至该领地的权限。"));
-            return false;
+            return TeleportTarget.failure(message("teleport-no-permission", "&c你没有传送至该领地的权限。"));
         }
         if (claim.totemBinding == null) {
-            send(player, message("teleport-no-totem", "&c该领地尚未绑定领地图腾，无法传送。"));
-            return false;
+            return TeleportTarget.failure(message("teleport-no-totem", "&c该领地尚未绑定领地图腾，无法传送。"));
         }
         World world = Bukkit.getWorld(claim.totemBinding.world);
         if (world == null) {
-            send(player, message("teleport-world-missing", "&c领地图腾所在世界不可用，无法传送。"));
-            return false;
+            return TeleportTarget.failure(message("teleport-world-missing", "&c领地图腾所在世界不可用，无法传送。"));
         }
         Block bottom = world.getBlockAt(claim.totemBinding.x, claim.totemBinding.y, claim.totemBinding.z);
         Block top = bottom.getRelative(BlockFace.UP);
@@ -2005,27 +2032,21 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 || !isClaimTotemBlock(top)
                 || !totemId(bottom).equals(totemId(top))
                 || (!boundTotemId.isBlank() && !boundTotemId.equals(totemId(bottom)))) {
-            send(player, message("teleport-totem-missing", "&c该领地绑定的领地图腾不存在或不完整，无法传送。"));
-            return false;
+            return TeleportTarget.failure(message("teleport-totem-missing", "&c该领地绑定的领地图腾不存在或不完整，无法传送。"));
         }
         BlockFace front = totemFront(bottom);
         Block target = bottom.getRelative(front);
         if (!hasTeleportSpace(target)) {
-            send(player, message("teleport-target-blocked", "&c领地图腾前方没有足够空间，无法传送。"));
-            return false;
+            return TeleportTarget.failure(message("teleport-target-blocked", "&c领地图腾前方没有足够空间，无法传送。"));
         }
         if (!hasTeleportFloor(target)) {
-            send(player, message("teleport-target-unsafe", "&c领地图腾前方脚下不安全，无法传送。"));
-            return false;
+            return TeleportTarget.failure(message("teleport-target-unsafe", "&c领地图腾前方脚下不安全，无法传送。"));
         }
         Location destination = target.getLocation().add(0.5, 0.0, 0.5);
-        destination.setDirection(bottom.getLocation().add(0.5, 1.0, 0.5).toVector().subtract(destination.toVector()));
-        if (!player.teleport(destination)) {
-            send(player, message("teleport-failed", "&c传送失败，请稍后再试。"));
-            return false;
-        }
-        send(player, message("teleport-success", "&a已传送至领地 {claim}。"), "claim", claim.name);
-        return true;
+        Location current = player.getLocation();
+        destination.setYaw(current.getYaw());
+        destination.setPitch(current.getPitch());
+        return TeleportTarget.success(destination);
     }
 
     private boolean hasTeleportSpace(Block feet) {
@@ -2084,7 +2105,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if ("teleport".equals(action)) {
-            teleportToClaimTotem(player, claim);
+            startClaimTotemTeleport(player, claim);
             menu.session.discardOnClose = true;
             ringSessions.remove(player.getUniqueId());
             player.closeInventory();
@@ -2560,8 +2581,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ENTITY_INTERACT("entity-interact", Material.ARMOR_STAND, "&e交互实体", PermissionState.DENY_UNTRUSTED),
         WATER_BUCKET("water-bucket", Material.WATER_BUCKET, "&e使用水桶", PermissionState.DENY_UNTRUSTED),
         LAVA_BUCKET("lava-bucket", Material.LAVA_BUCKET, "&e使用岩浆桶", PermissionState.DENY_UNTRUSTED),
-        WATER_FLOW("water-flow", Material.WATER, "&e水流动", PermissionState.ALLOW_ALL),
-        LAVA_FLOW("lava-flow", Material.LAVA, "&e岩浆流动", PermissionState.ALLOW_ALL),
+        WATER_FLOW("water-flow", Material.LIGHT_BLUE_STAINED_GLASS_PANE, "&e水流动", PermissionState.ALLOW_ALL),
+        LAVA_FLOW("lava-flow", Material.ORANGE_STAINED_GLASS_PANE, "&e岩浆流动", PermissionState.ALLOW_ALL),
         FIRE("fire", Material.FLINT_AND_STEEL, "&e火焰蔓延和燃烧破坏", PermissionState.DENY_UNTRUSTED),
         EXPLOSION("explosion", Material.TNT, "&e爆炸破坏方块", PermissionState.DENY_UNTRUSTED),
         PISTON_USE("piston-use", Material.PISTON, "&e领地内使用活塞", PermissionState.ALLOW_ALL),
@@ -2754,6 +2775,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     && y == bottom.getY()
                     && z == bottom.getZ()
                     && (id.isBlank() || totemId.isBlank() || id.equals(totemId));
+        }
+    }
+
+    private record TeleportTarget(boolean allowed, Location destination, String message) {
+        private static TeleportTarget success(Location destination) {
+            return new TeleportTarget(true, destination, "");
+        }
+
+        private static TeleportTarget failure(String message) {
+            return new TeleportTarget(false, null, message);
         }
     }
 
