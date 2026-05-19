@@ -1763,7 +1763,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private void applyTotemAuraEffect(Player player, PotionEffectType type, int amplifier) {
         PotionEffect current = player.getPotionEffect(type);
         if (current != null && (current.getAmplifier() > amplifier
-                || (current.getAmplifier() == amplifier && current.getDuration() > TOTEM_AURA_PERIOD_TICKS))) {
+                || (current.getAmplifier() == amplifier && current.getDuration() > TOTEM_AURA_DURATION_TICKS))) {
             return;
         }
         player.addPotionEffect(new PotionEffect(type, TOTEM_AURA_DURATION_TICKS, amplifier, true, false, true), true);
