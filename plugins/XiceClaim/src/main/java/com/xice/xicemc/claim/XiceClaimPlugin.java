@@ -2,8 +2,10 @@ package com.xice.xicemc.claim;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -107,13 +109,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private static final long CHAOTIC_WARP_SUPPRESSION_MILLIS = 15L * 60L * 1000L;
     private static final int CHAOTIC_WARP_EFFECT_DURATION_TICKS = 20 * 20;
     private static final int CHAOTIC_WARP_RANDOM_ATTEMPTS = 64;
+    private static final int CHAOTIC_WARP_QUEUE_EXTRA_SIZE = 2;
     private static final double TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED = 0.0009D;
 
     private final Map<UUID, Selection> selections = new HashMap<>();
     private final Map<String, ClaimRegion> claims = new HashMap<>();
     private final Map<UUID, RingSession> ringSessions = new HashMap<>();
     private final Map<UUID, PendingTeleport> pendingTeleports = new HashMap<>();
+    private final Map<String, ChaoticWarpQueue> chaoticWarpQueues = new HashMap<>();
     private BukkitTask totemAuraTask;
+    private int maxOnlineSinceStart;
     private File claimsFile;
     private FileConfiguration claimsConfig;
     private NamespacedKey ringKey;
@@ -156,6 +161,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         getServer().getPluginManager().registerEvents(this, this);
         Bukkit.getScheduler().runTask(this, this::refreshLoadedTotemBlocks);
         totemAuraTask = Bukkit.getScheduler().runTaskTimer(this, this::applyTotemAuras, TOTEM_AURA_PERIOD_TICKS, TOTEM_AURA_PERIOD_TICKS);
+        maxOnlineSinceStart = Bukkit.getOnlinePlayers().size();
+        topUpChaoticWarpQueues();
         var command = getCommand("claim");
         if (command != null) {
             command.setExecutor(this);
@@ -177,6 +184,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             totemAuraTask.cancel();
             totemAuraTask = null;
         }
+        releaseChaoticWarpQueueTickets();
     }
 
     private void initializeKeys() {
@@ -768,6 +776,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
+        maxOnlineSinceStart = Math.max(maxOnlineSinceStart, Bukkit.getOnlinePlayers().size());
+        topUpChaoticWarpQueues();
         event.getPlayer().discoverRecipe(ringRecipeKey);
         event.getPlayer().discoverRecipe(chaoticWarpCoreRecipeKey);
         if (hasClaimRing(event.getPlayer())) {
@@ -2469,7 +2479,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         PendingTeleport pending = new PendingTeleport(null);
         pendingTeleports.put(player.getUniqueId(), pending);
         pending.particleTask = startTeleportParticles(player);
-        startChaoticWarpSearch(player, pending);
+        topUpChaoticWarpQueue(player.getWorld());
         pending.teleportTask = Bukkit.getScheduler().runTaskLater(this, () -> {
             PendingTeleport currentPending = pendingTeleports.get(player.getUniqueId());
             if (currentPending != pending) {
@@ -2484,18 +2494,24 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 send(player, message("chaotic-warp-no-level", "&c经验等级不足，紊乱跃迁失败。"));
                 return;
             }
-            Location destination = currentPending.chaoticDestination;
-            if (destination == null) {
+            ConsumedWarpDestination consumed = consumeChaoticWarpDestination(player);
+            if (consumed == null) {
                 finishPendingTeleport(player);
-                send(player, message("chaotic-warp-no-target", "&c没有找到可用的随机落点，紊乱跃迁失败。"));
+                topUpChaoticWarpQueue(player.getWorld());
+                send(player, message("chaotic-warp-no-target", "&d晶核内似乎空空如也……"));
                 return;
             }
             Location departure = player.getLocation();
+            Location destination = consumed.location();
             finishPendingTeleport(player);
             if (!player.teleport(destination)) {
+                releaseChaoticWarpDestination(consumed.destination());
+                topUpChaoticWarpQueue(player.getWorld());
                 send(player, message("teleport-failed", "&c传送失败，请稍后再试。"));
                 return;
             }
+            releaseChaoticWarpDestination(consumed.destination());
+            topUpChaoticWarpQueue(destination.getWorld());
             if (player.getGameMode() != GameMode.CREATIVE) {
                 player.setLevel(player.getLevel() - 1);
             }
@@ -2507,14 +2523,39 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }, 60L);
     }
 
-    private void startChaoticWarpSearch(Player player, PendingTeleport pending) {
-        if (!player.isOnline() || pendingTeleports.get(player.getUniqueId()) != pending || pending.chaoticDestination != null) {
+    private void topUpChaoticWarpQueues() {
+        for (World world : Bukkit.getWorlds()) {
+            topUpChaoticWarpQueue(world);
+        }
+    }
+
+    private void topUpChaoticWarpQueue(World world) {
+        if (world == null) {
             return;
         }
-        if (pending.chaoticSearchAttempts >= CHAOTIC_WARP_RANDOM_ATTEMPTS) {
+        ChaoticWarpQueue queue = chaoticWarpQueue(world);
+        if (queue.filling || queue.destinations.size() >= chaoticWarpQueueTargetSize()) {
             return;
         }
-        World world = player.getWorld();
+        queue.filling = true;
+        queue.searchAttempts = 0;
+        searchChaoticWarpDestination(world, queue);
+    }
+
+    private void searchChaoticWarpDestination(World world, ChaoticWarpQueue queue) {
+        if (!isEnabled()) {
+            queue.filling = false;
+            return;
+        }
+        if (queue.destinations.size() >= chaoticWarpQueueTargetSize()) {
+            queue.filling = false;
+            return;
+        }
+        if (queue.searchAttempts >= CHAOTIC_WARP_RANDOM_ATTEMPTS) {
+            queue.filling = false;
+            Bukkit.getScheduler().runTaskLater(this, () -> topUpChaoticWarpQueue(world), 100L);
+            return;
+        }
         WorldBorder border = world.getWorldBorder();
         Location center = border.getCenter();
         double radius = Math.max(1.0D, border.getSize() / 2.0D - 1.0D);
@@ -2525,22 +2566,127 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ThreadLocalRandom random = ThreadLocalRandom.current();
         int x = (int) Math.floor(random.nextDouble(minX, maxX));
         int z = (int) Math.floor(random.nextDouble(minZ, maxZ));
-        pending.chaoticSearchAttempts++;
+        queue.searchAttempts++;
         world.getChunkAtAsync(x >> 4, z >> 4, true).whenComplete((chunk, throwable) -> Bukkit.getScheduler().runTask(this, () -> {
-            if (!player.isOnline() || pendingTeleports.get(player.getUniqueId()) != pending || pending.chaoticDestination != null) {
+            if (!isEnabled() || queue != chaoticWarpQueues.get(world.getName())) {
                 return;
             }
             if (throwable != null || chunk == null || !world.isChunkLoaded(chunk.getX(), chunk.getZ())) {
-                startChaoticWarpSearch(player, pending);
+                searchChaoticWarpDestination(world, queue);
                 return;
             }
-            Location destination = findSafeRandomDestination(world, x, z, player.getLocation());
+            Location destination = findSafeRandomDestination(world, x, z, new Location(world, 0.0D, 0.0D, 0.0D));
             if (destination != null && border.isInside(destination)) {
-                pending.chaoticDestination = destination;
+                WarpDestination warpDestination = new WarpDestination(
+                        world.getName(),
+                        destination.getBlockX(),
+                        destination.getBlockY(),
+                        destination.getBlockZ(),
+                        chunk.getX(),
+                        chunk.getZ());
+                retainChaoticWarpDestination(warpDestination);
+                queue.destinations.addLast(warpDestination);
+                queue.searchAttempts = 0;
+                queue.filling = false;
+                topUpChaoticWarpQueue(world);
                 return;
             }
-            startChaoticWarpSearch(player, pending);
+            searchChaoticWarpDestination(world, queue);
         }));
+    }
+
+    private ConsumedWarpDestination consumeChaoticWarpDestination(Player player) {
+        ChaoticWarpQueue queue = chaoticWarpQueue(player.getWorld());
+        WarpDestination destination;
+        while ((destination = queue.destinations.pollFirst()) != null) {
+            Location location = validateQueuedWarpDestination(player, destination);
+            if (location != null) {
+                return new ConsumedWarpDestination(destination, location);
+            }
+            releaseChaoticWarpDestination(destination);
+        }
+        return null;
+    }
+
+    private Location validateQueuedWarpDestination(Player player, WarpDestination destination) {
+        World world = Bukkit.getWorld(destination.world);
+        if (world == null || !world.equals(player.getWorld()) || !world.isChunkLoaded(destination.chunkX, destination.chunkZ)) {
+            return null;
+        }
+        Block feet = world.getBlockAt(destination.x, destination.y, destination.z);
+        Location location = feet.getLocation().add(0.5D, 0.0D, 0.5D);
+        if (!world.getWorldBorder().isInside(location) || !hasTeleportSpace(feet) || !hasTeleportFloor(feet)) {
+            return null;
+        }
+        location.setYaw(player.getLocation().getYaw());
+        location.setPitch(player.getLocation().getPitch());
+        return location;
+    }
+
+    private ChaoticWarpQueue chaoticWarpQueue(World world) {
+        return chaoticWarpQueues.computeIfAbsent(world.getName(), ignored -> new ChaoticWarpQueue());
+    }
+
+    private int chaoticWarpQueueTargetSize() {
+        return Math.max(0, maxOnlineSinceStart) + CHAOTIC_WARP_QUEUE_EXTRA_SIZE;
+    }
+
+    private void retainChaoticWarpDestination(WarpDestination destination) {
+        World world = Bukkit.getWorld(destination.world);
+        if (world == null) {
+            return;
+        }
+        ChaoticWarpQueue queue = chaoticWarpQueue(world);
+        long key = chunkKey(destination.chunkX, destination.chunkZ);
+        int current = queue.chunkTicketCounts.getOrDefault(key, 0);
+        if (current == 0) {
+            world.addPluginChunkTicket(destination.chunkX, destination.chunkZ, this);
+        }
+        queue.chunkTicketCounts.put(key, current + 1);
+    }
+
+    private void releaseChaoticWarpDestination(WarpDestination destination) {
+        World world = Bukkit.getWorld(destination.world);
+        if (world == null) {
+            return;
+        }
+        ChaoticWarpQueue queue = chaoticWarpQueues.get(world.getName());
+        if (queue == null) {
+            return;
+        }
+        long key = chunkKey(destination.chunkX, destination.chunkZ);
+        int current = queue.chunkTicketCounts.getOrDefault(key, 0);
+        if (current <= 1) {
+            queue.chunkTicketCounts.remove(key);
+            world.removePluginChunkTicket(destination.chunkX, destination.chunkZ, this);
+        } else {
+            queue.chunkTicketCounts.put(key, current - 1);
+        }
+    }
+
+    private void releaseChaoticWarpQueueTickets() {
+        for (Map.Entry<String, ChaoticWarpQueue> entry : chaoticWarpQueues.entrySet()) {
+            World world = Bukkit.getWorld(entry.getKey());
+            if (world == null) {
+                continue;
+            }
+            for (long key : entry.getValue().chunkTicketCounts.keySet()) {
+                world.removePluginChunkTicket(chunkX(key), chunkZ(key), this);
+            }
+        }
+        chaoticWarpQueues.clear();
+    }
+
+    private long chunkKey(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) ^ (chunkZ & 0xffffffffL);
+    }
+
+    private int chunkX(long key) {
+        return (int) (key >> 32);
+    }
+
+    private int chunkZ(long key) {
+        return (int) key;
     }
 
     private Location findSafeRandomDestination(World world, int x, int z, Location current) {
@@ -3441,12 +3587,23 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
     }
 
+    private record WarpDestination(String world, int x, int y, int z, int chunkX, int chunkZ) {
+    }
+
+    private record ConsumedWarpDestination(WarpDestination destination, Location location) {
+    }
+
+    private static final class ChaoticWarpQueue {
+        private final Deque<WarpDestination> destinations = new ArrayDeque<>();
+        private final Map<Long, Integer> chunkTicketCounts = new HashMap<>();
+        private boolean filling;
+        private int searchAttempts;
+    }
+
     private static final class PendingTeleport {
         private final String claimId;
         private BukkitTask teleportTask;
         private BukkitTask particleTask;
-        private Location chaoticDestination;
-        private int chaoticSearchAttempts;
 
         private PendingTeleport(String claimId) {
             this.claimId = claimId;
