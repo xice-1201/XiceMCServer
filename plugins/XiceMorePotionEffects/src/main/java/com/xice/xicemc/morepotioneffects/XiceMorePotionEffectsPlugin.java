@@ -74,7 +74,6 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             return;
         }
         event.setCancelled(true);
-        send(event.getPlayer(), message("teleport-blocked"));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
