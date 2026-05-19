@@ -76,7 +76,6 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
@@ -101,7 +100,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private final Map<String, ClaimRegion> claims = new HashMap<>();
     private final Map<UUID, RingSession> ringSessions = new HashMap<>();
     private final Map<UUID, PendingTeleport> pendingTeleports = new HashMap<>();
-    private final Map<UUID, WarpSuppression> warpSuppressions = new HashMap<>();
     private File claimsFile;
     private FileConfiguration claimsConfig;
     private NamespacedKey ringKey;
@@ -193,10 +191,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(sender, message("reload-complete"));
             return true;
         }
-        if ("inhibit".equalsIgnoreCase(args[0])) {
-            inhibitWarp(sender, args);
-            return true;
-        }
         if (!(sender instanceof Player player)) {
             send(sender, message("player-only"));
             return true;
@@ -238,71 +232,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             player.getWorld().dropItemNaturally(player.getLocation(), leftoverItem);
         }
         send(player, message(messageKey));
-    }
-
-    private void inhibitWarp(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("xiceclaim.admin")) {
-            send(sender, message("no-permission"));
-            return;
-        }
-        if (args.length < 3) {
-            send(sender, message("inhibit-usage", "&c用法：/claim inhibit <玩家> <时长>"));
-            return;
-        }
-        Player target = Bukkit.getPlayer(args[1]);
-        if (target == null) {
-            send(sender, message("player-not-found"), "player", args[1]);
-            return;
-        }
-        Long durationMillis = parseDurationMillis(args[2]);
-        if (durationMillis == null || durationMillis <= 0L) {
-            send(sender, message("inhibit-invalid-duration", "&c时长格式错误，请使用 30s、5m、1h 或纯数字秒。"));
-            return;
-        }
-        long expiresAt = System.currentTimeMillis() + durationMillis;
-        warpSuppressions.put(target.getUniqueId(), new WarpSuppression(expiresAt));
-        cancelPendingTeleport(target, message("teleport-blocked-warp-suppression", "&c你受到跃迁抑制影响，无法传送。"));
-        String durationText = formatDuration(durationMillis);
-        send(sender, message("inhibit-applied", "&a已赋予 {player} 跃迁抑制，持续 {duration}。"), "player", target.getName(), "duration", durationText);
-        send(target, message("inhibit-received", "&c你受到了跃迁抑制，持续 {duration}。"), "duration", durationText);
-    }
-
-    private Long parseDurationMillis(String value) {
-        String normalized = value.trim().toLowerCase(Locale.ROOT);
-        if (normalized.isEmpty()) {
-            return null;
-        }
-        long multiplier = 1000L;
-        String number = normalized;
-        char suffix = normalized.charAt(normalized.length() - 1);
-        if (suffix == 's' || suffix == 'm' || suffix == 'h') {
-            number = normalized.substring(0, normalized.length() - 1);
-            multiplier = switch (suffix) {
-                case 'm' -> 60_000L;
-                case 'h' -> 3_600_000L;
-                default -> 1000L;
-            };
-        }
-        try {
-            long amount = Long.parseLong(number);
-            if (amount <= 0L || amount > Long.MAX_VALUE / multiplier) {
-                return null;
-            }
-            return amount * multiplier;
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
-    private String formatDuration(long durationMillis) {
-        long totalSeconds = Math.max(1L, durationMillis / 1000L);
-        if (totalSeconds % 3600L == 0L) {
-            return (totalSeconds / 3600L) + " 小时";
-        }
-        if (totalSeconds % 60L == 0L) {
-            return (totalSeconds / 60L) + " 分钟";
-        }
-        return totalSeconds + " 秒";
     }
 
     private boolean canUseAction(Player player, String action) {
@@ -733,16 +662,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (event.getEntity() instanceof Player player && isClaimRing(event.getItem().getItemStack())) {
             Bukkit.getScheduler().runTask(this, () -> unlockTotemRecipe(player));
         }
-    }
-
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onPlayerTeleport(PlayerTeleportEvent event) {
-        if (!hasWarpSuppression(event.getPlayer())) {
-            return;
-        }
-        event.setCancelled(true);
-        cancelPendingTeleport(event.getPlayer(), null);
-        send(event.getPlayer(), message("teleport-blocked-warp-suppression", "&c你受到跃迁抑制影响，无法传送。"));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -2198,22 +2117,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
     }
 
-    private boolean hasWarpSuppression(Player player) {
-        WarpSuppression suppression = warpSuppressions.get(player.getUniqueId());
-        if (suppression == null) {
-            return false;
-        }
-        if (suppression.expiresAt <= System.currentTimeMillis()) {
-            warpSuppressions.remove(player.getUniqueId());
-            return false;
-        }
-        return true;
-    }
-
     private TeleportTarget validateClaimTotemTeleport(Player player, ClaimRegion claim) {
-        if (hasWarpSuppression(player)) {
-            return TeleportTarget.failure(message("teleport-blocked-warp-suppression", "&c你受到跃迁抑制影响，无法传送。"));
-        }
         if (claim.blocks(ClaimFeature.TELEPORT, player)) {
             return TeleportTarget.failure(message("teleport-no-permission", "&c你没有传送至该领地的权限。"));
         }
@@ -2746,26 +2650,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             String prefix = args[0].toLowerCase(Locale.ROOT);
-            return List.of("help", "give", "inhibit", "reload").stream()
+            return List.of("help", "give", "reload").stream()
                     .filter(value -> value.startsWith(prefix))
                     .toList();
         }
         if (args.length == 2 && "give".equalsIgnoreCase(args[0])) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
             return List.of("ring", "totem").stream()
-                    .filter(value -> value.startsWith(prefix))
-                    .toList();
-        }
-        if (args.length == 2 && "inhibit".equalsIgnoreCase(args[0])) {
-            String prefix = args[1].toLowerCase(Locale.ROOT);
-            return Bukkit.getOnlinePlayers().stream()
-                    .map(Player::getName)
-                    .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
-                    .toList();
-        }
-        if (args.length == 3 && "inhibit".equalsIgnoreCase(args[0])) {
-            String prefix = args[2].toLowerCase(Locale.ROOT);
-            return List.of("30s", "1m", "5m", "10m").stream()
                     .filter(value -> value.startsWith(prefix))
                     .toList();
         }
@@ -2998,9 +2889,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private static TeleportTarget failure(String message) {
             return new TeleportTarget(false, null, message);
         }
-    }
-
-    private record WarpSuppression(long expiresAt) {
     }
 
     private static final class PendingTeleport {
