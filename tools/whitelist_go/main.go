@@ -163,6 +163,15 @@ type claim struct {
 	SizeZ      int
 	Members    []string
 	MemberName map[string]string
+	Totem      *claimTotem
+}
+
+type claimTotem struct {
+	ID    string
+	World string
+	X     int
+	Y     int
+	Z     int
 }
 
 type publicData struct {
@@ -1254,6 +1263,8 @@ func parseClaimsYAML(text string) []claim {
 				}
 			case "member-names":
 				currentMap = "member-names"
+			case "totem":
+				currentMap = "totem"
 			default:
 				setClaimScalar(current, key, yamlScalar(value))
 			}
@@ -1261,6 +1272,10 @@ func parseClaimsYAML(text string) []claim {
 		}
 		if indent >= 6 && currentMap == "member-names" {
 			current.MemberName[canonicalUUID(key)] = yamlScalar(value)
+			continue
+		}
+		if indent >= 6 && currentMap == "totem" {
+			setClaimTotemScalar(current, key, yamlScalar(value))
 		}
 	}
 	if current != nil && current.Name != "" {
@@ -1295,6 +1310,24 @@ func setClaimScalar(c *claim, key, value string) {
 	}
 }
 
+func setClaimTotemScalar(c *claim, key, value string) {
+	if c.Totem == nil {
+		c.Totem = &claimTotem{}
+	}
+	switch strings.ReplaceAll(key, "-", "_") {
+	case "id":
+		c.Totem.ID = value
+	case "world":
+		c.Totem.World = value
+	case "x":
+		c.Totem.X = atoi(value)
+	case "y":
+		c.Totem.Y = atoi(value)
+	case "z":
+		c.Totem.Z = atoi(value)
+	}
+}
+
 func normalizeClaim(c *claim) {
 	if c.OwnerName == "" {
 		c.OwnerName = "unknown"
@@ -1308,6 +1341,9 @@ func normalizeClaim(c *claim) {
 	c.SizeZ = c.MaxZ - c.MinZ + 1
 	if c.MemberName == nil {
 		c.MemberName = map[string]string{}
+	}
+	if c.Totem != nil && c.Totem.World == "" {
+		c.Totem.World = c.World
 	}
 }
 
@@ -2128,6 +2164,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <p>世界：{{.World}}</p>
   <p>坐标：{{.MinX}},{{.MinY}},{{.MinZ}} 到 {{.MaxX}},{{.MaxY}},{{.MaxZ}}</p>
   <p>大小：{{.SizeX}} x {{.SizeY}} x {{.SizeZ}}</p>
+  {{if .Totem}}<p>领地图腾：{{.Totem.World}} {{.Totem.X}},{{.Totem.Y}},{{.Totem.Z}}</p>{{else}}<p>领地图腾：未绑定</p>{{end}}
 </article>
 {{end}}
 

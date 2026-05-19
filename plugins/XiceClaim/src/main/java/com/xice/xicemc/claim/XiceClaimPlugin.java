@@ -114,6 +114,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey totemIdKey;
     private NamespacedKey totemPartKey;
     private NamespacedKey totemFrontKey;
+    private NamespacedKey totemClaimIdKey;
     private NamespacedKey totemOwnerUuidKey;
     private NamespacedKey totemOwnerNameKey;
     private NamespacedKey totemPlacedAtKey;
@@ -154,6 +155,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         totemIdKey = new NamespacedKey(this, "claim_totem_id");
         totemPartKey = new NamespacedKey(this, "claim_totem_part");
         totemFrontKey = new NamespacedKey(this, "claim_totem_front");
+        totemClaimIdKey = new NamespacedKey(this, "claim_totem_claim_id");
         totemOwnerUuidKey = new NamespacedKey(this, "claim_totem_owner_uuid");
         totemOwnerNameKey = new NamespacedKey(this, "claim_totem_owner_name");
         totemPlacedAtKey = new NamespacedKey(this, "claim_totem_placed_at");
@@ -1166,6 +1168,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         setTotemBlockData(top, "top", front);
         markTotemBlock(bottom, totemId, "bottom", front, player, placedAt);
         markTotemBlock(top, totemId, "top", front, player, placedAt);
+        tryBindClaimTotem(bottom, top, totemId);
         if (player.getGameMode() != GameMode.CREATIVE) {
             consumeOneTotem(player, event.getHand());
         }
@@ -1200,10 +1203,57 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         data.set(totemIdKey, PersistentDataType.STRING, totemId);
         data.set(totemPartKey, PersistentDataType.STRING, part);
         data.set(totemFrontKey, PersistentDataType.STRING, front.name().toLowerCase(Locale.ROOT));
+        data.remove(totemClaimIdKey);
         data.set(totemOwnerUuidKey, PersistentDataType.STRING, ownerUuid);
         data.set(totemOwnerNameKey, PersistentDataType.STRING, ownerName);
         data.set(totemPlacedAtKey, PersistentDataType.LONG, placedAt);
         tileState.update(true, false);
+    }
+
+    private void markTotemClaim(Block bottom, String claimId) {
+        markTotemClaimBlock(bottom, claimId);
+        Block top = bottom.getRelative(BlockFace.UP);
+        if (isClaimTotemBlock(top) && totemId(bottom).equals(totemId(top))) {
+            markTotemClaimBlock(top, claimId);
+        }
+    }
+
+    private void markTotemClaimBlock(Block block, String claimId) {
+        BlockState state = block.getState();
+        if (!(state instanceof TileState tileState)) {
+            return;
+        }
+        PersistentDataContainer data = tileState.getPersistentDataContainer();
+        if (claimId == null || claimId.isBlank()) {
+            data.remove(totemClaimIdKey);
+        } else {
+            data.set(totemClaimIdKey, PersistentDataType.STRING, claimId);
+        }
+        tileState.update(true, false);
+    }
+
+    private void tryBindClaimTotem(Block bottom, Block top, String totemId) {
+        ClaimRegion claim = claimContainingTotem(bottom, top);
+        if (claim == null || claim.totemBinding != null || !totemString(bottom, totemClaimIdKey).isBlank()) {
+            return;
+        }
+        TotemBinding binding = new TotemBinding(totemId, bottom.getWorld().getName(), bottom.getX(), bottom.getY(), bottom.getZ());
+        claim.totemBinding = binding;
+        markTotemClaim(bottom, claim.id);
+        saveClaims();
+        Player owner = Bukkit.getPlayer(claim.ownerUuid);
+        if (owner != null) {
+            send(owner, message("totem-bound", "&a领地图腾已绑定至领地 {claim}。"), "claim", claim.name);
+        }
+    }
+
+    private ClaimRegion claimContainingTotem(Block bottom, Block top) {
+        ClaimRegion bottomClaim = claimAt(bottom.getLocation());
+        ClaimRegion topClaim = claimAt(top.getLocation());
+        if (bottomClaim == null || topClaim == null || !bottomClaim.id.equals(topClaim.id)) {
+            return null;
+        }
+        return bottomClaim;
     }
 
     private void removeTotemDisplays(Block bottom, String totemId) {
@@ -1256,11 +1306,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
         String ownerUuid = totemString(bottom, totemOwnerUuidKey);
         String ownerName = totemString(bottom, totemOwnerNameKey);
+        String claimId = totemString(bottom, totemClaimIdKey);
         long placedAt = totemLong(bottom, totemPlacedAtKey);
         setTotemBlockData(bottom, "bottom", front);
         setTotemBlockData(top, "top", front);
         markTotemBlock(bottom, id, "bottom", front, ownerUuid, ownerName, placedAt);
         markTotemBlock(top, id, "top", front, ownerUuid, ownerName, placedAt);
+        markTotemClaim(bottom, claimId);
     }
 
     private void setTotemBlockData(Block block, String part, BlockFace front) {
@@ -1372,6 +1424,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         Block top = bottom.getRelative(BlockFace.UP);
         Block above = top.getRelative(BlockFace.UP);
         Location dropLocation = bottom.getLocation().add(0.5, 0.5, 0.5);
+        unbindClaimTotem(bottom);
         removeTotemDisplays(bottom, id);
         if (isClaimTotemBlock(top) && id.equals(totemId(top))) {
             top.setType(Material.AIR, false);
@@ -1383,6 +1436,29 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             bottom.getWorld().dropItemNaturally(dropLocation, createClaimTotem());
         }
         collapseUnsupportedTotemsAbove(above);
+    }
+
+    private void unbindClaimTotem(Block bottom) {
+        String claimId = totemString(bottom, totemClaimIdKey);
+        String totemId = totemId(bottom);
+        ClaimRegion claim = claimId.isBlank() ? null : claims.get(claimId);
+        if (claim == null) {
+            claim = claimBoundToTotem(bottom, totemId);
+        }
+        if (claim == null || claim.totemBinding == null || !claim.totemBinding.matches(bottom, totemId)) {
+            return;
+        }
+        claim.totemBinding = null;
+        saveClaims();
+    }
+
+    private ClaimRegion claimBoundToTotem(Block bottom, String totemId) {
+        for (ClaimRegion claim : claims.values()) {
+            if (claim.totemBinding != null && claim.totemBinding.matches(bottom, totemId)) {
+                return claim;
+            }
+        }
+        return null;
     }
 
     private void collapseUnsupportedTotemsAbove(Block possibleBottom) {
@@ -2130,6 +2206,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             claimsConfig.set(path + ".min-z", claim.minZ);
             claimsConfig.set(path + ".max-z", claim.maxZ);
             claimsConfig.set(path + ".created-at", claim.createdAt);
+            claimsConfig.set(path + ".totem", null);
+            if (claim.totemBinding != null) {
+                claimsConfig.set(path + ".totem.id", claim.totemBinding.id);
+                claimsConfig.set(path + ".totem.world", claim.totemBinding.world);
+                claimsConfig.set(path + ".totem.x", claim.totemBinding.x);
+                claimsConfig.set(path + ".totem.y", claim.totemBinding.y);
+                claimsConfig.set(path + ".totem.z", claim.totemBinding.z);
+            }
             claimsConfig.set(path + ".allowed-features", null);
             claimsConfig.set(path + ".disabled-features", null);
             claimsConfig.set(path + ".feature-states", null);
@@ -2480,6 +2564,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
     }
 
+    private record TotemBinding(String id, String world, int x, int y, int z) {
+        private boolean matches(Block bottom, String totemId) {
+            return world.equals(bottom.getWorld().getName())
+                    && x == bottom.getX()
+                    && y == bottom.getY()
+                    && z == bottom.getZ()
+                    && (id.isBlank() || totemId.isBlank() || id.equals(totemId));
+        }
+    }
+
     private static final class ClaimRegion {
         private final String id;
         private final String name;
@@ -2496,6 +2590,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private final Set<UUID> members;
         private final Map<UUID, String> memberNames;
         private final Map<String, PermissionState> featureStates;
+        private TotemBinding totemBinding;
 
         private ClaimRegion(
                 String id,
@@ -2512,7 +2607,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 long createdAt,
                 Set<UUID> members,
                 Map<UUID, String> memberNames,
-                Map<String, PermissionState> featureStates
+                Map<String, PermissionState> featureStates,
+                TotemBinding totemBinding
         ) {
             this.id = id;
             this.name = name;
@@ -2529,6 +2625,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             this.members = members;
             this.memberNames = memberNames;
             this.featureStates = featureStates;
+            this.totemBinding = totemBinding;
         }
 
         private static ClaimRegion fromSelection(
@@ -2554,7 +2651,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     System.currentTimeMillis(),
                     new HashSet<>(),
                     new HashMap<>(),
-                    new HashMap<>());
+                    new HashMap<>(),
+                    null);
         }
 
         private static ClaimRegion fromConfig(String id, ConfigurationSection section) {
@@ -2597,6 +2695,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     featureStates.putIfAbsent(feature.id, PermissionState.DENY_UNTRUSTED);
                 }
             }
+            TotemBinding totemBinding = null;
+            ConfigurationSection totemSection = section.getConfigurationSection("totem");
+            if (totemSection != null) {
+                String totemId = totemSection.getString("id", "");
+                String totemWorld = totemSection.getString("world", section.getString("world", "main"));
+                totemBinding = new TotemBinding(
+                        totemId,
+                        totemWorld,
+                        totemSection.getInt("x"),
+                        totemSection.getInt("y"),
+                        totemSection.getInt("z"));
+            }
             return new ClaimRegion(
                     id,
                     section.getString("name", id),
@@ -2612,7 +2722,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     section.getLong("created-at", System.currentTimeMillis()),
                     members,
                     memberNames,
-                    featureStates);
+                    featureStates,
+                    totemBinding);
         }
 
         private boolean contains(Location location) {
@@ -2687,7 +2798,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     createdAt,
                     members,
                     memberNames,
-                    featureStates);
+                    featureStates,
+                    totemBinding);
         }
 
         private int sizeX() {

@@ -93,6 +93,12 @@ claims:
     max-x: 5
     max-y: 6
     max-z: 7
+    totem:
+      id: totem-1
+      world: main
+      x: 2
+      y: 3
+      z: 4
     members:
       - 12345678-90ab-cdef-1234-567890abcdee
     member-names:
@@ -111,6 +117,9 @@ claims:
 	}
 	if len(claim.Members) != 1 || claim.MemberName["12345678-90ab-cdef-1234-567890abcdee"] != "Other" {
 		t.Fatalf("unexpected members: %#v", claim)
+	}
+	if claim.Totem == nil || claim.Totem.ID != "totem-1" || claim.Totem.World != "main" || claim.Totem.X != 2 || claim.Totem.Y != 3 || claim.Totem.Z != 4 {
+		t.Fatalf("unexpected totem: %#v", claim.Totem)
 	}
 }
 
