@@ -860,7 +860,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (!(event.getInventory().getHolder() instanceof RingMenu menu)) {
+            ItemStack anvilResult = isAnvilResultClick(event) && isClaimRing(event.getCurrentItem())
+                    ? event.getCurrentItem().clone()
+                    : null;
             Bukkit.getScheduler().runTask(this, () -> {
+                if (anvilResult != null) {
+                    applyAnvilRingRename(player, anvilResult);
+                }
                 synchronizePlayerRingNames(player);
                 if (shouldSynchronizeInventory(event.getInventory())) {
                     synchronizeInventoryRingNames(event.getInventory(), null);
@@ -879,6 +885,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         handleRingMenuClick(player, menu, event.getSlot());
+    }
+
+    private boolean isAnvilResultClick(InventoryClickEvent event) {
+        return event.getInventory().getType().name().endsWith("ANVIL")
+                && event.getClickedInventory() != null
+                && event.getClickedInventory().equals(event.getInventory())
+                && event.getRawSlot() == 2;
     }
 
     @EventHandler(priority = EventPriority.HIGH)
@@ -3261,6 +3274,21 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         saveClaims();
         synchronizeBoundRingNames(renamed);
         return renamed;
+    }
+
+    private void applyAnvilRingRename(Player player, ItemStack ring) {
+        if (!isClaimRing(ring)) {
+            return;
+        }
+        String claimId = ring.getItemMeta().getPersistentDataContainer().get(ringClaimIdKey, PersistentDataType.STRING);
+        if (claimId == null || claimId.isBlank()) {
+            return;
+        }
+        ClaimRegion claim = claims.get(claimId);
+        if (claim == null || !canRenameClaim(player, claim)) {
+            return;
+        }
+        synchronizeRingName(player, ring, claim);
     }
 
     private void synchronizeBoundRingNames(ClaimRegion claim) {
