@@ -1241,10 +1241,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         claim.totemBinding = binding;
         markTotemClaim(bottom, claim.id);
         saveClaims();
-        Player owner = Bukkit.getPlayer(claim.ownerUuid);
-        if (owner != null) {
-            send(owner, message("totem-bound", "&a领地图腾已绑定至领地 {claim}。"), "claim", claim.name);
-        }
+        notifyClaimOwner(claim, message("totem-bound", "&a领地图腾已绑定至领地 {claim}。"));
     }
 
     private ClaimRegion claimContainingTotem(Block bottom, Block top) {
@@ -1450,6 +1447,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         claim.totemBinding = null;
         saveClaims();
+        notifyClaimOwner(claim, message("totem-unbound", "&e领地图腾已与领地 {claim} 解绑。"));
     }
 
     private ClaimRegion claimBoundToTotem(Block bottom, String totemId) {
@@ -1459,6 +1457,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             }
         }
         return null;
+    }
+
+    private void notifyClaimOwner(ClaimRegion claim, String text) {
+        Player owner = Bukkit.getPlayer(claim.ownerUuid);
+        if (owner != null) {
+            send(owner, text, "claim", claim.name);
+        }
     }
 
     private void collapseUnsupportedTotemsAbove(Block possibleBottom) {
@@ -1563,7 +1568,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(player, message("ring-claim-missing"));
             return;
         }
-        if (!claim.canUse(player)) {
+        if (!claim.canUse(player) && claim.blocks(ClaimFeature.TELEPORT, player)) {
             send(player, message("no-permission"));
             return;
         }
@@ -1708,18 +1713,24 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         Inventory inventory = menu.inventory;
         inventory.clear();
         boolean canManage = canManage(menu.session, claim);
+        boolean canUse = claim.canUse(menu.session.playerUuid) || menu.session.admin;
         inventory.setItem(4, menuItem(Material.FLINT, "&b" + claim.name, List.of(
                 "&7所有者：&f" + claim.ownerName,
                 "&7世界：&f" + claim.world,
                 "&7坐标：&f" + claim.minX + "," + claim.minY + "," + claim.minZ + " 到 " + claim.maxX + "," + claim.maxY + "," + claim.maxZ)));
         if (canManage) {
             setAction(menu, 20, "view:members", playerHeadItem(claim.ownerUuid, "&a管理授权玩家", List.of("&7添加或移除可以使用该领地的玩家。")));
-            setAction(menu, 22, "view:features", menuItem(Material.COMPARATOR, "&e管理领地功能", List.of("&7切换领地内的保护规则。")));
-            setAction(menu, 40, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
+            setAction(menu, 22, "teleport", menuItem(Material.ENDER_PEARL, "&b传送至领地", List.of("&7传送到领地图腾正前方。")));
+            setAction(menu, 24, "view:features", menuItem(Material.COMPARATOR, "&e管理领地功能", List.of("&7切换领地内的保护规则。")));
+            setAction(menu, 40, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
+            setAction(menu, 42, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
         } else {
-            inventory.setItem(22, menuItem(Material.OAK_SIGN, "&e已授权领地", List.of("&7你可以使用该领地，但不能管理权限或删除领地。")));
+            inventory.setItem(20, menuItem(Material.OAK_SIGN, canUse ? "&e已授权领地" : "&e公开传送领地", List.of("&7你不能管理该领地。")));
+            setAction(menu, 22, "teleport", menuItem(Material.ENDER_PEARL, "&b传送至领地", List.of("&7传送到领地图腾正前方。")));
+            if (canUse) {
+                setAction(menu, 24, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
+            }
         }
-        setAction(menu, 24, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
     }
 
     private void renderManageMembersMenu(RingMenu menu, ClaimRegion claim) {
@@ -1758,7 +1769,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         int[] slots = {
                 10, 11, 12, 13, 14, 15, 16,
                 19, 20, 21, 22, 23, 24, 25,
-                31
+                30, 32
         };
         ClaimFeature[] features = ClaimFeature.values();
         for (int index = 0; index < features.length && index < slots.length; index++) {
@@ -1878,6 +1889,58 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         player.closeInventory();
     }
 
+    private boolean teleportToClaimTotem(Player player, ClaimRegion claim) {
+        if (claim.blocks(ClaimFeature.TELEPORT, player)) {
+            send(player, message("teleport-no-permission", "&c你没有传送至该领地的权限。"));
+            return false;
+        }
+        if (claim.totemBinding == null) {
+            send(player, message("teleport-no-totem", "&c该领地尚未绑定领地图腾，无法传送。"));
+            return false;
+        }
+        World world = Bukkit.getWorld(claim.totemBinding.world);
+        if (world == null) {
+            send(player, message("teleport-world-missing", "&c领地图腾所在世界不可用，无法传送。"));
+            return false;
+        }
+        Block bottom = world.getBlockAt(claim.totemBinding.x, claim.totemBinding.y, claim.totemBinding.z);
+        Block top = bottom.getRelative(BlockFace.UP);
+        String boundTotemId = claim.totemBinding.id;
+        if (!isClaimTotemBottom(bottom)
+                || !isClaimTotemBlock(top)
+                || !totemId(bottom).equals(totemId(top))
+                || (!boundTotemId.isBlank() && !boundTotemId.equals(totemId(bottom)))) {
+            send(player, message("teleport-totem-missing", "&c该领地绑定的领地图腾不存在或不完整，无法传送。"));
+            return false;
+        }
+        BlockFace front = totemFront(bottom);
+        Block target = bottom.getRelative(front);
+        if (!isSafeTeleportTarget(target)) {
+            send(player, message("teleport-target-blocked", "&c领地图腾前方没有足够空间，无法传送。"));
+            return false;
+        }
+        Location destination = target.getLocation().add(0.5, 0.0, 0.5);
+        destination.setDirection(bottom.getLocation().add(0.5, 1.0, 0.5).toVector().subtract(destination.toVector()));
+        if (!player.teleport(destination)) {
+            send(player, message("teleport-failed", "&c传送失败，请稍后再试。"));
+            return false;
+        }
+        send(player, message("teleport-success", "&a已传送至领地 {claim}。"), "claim", claim.name);
+        return true;
+    }
+
+    private boolean isSafeTeleportTarget(Block feet) {
+        World world = feet.getWorld();
+        if (feet.getY() <= world.getMinHeight() || feet.getY() + 1 >= world.getMaxHeight()) {
+            return false;
+        }
+        Block head = feet.getRelative(BlockFace.UP);
+        Block floor = feet.getRelative(BlockFace.DOWN);
+        return feet.isPassable()
+                && head.isPassable()
+                && floor.getBlockData().isFaceSturdy(BlockFace.UP, BlockSupport.FULL);
+    }
+
     private void handleManageRingMenuClick(Player player, RingMenu menu, String action) {
         ClaimRegion claim = claims.get(menu.session.claimId);
         if (claim == null) {
@@ -1889,7 +1952,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(player, message("ring-claim-missing"));
             return;
         }
-        if (!claim.canUse(player)) {
+        if (!claim.canUse(player) && claim.blocks(ClaimFeature.TELEPORT, player)) {
             send(player, message("no-permission"));
             return;
         }
@@ -1904,10 +1967,22 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if ("preview".equals(action)) {
+            if (!claim.canUse(player)) {
+                send(player, message("no-permission"));
+                return;
+            }
             showClaimParticles(player, claim);
             menu.session.discardOnClose = true;
             ringSessions.remove(player.getUniqueId());
             player.closeInventory();
+            return;
+        }
+        if ("teleport".equals(action)) {
+            if (teleportToClaimTotem(player, claim)) {
+                menu.session.discardOnClose = true;
+                ringSessions.remove(player.getUniqueId());
+                player.closeInventory();
+            }
             return;
         }
         if ("delete-confirm".equals(action)) {
@@ -2387,7 +2462,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         ANIMAL_SPAWN("animal-spawn", Material.WHEAT, "&e领地内刷新动物", PermissionState.ALLOW_ALL),
         ANIMAL_DAMAGE("animal-damage", Material.LEATHER, "&e伤害动物", PermissionState.DENY_UNTRUSTED),
         MONSTER_SPAWN("monster-spawn", Material.ROTTEN_FLESH, "&e领地内刷新怪物", PermissionState.ALLOW_ALL),
-        MONSTER_DAMAGE("monster-damage", Material.IRON_SWORD, "&e伤害怪物", PermissionState.DENY_UNTRUSTED);
+        MONSTER_DAMAGE("monster-damage", Material.IRON_SWORD, "&e伤害怪物", PermissionState.DENY_UNTRUSTED),
+        TELEPORT("teleport", Material.ENDER_PEARL, "&e传送权限", PermissionState.DENY_UNTRUSTED);
 
         private final String id;
         private final Material material;
