@@ -99,7 +99,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private static final Material TOTEM_TOP_MATERIAL = Material.STRUCTURE_BLOCK;
     private static final int TOTEM_CORE_SLOT = 4;
     private static final int TOTEM_AURA_PERIOD_TICKS = 200;
-    private static final int TOTEM_AURA_DURATION_TICKS = 300;
+    private static final int TOTEM_AURA_DURATION_TICKS = 500;
     private static final double TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED = 0.0009D;
 
     private final Map<UUID, Selection> selections = new HashMap<>();
