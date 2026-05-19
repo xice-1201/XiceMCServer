@@ -1816,18 +1816,19 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private void handleTotemMenuClick(Player player, TotemMenu menu, InventoryClickEvent event) {
-        event.setCancelled(true);
         Inventory inventory = event.getInventory();
         int rawSlot = event.getRawSlot();
         boolean clickedTopInventory = rawSlot >= 0 && rawSlot < inventory.getSize();
 
         if (!clickedTopInventory) {
             if (event.isShiftClick()) {
+                event.setCancelled(true);
                 moveOneCoreIntoTotemMenu(inventory, event.getClickedInventory(), event.getSlot(), event.getCurrentItem());
                 saveTotemMenu(menu, inventory);
             }
             return;
         }
+        event.setCancelled(true);
         if (rawSlot != TOTEM_CORE_SLOT) {
             return;
         }
