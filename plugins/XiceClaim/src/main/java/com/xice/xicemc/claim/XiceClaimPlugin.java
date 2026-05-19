@@ -91,6 +91,7 @@ import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.ShapelessRecipe;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.BlockStateMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
@@ -132,6 +133,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private FileConfiguration claimsConfig;
     private NamespacedKey ringKey;
     private NamespacedKey ringClaimIdKey;
+    private NamespacedKey ringClaimNameKey;
     private NamespacedKey ringWorldKey;
     private NamespacedKey ringX1Key;
     private NamespacedKey ringY1Key;
@@ -180,6 +182,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             command.setTabCompleter(this);
         }
         for (Player player : Bukkit.getOnlinePlayers()) {
+            synchronizePlayerRingNames(player);
             player.discoverRecipe(chaoticWarpCoreRecipeKey);
         }
         getLogger().info("XiceClaim enabled. Claims: " + claims.size());
@@ -202,6 +205,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private void initializeKeys() {
         ringKey = new NamespacedKey(this, "claim_ring");
         ringClaimIdKey = new NamespacedKey(this, "claim_ring_claim_id");
+        ringClaimNameKey = new NamespacedKey(this, "claim_ring_claim_name");
         ringWorldKey = new NamespacedKey(this, "claim_ring_world");
         ringX1Key = new NamespacedKey(this, "claim_ring_x1");
         ringY1Key = new NamespacedKey(this, "claim_ring_y1");
@@ -804,24 +808,37 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         topUpChaoticWarpQueues();
         event.getPlayer().discoverRecipe(ringRecipeKey);
         event.getPlayer().discoverRecipe(chaoticWarpCoreRecipeKey);
-        if (hasClaimRing(event.getPlayer())) {
-            unlockPostRingRecipes(event.getPlayer());
-        }
+        Bukkit.getScheduler().runTask(this, () -> {
+            synchronizePlayerRingNames(event.getPlayer());
+            if (hasClaimRing(event.getPlayer())) {
+                unlockPostRingRecipes(event.getPlayer());
+            }
+        });
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityPickupItem(EntityPickupItemEvent event) {
         if (event.getEntity() instanceof Player player && isClaimRing(event.getItem().getItemStack())) {
-            Bukkit.getScheduler().runTask(this, () -> unlockPostRingRecipes(player));
+            Bukkit.getScheduler().runTask(this, () -> {
+                synchronizePlayerRingNames(player);
+                unlockPostRingRecipes(player);
+            });
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onInventoryOpen(InventoryOpenEvent event) {
-        if (!getConfig().getBoolean("protection.container-open", true) || !(event.getPlayer() instanceof Player player)) {
+        if (!(event.getPlayer() instanceof Player player)) {
             return;
         }
         Inventory inventory = event.getInventory();
+        if (shouldSynchronizeInventory(inventory)) {
+            synchronizeInventoryRingNames(inventory, null);
+        }
+        synchronizePlayerRingNames(player);
+        if (!getConfig().getBoolean("protection.container-open", true)) {
+            return;
+        }
         Location location = inventory.getLocation();
         if (location == null) {
             return;
@@ -843,6 +860,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (!(event.getInventory().getHolder() instanceof RingMenu menu)) {
+            Bukkit.getScheduler().runTask(this, () -> {
+                synchronizePlayerRingNames(player);
+                if (shouldSynchronizeInventory(event.getInventory())) {
+                    synchronizeInventoryRingNames(event.getInventory(), null);
+                }
+                Inventory clickedInventory = event.getClickedInventory();
+                if (clickedInventory != null
+                        && clickedInventory != event.getInventory()
+                        && shouldSynchronizeInventory(clickedInventory)) {
+                    synchronizeInventoryRingNames(clickedInventory, null);
+                }
+            });
             return;
         }
         event.setCancelled(true);
@@ -865,6 +894,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         Bukkit.getScheduler().runTask(this, () -> {
+            synchronizePlayerRingNames(player);
             if (hasClaimRing(player)) {
                 unlockPostRingRecipes(player);
             }
@@ -874,6 +904,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (!(event.getInventory().getHolder() instanceof RingMenu menu)) {
+            if (shouldSynchronizeInventory(event.getInventory())) {
+                synchronizeInventoryRingNames(event.getInventory(), null);
+            }
             return;
         }
         RingSession session = ringSessions.get(player.getUniqueId());
@@ -1256,6 +1289,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private boolean canManage(RingSession session, ClaimRegion claim) {
         return claim.ownerUuid.equals(session.playerUuid) || session.admin;
+    }
+
+    private boolean canRenameClaim(Player player, ClaimRegion claim) {
+        return claim.ownerUuid.equals(player.getUniqueId());
     }
 
     private List<String> validateClaimShape(ClaimRegion claim) {
@@ -2151,10 +2188,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(player, message("no-permission"));
             return;
         }
-        if (canManage(player, claim)) {
+        if (canRenameClaim(player, claim)) {
             claim = synchronizeRingName(player, ring, claim);
         } else {
-            setRingDisplayName(ring, claim.name, true);
+            setBoundRingDisplayName(ring, claim.name);
         }
         writeRingToHand(player, ring, normalizeHand(hand));
         RingSession session = new RingSession(RingMenuMode.MANAGE, ring, null, normalizeHand(hand), player.getUniqueId(), player.getName(), player.hasPermission("xiceclaim.admin"));
@@ -3198,13 +3235,25 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private ClaimRegion synchronizeRingName(Player player, ItemStack ring, ClaimRegion claim) {
         String ringName = ringDisplayName(ring);
+        String syncedName = syncedClaimName(ring);
+        if (syncedName.isBlank()) {
+            setBoundRingDisplayName(ring, claim.name);
+            return claim;
+        }
+        if (ringName.equals(syncedName)) {
+            if (!claim.name.equals(syncedName)) {
+                setBoundRingDisplayName(ring, claim.name);
+            }
+            return claim;
+        }
         if (ringName.equals(claim.name) || !isValidClaimName(ringName)) {
+            setBoundRingDisplayName(ring, claim.name);
             return claim;
         }
         ClaimRegion duplicate = claimByName(ringName);
         if (duplicate != null && !duplicate.id.equals(claim.id)) {
             send(player, message("duplicate-name"), "claim", ringName);
-            setRingDisplayName(ring, claim.name, true);
+            setBoundRingDisplayName(ring, claim.name);
             return claim;
         }
         ClaimRegion renamed = claim.withName(ringName);
@@ -3220,18 +3269,23 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             for (int slot = 0; slot < inventory.getSize(); slot++) {
                 ItemStack item = inventory.getItem(slot);
                 if (isRingBoundToClaim(item, claim.id)) {
-                    setRingDisplayName(item, claim.name, true);
+                    setBoundRingDisplayName(item, claim.name);
                     inventory.setItem(slot, item);
                 }
             }
+            synchronizeInventoryRingNames(player.getEnderChest(), player.getUniqueId());
             ItemStack cursor = player.getItemOnCursor();
             if (isRingBoundToClaim(cursor, claim.id)) {
-                setRingDisplayName(cursor, claim.name, true);
+                setBoundRingDisplayName(cursor, claim.name);
                 player.setItemOnCursor(cursor);
             }
             RingSession session = ringSessions.get(player.getUniqueId());
             if (session != null && isRingBoundToClaim(session.ring, claim.id)) {
-                setRingDisplayName(session.ring, claim.name, true);
+                setBoundRingDisplayName(session.ring, claim.name);
+            }
+            Inventory openInventory = player.getOpenInventory().getTopInventory();
+            if (shouldSynchronizeInventory(openInventory)) {
+                synchronizeInventoryRingNames(openInventory, null);
             }
         }
     }
@@ -3244,6 +3298,91 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return claimId.equals(boundClaimId);
     }
 
+    private void synchronizePlayerRingNames(Player player) {
+        synchronizeInventoryRingNames(player.getInventory(), player.getUniqueId());
+        synchronizeInventoryRingNames(player.getEnderChest(), player.getUniqueId());
+        ItemStack cursor = player.getItemOnCursor();
+        if (synchronizeRingNamesInItem(cursor, player.getUniqueId())) {
+            player.setItemOnCursor(cursor);
+        }
+    }
+
+    private boolean shouldSynchronizeInventory(Inventory inventory) {
+        if (inventory == null || inventory.getHolder() instanceof RingMenu || inventory.getHolder() instanceof TotemMenu) {
+            return false;
+        }
+        String type = inventory.getType().name();
+        return !type.endsWith("ANVIL");
+    }
+
+    private boolean synchronizeInventoryRingNames(Inventory inventory, UUID holderUuid) {
+        if (inventory == null) {
+            return false;
+        }
+        boolean changed = false;
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (synchronizeRingNamesInItem(item, holderUuid)) {
+                inventory.setItem(slot, item);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private boolean synchronizeRingNamesInItem(ItemStack item, UUID holderUuid) {
+        if (item == null || item.getType().isAir()) {
+            return false;
+        }
+        boolean changed = synchronizeSingleRingName(item, holderUuid);
+        if (item.hasItemMeta() && item.getItemMeta() instanceof BlockStateMeta blockStateMeta) {
+            BlockState blockState = blockStateMeta.getBlockState();
+            if (blockState instanceof InventoryHolder holder && synchronizeInventoryRingNames(holder.getInventory(), null)) {
+                blockStateMeta.setBlockState(blockState);
+                item.setItemMeta(blockStateMeta);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private boolean synchronizeSingleRingName(ItemStack ring, UUID holderUuid) {
+        if (!isClaimRing(ring)) {
+            return false;
+        }
+        PersistentDataContainer data = ring.getItemMeta().getPersistentDataContainer();
+        String claimId = data.get(ringClaimIdKey, PersistentDataType.STRING);
+        if (claimId == null || claimId.isBlank()) {
+            return false;
+        }
+        ClaimRegion claim = claims.get(claimId);
+        if (claim == null) {
+            return false;
+        }
+        String syncedName = data.getOrDefault(ringClaimNameKey, PersistentDataType.STRING, "");
+        String displayName = ringDisplayName(ring);
+        boolean ownerMayHavePendingRename = holderUuid != null && claim.ownerUuid.equals(holderUuid);
+        if (syncedName.isBlank()) {
+            setBoundRingDisplayName(ring, claim.name);
+            return true;
+        }
+        if (!ownerMayHavePendingRename || displayName.equals(syncedName)) {
+            if (!displayName.equals(claim.name) || !syncedName.equals(claim.name)) {
+                setBoundRingDisplayName(ring, claim.name);
+                return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
+    private String syncedClaimName(ItemStack ring) {
+        if (!isClaimRing(ring)) {
+            return "";
+        }
+        return ring.getItemMeta().getPersistentDataContainer().getOrDefault(ringClaimNameKey, PersistentDataType.STRING, "");
+    }
+
     private void bindRing(ItemStack ring, ClaimRegion claim, RingDraft draft) {
         ItemMeta meta = ring.getItemMeta();
         meta.setDisplayName(color("&b" + claim.name));
@@ -3253,6 +3392,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         PersistentDataContainer data = meta.getPersistentDataContainer();
         data.set(ringKey, PersistentDataType.BYTE, (byte) 1);
         data.set(ringClaimIdKey, PersistentDataType.STRING, claim.id);
+        data.set(ringClaimNameKey, PersistentDataType.STRING, claim.name);
         ring.setItemMeta(meta);
         saveDraftToRing(ring, draft);
     }
@@ -3263,6 +3403,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         meta.setEnchantmentGlintOverride(false);
         applyRingItemModel(meta);
         meta.getPersistentDataContainer().remove(ringClaimIdKey);
+        meta.getPersistentDataContainer().remove(ringClaimNameKey);
+        ring.setItemMeta(meta);
+    }
+
+    private void setBoundRingDisplayName(ItemStack ring, String name) {
+        ItemMeta meta = ring.getItemMeta();
+        meta.setDisplayName(color("&b" + name));
+        meta.setEnchantmentGlintOverride(true);
+        applyRingItemModel(meta);
+        meta.getPersistentDataContainer().set(ringClaimNameKey, PersistentDataType.STRING, name);
         ring.setItemMeta(meta);
     }
 
