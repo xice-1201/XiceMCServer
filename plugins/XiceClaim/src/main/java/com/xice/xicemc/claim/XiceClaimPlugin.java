@@ -92,6 +92,7 @@ import org.bukkit.scheduler.BukkitTask;
 public final class XiceClaimPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final Pattern CLAIM_NAME_PATTERN = Pattern.compile("^[\\p{L}\\p{N}_-]{1,24}$");
     private static final Material TOTEM_ITEM_MATERIAL = Material.QUARTZ_BLOCK;
+    private static final Material TOTEM_CORE_ITEM_MATERIAL = Material.NETHER_BRICK;
     private static final Material TOTEM_BOTTOM_MATERIAL = Material.JIGSAW;
     private static final Material TOTEM_TOP_MATERIAL = Material.STRUCTURE_BLOCK;
     private static final double TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED = 0.0009D;
@@ -116,6 +117,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey totemKey;
     private NamespacedKey totemItemModelKey;
     private NamespacedKey totemRecipeKey;
+    private NamespacedKey totemCoreKey;
+    private NamespacedKey totemCoreItemModelKey;
+    private NamespacedKey totemCoreRecipeKey;
     private NamespacedKey totemIdKey;
     private NamespacedKey totemPartKey;
     private NamespacedKey totemFrontKey;
@@ -131,6 +135,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         saveDefaultConfig();
         registerClaimRingRecipe();
         registerClaimTotemRecipe();
+        registerTotemCoreRecipe();
         loadClaims();
         getServer().getPluginManager().registerEvents(this, this);
         Bukkit.getScheduler().runTask(this, this::refreshLoadedTotemBlocks);
@@ -165,6 +170,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         totemKey = new NamespacedKey(this, "claim_totem");
         totemItemModelKey = new NamespacedKey(this, "claim_totem");
         totemRecipeKey = new NamespacedKey(this, "claim_totem_recipe");
+        totemCoreKey = new NamespacedKey(this, "claim_totem_core");
+        totemCoreItemModelKey = new NamespacedKey(this, "claim_totem_core");
+        totemCoreRecipeKey = new NamespacedKey(this, "claim_totem_core_recipe");
         totemIdKey = new NamespacedKey(this, "claim_totem_id");
         totemPartKey = new NamespacedKey(this, "claim_totem_part");
         totemFrontKey = new NamespacedKey(this, "claim_totem_front");
@@ -227,6 +235,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             messageKey = "ring-given";
         } else if ("totem".equalsIgnoreCase(args[1])) {
             messageKey = "totem-given";
+        } else if ("core".equalsIgnoreCase(args[1])) {
+            messageKey = "totem-core-given";
         } else {
             send(sender, message("give-usage"));
             return;
@@ -235,9 +245,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             ItemStack item;
             if ("ring".equalsIgnoreCase(args[1])) {
                 item = createEmptyRing(ClaimPoint.from(target.getLocation()));
-                unlockTotemRecipe(target);
-            } else {
+                unlockPostRingRecipes(target);
+            } else if ("totem".equalsIgnoreCase(args[1])) {
                 item = createClaimTotem();
+            } else {
+                item = createTotemCore();
             }
             Map<Integer, ItemStack> leftover = target.getInventory().addItem(item);
             for (ItemStack leftoverItem : leftover.values()) {
@@ -566,7 +578,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (isClaimTotemItem(event.getItemInHand())) {
+        if (isClaimTotemItem(event.getItemInHand()) || isTotemCoreItem(event.getItemInHand())) {
             event.setCancelled(true);
             return;
         }
@@ -697,14 +709,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     public void onPlayerJoin(PlayerJoinEvent event) {
         event.getPlayer().discoverRecipe(ringRecipeKey);
         if (hasClaimRing(event.getPlayer())) {
-            unlockTotemRecipe(event.getPlayer());
+            unlockPostRingRecipes(event.getPlayer());
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityPickupItem(EntityPickupItemEvent event) {
         if (event.getEntity() instanceof Player player && isClaimRing(event.getItem().getItemStack())) {
-            Bukkit.getScheduler().runTask(this, () -> unlockTotemRecipe(player));
+            Bukkit.getScheduler().runTask(this, () -> unlockPostRingRecipes(player));
         }
     }
 
@@ -751,7 +763,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         Bukkit.getScheduler().runTask(this, () -> {
             if (hasClaimRing(player)) {
-                unlockTotemRecipe(player);
+                unlockPostRingRecipes(player);
             }
         });
         if (!(event.getInventory().getHolder() instanceof RingMenu menu)) {
@@ -771,7 +783,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH)
     public void onPrepareItemCraft(PrepareItemCraftEvent event) {
         for (ItemStack item : event.getInventory().getMatrix()) {
-            if (isClaimRing(item) || isClaimTotemItem(item)) {
+            if (isClaimRing(item) || isClaimTotemItem(item) || isTotemCoreItem(item)) {
                 event.getInventory().setResult(null);
                 return;
             }
@@ -781,13 +793,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onCraftItem(CraftItemEvent event) {
         for (ItemStack item : event.getInventory().getMatrix()) {
-            if (isClaimRing(item) || isClaimTotemItem(item)) {
+            if (isClaimRing(item) || isClaimTotemItem(item) || isTotemCoreItem(item)) {
                 event.setCancelled(true);
                 return;
             }
         }
         if (event.getWhoClicked() instanceof Player player && isClaimRing(event.getCurrentItem())) {
-            Bukkit.getScheduler().runTask(this, () -> unlockTotemRecipe(player));
+            Bukkit.getScheduler().runTask(this, () -> unlockPostRingRecipes(player));
         }
     }
 
@@ -801,7 +813,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             openRingMenu(event.getPlayer(), item, event.getHand());
             return;
         }
-        if (isClaimTotemItem(item)) {
+        if (isClaimTotemItem(item) || isTotemCoreItem(item)) {
             event.setCancelled(true);
             return;
         }
@@ -1193,6 +1205,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         getServer().addRecipe(recipe);
     }
 
+    private void registerTotemCoreRecipe() {
+        ShapedRecipe recipe = new ShapedRecipe(totemCoreRecipeKey, createTotemCore());
+        recipe.shape("NGN", "G*G", "NGN");
+        recipe.setIngredient('N', Material.NETHER_BRICK);
+        recipe.setIngredient('G', Material.GOLD_INGOT);
+        recipe.setIngredient('*', Material.NETHER_STAR);
+        getServer().removeRecipe(totemCoreRecipeKey);
+        getServer().addRecipe(recipe);
+    }
+
     private ItemStack createClaimTotem() {
         ItemStack totem = new ItemStack(TOTEM_ITEM_MATERIAL);
         ItemMeta meta = totem.getItemMeta();
@@ -1203,6 +1225,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         meta.getPersistentDataContainer().set(totemKey, PersistentDataType.BYTE, (byte) 1);
         totem.setItemMeta(meta);
         return totem;
+    }
+
+    private ItemStack createTotemCore() {
+        ItemStack core = new ItemStack(TOTEM_CORE_ITEM_MATERIAL);
+        ItemMeta meta = core.getItemMeta();
+        meta.setDisplayName(color("&d图腾核心"));
+        meta.setLore(List.of(color("&7可放入已绑定的领地图腾。")));
+        meta.setEnchantmentGlintOverride(false);
+        applyTotemCoreItemModel(meta);
+        meta.getPersistentDataContainer().set(totemCoreKey, PersistentDataType.BYTE, (byte) 1);
+        core.setItemMeta(meta);
+        return core;
     }
 
     private boolean isClaimRing(ItemStack item) {
@@ -1219,8 +1253,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return item.getItemMeta().getPersistentDataContainer().has(totemKey, PersistentDataType.BYTE);
     }
 
-    private void unlockTotemRecipe(Player player) {
+    private boolean isTotemCoreItem(ItemStack item) {
+        if (item == null || item.getType() != TOTEM_CORE_ITEM_MATERIAL || !item.hasItemMeta()) {
+            return false;
+        }
+        return item.getItemMeta().getPersistentDataContainer().has(totemCoreKey, PersistentDataType.BYTE);
+    }
+
+    private void unlockPostRingRecipes(Player player) {
         player.discoverRecipe(totemRecipeKey);
+        player.discoverRecipe(totemCoreRecipeKey);
     }
 
     private boolean hasClaimRing(Player player) {
@@ -2433,6 +2475,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         meta.setItemModel(totemItemModelKey);
     }
 
+    private void applyTotemCoreItemModel(ItemMeta meta) {
+        meta.setItemModel(totemCoreItemModelKey);
+    }
+
     private EquipmentSlot normalizeHand(EquipmentSlot hand) {
         return hand == EquipmentSlot.OFF_HAND ? EquipmentSlot.OFF_HAND : EquipmentSlot.HAND;
     }
@@ -2713,7 +2759,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if (args.length == 2 && "give".equalsIgnoreCase(args[0])) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
-            return List.of("ring", "totem").stream()
+            return List.of("ring", "totem", "core").stream()
                     .filter(value -> value.startsWith(prefix))
                     .toList();
         }
