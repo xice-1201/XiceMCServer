@@ -26,6 +26,7 @@ import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockSupport;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.TileState;
 import org.bukkit.command.Command;
@@ -519,9 +520,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         if (event.getItem() != null && isClaimTotemItem(event.getItem()) && isRightClick(event.getAction())) {
-            event.setCancelled(true);
-            placeClaimTotem(event);
-            return;
+            if (!shouldPassTotemUseToBlock(event)) {
+                event.setCancelled(true);
+                placeClaimTotem(event);
+                return;
+            }
         }
         if (event.getClickedBlock() != null && isClaimTotemBlock(event.getClickedBlock()) && isRightClick(event.getAction())) {
             event.setCancelled(true);
@@ -538,6 +541,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private boolean isRightClick(Action action) {
         return action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK;
+    }
+
+    private boolean shouldPassTotemUseToBlock(PlayerInteractEvent event) {
+        Block clicked = event.getClickedBlock();
+        return event.getAction() == Action.RIGHT_CLICK_BLOCK
+                && clicked != null
+                && clicked.getType().isInteractable()
+                && !event.getPlayer().isSneaking();
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -1331,6 +1342,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         Block bottom = totemBottom(block);
         String id = totemId(bottom);
         Block top = bottom.getRelative(BlockFace.UP);
+        Block above = top.getRelative(BlockFace.UP);
         Location dropLocation = bottom.getLocation().add(0.5, 0.5, 0.5);
         removeTotemDisplays(bottom, id);
         if (isClaimTotemBlock(top) && id.equals(totemId(top))) {
@@ -1341,6 +1353,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         if (dropItem) {
             bottom.getWorld().dropItemNaturally(dropLocation, createClaimTotem());
+        }
+        collapseUnsupportedTotemsAbove(above);
+    }
+
+    private void collapseUnsupportedTotemsAbove(Block possibleBottom) {
+        if (isClaimTotemBottom(possibleBottom) && !hasTotemSupport(possibleBottom)) {
+            collapseTotem(possibleBottom, true);
         }
     }
 
@@ -1401,7 +1420,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private boolean hasTotemSupport(Block bottom) {
         Block support = bottom.getRelative(BlockFace.DOWN);
-        return !support.isEmpty() && !support.isReplaceable();
+        return support.getBlockData().isFaceSturdy(BlockFace.UP, BlockSupport.FULL);
     }
 
     private boolean isBoundRing(ItemStack item) {
