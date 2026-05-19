@@ -1,0 +1,9 @@
+{
+  "multipart": [
+    {
+      "apply": {
+        "model": "xiceclaim:block/claim_totem_placed"
+      }
+    }
+  ]
+}

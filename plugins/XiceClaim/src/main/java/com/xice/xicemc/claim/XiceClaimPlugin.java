@@ -17,6 +17,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Color;
 import org.bukkit.GameMode;
+import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -52,6 +53,7 @@ import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.block.BlockPhysicsEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
@@ -87,7 +89,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private static final Pattern CLAIM_NAME_PATTERN = Pattern.compile("^[\\p{L}\\p{N}_-]{1,24}$");
     private static final Material TOTEM_ITEM_MATERIAL = Material.QUARTZ_BLOCK;
     private static final Material TOTEM_CARRIER_MATERIAL = Material.JUKEBOX;
-    private static final Material TOTEM_DISPLAY_MATERIAL = Material.BEACON;
+    private static final Material TOTEM_DISPLAY_MATERIAL = Material.JIGSAW;
 
     private final Map<UUID, Selection> selections = new HashMap<>();
     private final Map<String, ClaimRegion> claims = new HashMap<>();
@@ -123,6 +125,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         registerClaimTotemRecipe();
         loadClaims();
         getServer().getPluginManager().registerEvents(this, this);
+        Bukkit.getScheduler().runTask(this, this::refreshLoadedTotemDisplays);
         var command = getCommand("claim");
         if (command != null) {
             command.setExecutor(this);
@@ -1106,8 +1109,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         top.setType(TOTEM_CARRIER_MATERIAL, false);
         markTotemBlock(bottom, totemId, "bottom", player, placedAt);
         markTotemBlock(top, totemId, "top", player, placedAt);
-        spawnTotemDisplay(bottom, totemId, "bottom");
-        spawnTotemDisplay(top, totemId, "top");
+        spawnTotemDisplay(bottom, totemId);
         if (player.getGameMode() != GameMode.CREATIVE) {
             consumeOneTotem(player, event.getHand());
         }
@@ -1143,7 +1145,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         tileState.update(true, false);
     }
 
-    private void spawnTotemDisplay(Block block, String totemId, String part) {
+    private void spawnTotemDisplay(Block block, String totemId) {
         Location location = block.getLocation();
         BlockDisplay display = block.getWorld().spawn(location, BlockDisplay.class, entity -> {
             entity.setBlock(Bukkit.createBlockData(TOTEM_DISPLAY_MATERIAL));
@@ -1153,7 +1155,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             PersistentDataContainer data = entity.getPersistentDataContainer();
             data.set(totemDisplayKey, PersistentDataType.BYTE, (byte) 1);
             data.set(totemIdKey, PersistentDataType.STRING, totemId);
-            data.set(totemPartKey, PersistentDataType.STRING, part);
+            data.set(totemPartKey, PersistentDataType.STRING, "full");
         });
         display.setGravity(false);
     }
@@ -1161,15 +1163,47 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private void removeTotemDisplays(Block bottom, String totemId) {
         Location center = bottom.getLocation().add(0.5, 1.0, 0.5);
         for (Entity entity : bottom.getWorld().getNearbyEntities(center, 2.0, 2.5, 2.0)) {
-            if (!(entity instanceof BlockDisplay display)) {
-                continue;
-            }
-            PersistentDataContainer data = display.getPersistentDataContainer();
+            PersistentDataContainer data = entity.getPersistentDataContainer();
             if (data.has(totemDisplayKey, PersistentDataType.BYTE)
                     && totemId.equals(data.get(totemIdKey, PersistentDataType.STRING))) {
-                display.remove();
+                entity.remove();
             }
         }
+    }
+
+    private void refreshLoadedTotemDisplays() {
+        for (World world : Bukkit.getWorlds()) {
+            for (Chunk chunk : world.getLoadedChunks()) {
+                refreshTotemDisplays(chunk);
+            }
+        }
+    }
+
+    @EventHandler
+    public void onChunkLoad(ChunkLoadEvent event) {
+        refreshTotemDisplays(event.getChunk());
+    }
+
+    private void refreshTotemDisplays(Chunk chunk) {
+        for (BlockState state : chunk.getTileEntities()) {
+            Block block = state.getBlock();
+            if (isClaimTotemBottom(block)) {
+                refreshTotemDisplay(block);
+            }
+        }
+    }
+
+    private void refreshTotemDisplay(Block bottom) {
+        String id = totemId(bottom);
+        if (id.isEmpty()) {
+            return;
+        }
+        Block top = bottom.getRelative(BlockFace.UP);
+        if (!isClaimTotemBlock(top) || !id.equals(totemId(top))) {
+            return;
+        }
+        removeTotemDisplays(bottom, id);
+        spawnTotemDisplay(bottom, id);
     }
 
     private boolean isClaimTotemBlock(Block block) {
