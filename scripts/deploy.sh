@@ -6,6 +6,7 @@ RUNTIME_DIR="${XICEMC_RUNTIME_DIR:-/opt/xicemc/runtime}"
 SERVER_USER="${XICEMC_SERVER_USER:-minecraft}"
 SERVER_HOME="$(getent passwd "${SERVER_USER}" | cut -d: -f6)"
 BUILD_JAVA_HOME="${XICEMC_BUILD_JAVA_HOME:-/usr/lib/jvm/java-21-konajdk-21.0.10-1.oc9}"
+DEPLOY_REF="${XICEMC_DEPLOY_REF:-}"
 
 run_as_server_user() {
   if [[ "$(id -un)" == "${SERVER_USER}" ]]; then
@@ -21,10 +22,16 @@ if [[ ! -d "${REPO_DIR}/.git" ]]; then
 fi
 
 cd "${REPO_DIR}"
+if [[ -z "${DEPLOY_REF}" ]]; then
+  DEPLOY_REF="$(git branch --show-current)"
+fi
+if [[ -z "${DEPLOY_REF}" ]]; then
+  DEPLOY_REF="main"
+fi
 
 echo "Updating repository from GitHub..."
-run_as_server_user git -C "${REPO_DIR}" fetch origin main
-run_as_server_user git -C "${REPO_DIR}" pull --ff-only origin main
+run_as_server_user git -C "${REPO_DIR}" fetch origin "${DEPLOY_REF}"
+run_as_server_user git -C "${REPO_DIR}" pull --ff-only origin "${DEPLOY_REF}"
 
 echo "Applying server.properties template..."
 python3 "${REPO_DIR}/scripts/lib/apply-server-properties.py" \
