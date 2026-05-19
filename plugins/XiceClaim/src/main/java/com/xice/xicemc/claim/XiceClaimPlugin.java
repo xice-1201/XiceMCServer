@@ -602,6 +602,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerInteract(PlayerInteractEvent event) {
         if (event.getClickedBlock() != null && isClaimTotemBlock(event.getClickedBlock()) && isRightClick(event.getAction())) {
+            if (shouldPassTotemInteractionToBlockPlacement(event)) {
+                return;
+            }
+            if (event.getItem() != null && isClaimTotemItem(event.getItem()) && event.getPlayer().isSneaking()) {
+                event.setCancelled(true);
+                placeClaimTotem(event);
+                return;
+            }
             event.setCancelled(true);
             if (event.getHand() == EquipmentSlot.HAND) {
                 Player player = event.getPlayer();
@@ -633,6 +641,15 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private boolean isRightClick(Action action) {
         return action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK;
+    }
+
+    private boolean shouldPassTotemInteractionToBlockPlacement(PlayerInteractEvent event) {
+        ItemStack item = event.getItem();
+        return event.getAction() == Action.RIGHT_CLICK_BLOCK
+                && event.getPlayer().isSneaking()
+                && item != null
+                && item.getType().isBlock()
+                && !isClaimTotemItem(item);
     }
 
     private boolean shouldPassTotemUseToBlock(PlayerInteractEvent event) {
