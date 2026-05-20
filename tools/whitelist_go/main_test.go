@@ -93,6 +93,12 @@ claims:
     max-x: 5
     max-y: 6
     max-z: 7
+    totem:
+      id: totem-1
+      world: main
+      x: 2
+      y: 3
+      z: 4
     members:
       - 12345678-90ab-cdef-1234-567890abcdee
     member-names:
@@ -111,6 +117,9 @@ claims:
 	}
 	if len(claim.Members) != 1 || claim.MemberName["12345678-90ab-cdef-1234-567890abcdee"] != "Other" {
 		t.Fatalf("unexpected members: %#v", claim)
+	}
+	if claim.Totem == nil || claim.Totem.ID != "totem-1" || claim.Totem.World != "main" || claim.Totem.X != 2 || claim.Totem.Y != 3 || claim.Totem.Z != 4 {
+		t.Fatalf("unexpected totem: %#v", claim.Totem)
 	}
 }
 
@@ -178,7 +187,7 @@ func TestPublicTemplatesExecute(t *testing.T) {
 		Active: "public-home",
 		Public: publicData{SiteBaseURL: "http://127.0.0.1", SiteDomain: "xicemc.site"},
 	}
-	for _, name := range []string{"public", "publicTech", "publicPlugins", "publicOps", "publicChangelog"} {
+	for _, name := range []string{"public", "publicTech", "publicPlugins", "pluginXiceClaim", "pluginXiceAuditLog", "pluginXiceCommandControl", "pluginXiceMorePotionEffects", "pluginXiceTextArranger", "publicOps", "publicChangelog"} {
 		if err := templates.ExecuteTemplate(&bytes.Buffer{}, name, data); err != nil {
 			t.Fatalf("ExecuteTemplate(%s) error = %v", name, err)
 		}

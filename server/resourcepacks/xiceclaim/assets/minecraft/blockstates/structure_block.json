@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "mode=save": { "model": "xiceclaim:block/claim_totem_placed_top" },
+    "mode=load": { "model": "xiceclaim:block/claim_totem_placed_top", "y": 90 },
+    "mode=corner": { "model": "xiceclaim:block/claim_totem_placed_top", "y": 180 },
+    "mode=data": { "model": "xiceclaim:block/claim_totem_placed_top", "y": 270 }
+  }
+}

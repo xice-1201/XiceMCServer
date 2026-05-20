@@ -25,6 +25,7 @@ protection:
   block-interact: true
   container-open: true
   entity-interact: true
+  pvp: true
   entity-spawn: true
   bucket: true
   fire: true
@@ -36,8 +37,9 @@ messages:
   player-only: '&c该指令只能由玩家执行。'
   no-permission: '&c你没有管理该领地的权限。'
   usage:
-    - '&e/claim give ring &7获取领地戒指'
-    - '&e/claim give totem &7获取领地图腾'
+    - '&e/claim give ring [玩家|选择器] &7获取领地戒指'
+    - '&e/claim give totem [玩家|选择器] &7获取领地图腾'
+    - '&e/claim give core [玩家|选择器] &7获取图腾核心'
     - '&7领地创建与管理请使用领地戒指 UI。'
   command-disabled: '&c领地创建与管理指令已关闭，请使用领地戒指 UI。'
   invalid-position: '&c坐标格式错误，请使用 /claim pos1 [X Y Z] 或 /claim pos2 [X Y Z]。'
@@ -49,11 +51,25 @@ messages:
   selection-missing: '&c请先使用 /claim pos1 和 /claim pos2 选择两个角点。'
   selection-world-mismatch: '&c两个角点必须在同一个世界。'
   invalid-name: '&c领地名称只能包含文字、数字、下划线和短横线，长度 1-24。'
-  give-usage: '&c用法：/claim give <ring|totem>'
+  give-usage: '&c用法：/claim give <ring|totem|core> [玩家|选择器]'
+  give-summary: '&a已向 {count} 名玩家发放物品。'
   ring-given: '&a已获得领地戒指。'
   totem-given: '&a已获得领地图腾。'
+  totem-core-given: '&a已获得图腾核心。'
   ring-created: '&a领地 {claim} 创建成功，领地戒指已绑定。'
   ring-bound: '&a领地戒指已绑定至领地 {claim}。'
+  totem-bound: '&a领地图腾已绑定至领地 {claim}。'
+  totem-unbound: '&e领地图腾已与领地 {claim} 解绑。'
+  teleport-countdown-started: '&e传送将在 3 秒后开始。'
+  teleport-cancelled-moved: '&c传送已取消：你移动了。'
+  teleport-success: '&a已传送至领地 {claim}。'
+  teleport-no-permission: '&c你没有传送至该领地的权限。'
+  teleport-no-totem: '&c该领地尚未绑定领地图腾，无法传送。'
+  teleport-world-missing: '&c领地图腾所在世界不可用，无法传送。'
+  teleport-totem-missing: '&c该领地绑定的领地图腾不存在或不完整，无法传送。'
+  teleport-target-blocked: '&c领地图腾前方没有足够空间，无法传送。'
+  teleport-target-unsafe: '&c领地图腾前方脚下不安全，无法传送。'
+  teleport-failed: '&c传送失败，请稍后再试。'
   ring-claim-missing: '&c该领地戒指绑定的领地不存在，已恢复为空戒指。'
   ring-claim-deleted: '&a已删除领地 {claim}，领地戒指已恢复为空戒指。'
   duplicate-name: '&c已存在名为 {claim} 的领地。'
@@ -75,7 +91,7 @@ messages:
   deleted: '&a已删除领地 {claim}。'
   claim-not-found: '&c没有找到领地：{claim}'
   claim-not-found-owned: '&c没有找到你的领地：{claim}'
-  protected: '&c这里属于 {claim}，你没有操作权限。'
+  protected: '&c这里属于 {claim}，你没有 {feature} 权限。'
   claim-entered: '&7已进入领地 &a{claim}&7（所有者：{owner}）。'
   claim-left: '&7已离开领地 &e{claim}&7（所有者：{owner}）。'
   reload-complete: '&aXiceClaim 配置和领地数据已重新加载。'

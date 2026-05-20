@@ -48,40 +48,42 @@ var (
 )
 
 type config struct {
-	Host                     string
-	Port                     string
-	RconHost                 string
-	RconPort                 string
-	RconPassword             string
-	RuntimeDir               string
-	BackupDir                string
-	WhitelistPath            string
-	VerifyCodesPath          string
-	BlacklistPath            string
-	ClaimsPath               string
-	ServerLogPath            string
-	ServiceName              string
-	CommandControlConfigPath string
-	ClaimConfigPath          string
-	WebIconPath              string
-	WebFaviconPath           string
-	ResourcePackPath         string
-	ServerDocsPath           string
-	ServerDocsMaxLength      int
-	SessionSecret            string
-	PublicSiteBaseURL        string
-	PublicSiteDomain         string
-	ICPRecordNo              string
-	ICPRecordURL             string
-	PublicSecurityRecordNo   string
-	PublicSecurityRecordURL  string
-	ProtectedOwnerUUID       string
-	DBHost                   string
-	DBPort                   string
-	DBName                   string
-	DBUser                   string
-	DBPassword               string
-	AuditRetentionDays       int
+	Host                        string
+	Port                        string
+	RconHost                    string
+	RconPort                    string
+	RconPassword                string
+	RuntimeDir                  string
+	BackupDir                   string
+	WhitelistPath               string
+	VerifyCodesPath             string
+	BlacklistPath               string
+	ClaimsPath                  string
+	ServerLogPath               string
+	ServiceName                 string
+	CommandControlConfigPath    string
+	ClaimConfigPath             string
+	MorePotionEffectsConfigPath string
+	WebIconPath                 string
+	WebFaviconPath              string
+	ClaimTotemConceptPath       string
+	ResourcePackPath            string
+	ServerDocsPath              string
+	ServerDocsMaxLength         int
+	SessionSecret               string
+	PublicSiteBaseURL           string
+	PublicSiteDomain            string
+	ICPRecordNo                 string
+	ICPRecordURL                string
+	PublicSecurityRecordNo      string
+	PublicSecurityRecordURL     string
+	ProtectedOwnerUUID          string
+	DBHost                      string
+	DBPort                      string
+	DBName                      string
+	DBUser                      string
+	DBPassword                  string
+	AuditRetentionDays          int
 }
 
 type app struct {
@@ -162,6 +164,15 @@ type claim struct {
 	SizeZ      int
 	Members    []string
 	MemberName map[string]string
+	Totem      *claimTotem
+}
+
+type claimTotem struct {
+	ID    string
+	World string
+	X     int
+	Y     int
+	Z     int
 }
 
 type publicData struct {
@@ -230,40 +241,42 @@ func loadConfig() config {
 	runtimeDir := env("XICEMC_RUNTIME_DIR", "/opt/xicemc/runtime")
 	rconPassword := env("XICEMC_RCON_PASSWORD", "")
 	return config{
-		Host:                     env("WHITELIST_WEB_HOST", "0.0.0.0"),
-		Port:                     env("WHITELIST_WEB_PORT", "8080"),
-		RconHost:                 env("XICEMC_RCON_HOST", "127.0.0.1"),
-		RconPort:                 env("XICEMC_RCON_PORT", "25575"),
-		RconPassword:             rconPassword,
-		RuntimeDir:               runtimeDir,
-		BackupDir:                env("XICEMC_BACKUP_DIR", "/opt/xicemc/backups"),
-		WhitelistPath:            env("XICEMC_WHITELIST_PATH", filepath.Join(runtimeDir, "whitelist.json")),
-		VerifyCodesPath:          env("XICEMC_VERIFY_CODES_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "verification-codes.tsv")),
-		BlacklistPath:            env("XICEMC_BLACKLIST_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "blacklist.tsv")),
-		ClaimsPath:               env("XICEMC_CLAIMS_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "claims.yml")),
-		ServerLogPath:            env("XICEMC_SERVER_LOG_PATH", filepath.Join(runtimeDir, "logs", "latest.log")),
-		ServiceName:              env("XICEMC_SERVICE_NAME", "xicemc.service"),
-		CommandControlConfigPath: env("XICEMC_COMMAND_CONTROL_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceCommandControl", "config.yml")),
-		ClaimConfigPath:          env("XICEMC_CLAIM_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "config.yml")),
-		WebIconPath:              env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
-		WebFaviconPath:           env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
-		ResourcePackPath:         env("XICEMC_RESOURCE_PACK_PATH", filepath.Join(repoRoot, "server", "resourcepacks", "xiceclaim.zip")),
-		ServerDocsPath:           env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
-		ServerDocsMaxLength:      envInt("XICEMC_DOCS_MAX_LENGTH", 100000),
-		SessionSecret:            env("WHITELIST_WEB_SESSION_SECRET", rconPassword),
-		PublicSiteBaseURL:        strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "http://150.158.93.80"), "/"),
-		PublicSiteDomain:         env("XICEMC_PUBLIC_SITE_DOMAIN", "xicemc.site"),
-		ICPRecordNo:              env("XICEMC_ICP_RECORD_NO", ""),
-		ICPRecordURL:             env("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/"),
-		PublicSecurityRecordNo:   env("XICEMC_PUBLIC_SECURITY_RECORD_NO", ""),
-		PublicSecurityRecordURL:  env("XICEMC_PUBLIC_SECURITY_RECORD_URL", ""),
-		ProtectedOwnerUUID:       canonicalUUID(env("XICEMC_PROTECTED_OWNER_UUID", "")),
-		DBHost:                   env("XICE_AUDIT_DB_HOST", "127.0.0.1"),
-		DBPort:                   env("XICE_AUDIT_DB_PORT", "5432"),
-		DBName:                   env("XICE_AUDIT_DB_NAME", "xicemc_audit"),
-		DBUser:                   env("XICE_AUDIT_DB_USER", "xicemc_audit"),
-		DBPassword:               env("XICE_AUDIT_DB_PASSWORD", ""),
-		AuditRetentionDays:       envInt("XICE_AUDIT_RETENTION_DAYS", 3),
+		Host:                        env("WHITELIST_WEB_HOST", "0.0.0.0"),
+		Port:                        env("WHITELIST_WEB_PORT", "8080"),
+		RconHost:                    env("XICEMC_RCON_HOST", "127.0.0.1"),
+		RconPort:                    env("XICEMC_RCON_PORT", "25575"),
+		RconPassword:                rconPassword,
+		RuntimeDir:                  runtimeDir,
+		BackupDir:                   env("XICEMC_BACKUP_DIR", "/opt/xicemc/backups"),
+		WhitelistPath:               env("XICEMC_WHITELIST_PATH", filepath.Join(runtimeDir, "whitelist.json")),
+		VerifyCodesPath:             env("XICEMC_VERIFY_CODES_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "verification-codes.tsv")),
+		BlacklistPath:               env("XICEMC_BLACKLIST_PATH", filepath.Join(runtimeDir, "plugins", "XiceTextArranger", "blacklist.tsv")),
+		ClaimsPath:                  env("XICEMC_CLAIMS_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "claims.yml")),
+		ServerLogPath:               env("XICEMC_SERVER_LOG_PATH", filepath.Join(runtimeDir, "logs", "latest.log")),
+		ServiceName:                 env("XICEMC_SERVICE_NAME", "xicemc.service"),
+		CommandControlConfigPath:    env("XICEMC_COMMAND_CONTROL_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceCommandControl", "config.yml")),
+		ClaimConfigPath:             env("XICEMC_CLAIM_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "config.yml")),
+		MorePotionEffectsConfigPath: env("XICEMC_MORE_POTION_EFFECTS_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceMorePotionEffects", "config.yml")),
+		WebIconPath:                 env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
+		WebFaviconPath:              env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
+		ClaimTotemConceptPath:       env("XICEMC_CLAIM_TOTEM_CONCEPT_PATH", filepath.Join(repoRoot, "server", "assets", "xiceclaim-totem-concept.png")),
+		ResourcePackPath:            env("XICEMC_RESOURCE_PACK_PATH", filepath.Join(repoRoot, "server", "resourcepacks", "xiceclaim.zip")),
+		ServerDocsPath:              env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
+		ServerDocsMaxLength:         envInt("XICEMC_DOCS_MAX_LENGTH", 100000),
+		SessionSecret:               env("WHITELIST_WEB_SESSION_SECRET", rconPassword),
+		PublicSiteBaseURL:           strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "http://150.158.93.80"), "/"),
+		PublicSiteDomain:            env("XICEMC_PUBLIC_SITE_DOMAIN", "xicemc.site"),
+		ICPRecordNo:                 env("XICEMC_ICP_RECORD_NO", ""),
+		ICPRecordURL:                env("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/"),
+		PublicSecurityRecordNo:      env("XICEMC_PUBLIC_SECURITY_RECORD_NO", ""),
+		PublicSecurityRecordURL:     env("XICEMC_PUBLIC_SECURITY_RECORD_URL", ""),
+		ProtectedOwnerUUID:          canonicalUUID(env("XICEMC_PROTECTED_OWNER_UUID", "")),
+		DBHost:                      env("XICE_AUDIT_DB_HOST", "127.0.0.1"),
+		DBPort:                      env("XICE_AUDIT_DB_PORT", "5432"),
+		DBName:                      env("XICE_AUDIT_DB_NAME", "xicemc_audit"),
+		DBUser:                      env("XICE_AUDIT_DB_USER", "xicemc_audit"),
+		DBPassword:                  env("XICE_AUDIT_DB_PASSWORD", ""),
+		AuditRetentionDays:          envInt("XICE_AUDIT_RETENTION_DAYS", 3),
 	}
 }
 
@@ -313,6 +326,7 @@ func openDB(cfg config) (*sql.DB, error) {
 func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /favicon.png", a.fileHandler(a.cfg.WebIconPath, "image/png"))
 	mux.HandleFunc("GET /favicon.ico", a.fileHandler(a.cfg.WebFaviconPath, "image/x-icon"))
+	mux.HandleFunc("GET /assets/xiceclaim-totem-concept.png", a.fileHandler(a.cfg.ClaimTotemConceptPath, "image/png"))
 	mux.HandleFunc("GET /resourcepacks/xiceclaim.zip", a.fileHandler(a.cfg.ResourcePackPath, "application/zip"))
 	mux.HandleFunc("GET /", a.handlePublicHome)
 	mux.HandleFunc("GET /tech", a.handlePublicStatic("publicTech", "技术实现", "public-tech"))
@@ -320,6 +334,7 @@ func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /plugins/xiceclaim", a.handlePublicStatic("pluginXiceClaim", "XiceClaim 领地插件", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xiceauditlog", a.handlePublicStatic("pluginXiceAuditLog", "XiceAuditLog 审计插件", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xicecommandcontrol", a.handlePublicStatic("pluginXiceCommandControl", "XiceCommandControl 指令权限插件", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xicemorepotioneffects", a.handlePublicStatic("pluginXiceMorePotionEffects", "XiceMorePotionEffects 更多药水效果插件", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xicetextarranger", a.handlePublicStatic("pluginXiceTextArranger", "XiceTextArranger 文本交互插件", "public-plugins"))
 	mux.HandleFunc("GET /ops", a.handlePublicStatic("publicOps", "运维记录", "public-ops"))
 	mux.HandleFunc("GET /changelog", a.handlePublicStatic("publicChangelog", "更新日志", "public-changelog"))
@@ -1251,6 +1266,8 @@ func parseClaimsYAML(text string) []claim {
 				}
 			case "member-names":
 				currentMap = "member-names"
+			case "totem":
+				currentMap = "totem"
 			default:
 				setClaimScalar(current, key, yamlScalar(value))
 			}
@@ -1258,6 +1275,10 @@ func parseClaimsYAML(text string) []claim {
 		}
 		if indent >= 6 && currentMap == "member-names" {
 			current.MemberName[canonicalUUID(key)] = yamlScalar(value)
+			continue
+		}
+		if indent >= 6 && currentMap == "totem" {
+			setClaimTotemScalar(current, key, yamlScalar(value))
 		}
 	}
 	if current != nil && current.Name != "" {
@@ -1292,6 +1313,24 @@ func setClaimScalar(c *claim, key, value string) {
 	}
 }
 
+func setClaimTotemScalar(c *claim, key, value string) {
+	if c.Totem == nil {
+		c.Totem = &claimTotem{}
+	}
+	switch strings.ReplaceAll(key, "-", "_") {
+	case "id":
+		c.Totem.ID = value
+	case "world":
+		c.Totem.World = value
+	case "x":
+		c.Totem.X = atoi(value)
+	case "y":
+		c.Totem.Y = atoi(value)
+	case "z":
+		c.Totem.Z = atoi(value)
+	}
+}
+
 func normalizeClaim(c *claim) {
 	if c.OwnerName == "" {
 		c.OwnerName = "unknown"
@@ -1305,6 +1344,9 @@ func normalizeClaim(c *claim) {
 	c.SizeZ = c.MaxZ - c.MinZ + 1
 	if c.MemberName == nil {
 		c.MemberName = map[string]string{}
+	}
+	if c.Totem != nil && c.Totem.World == "" {
+		c.Totem.World = c.World
 	}
 }
 
@@ -1617,6 +1659,9 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .markdown-doc h3 { margin:20px 0 8px; font-size:17px; }
     .markdown-doc ul { margin:8px 0 18px; padding-left:22px; color:var(--muted); line-height:1.7; }
     .markdown-doc li { margin:4px 0; }
+    .concept-figure { margin:30px 0 0; }
+    .concept-figure img { display:block; width:min(100%,620px); height:auto; border:1px solid var(--line); border-radius:8px; background:#f8fafc; }
+    .concept-figure figcaption { margin-top:10px; color:var(--muted); font-size:14px; line-height:1.6; }
     .plugin-table { width:100%; max-width:900px; margin-top:22px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
     .plugin-table table { margin:0; }
     .plugin-table tr:last-child td { border-bottom:0; }
@@ -1781,6 +1826,9 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .markdown-doc h3 { margin:20px 0 8px; font-size:17px; }
     .markdown-doc ul { margin:8px 0 18px; padding-left:22px; color:var(--muted); line-height:1.7; }
     .markdown-doc li { margin:4px 0; }
+    .concept-figure { margin:30px 0 0; }
+    .concept-figure img { display:block; width:min(100%,620px); height:auto; border:1px solid var(--line); border-radius:8px; background:#f8fafc; }
+    .concept-figure figcaption { margin-top:10px; color:var(--muted); font-size:14px; line-height:1.6; }
     .plugin-table { width:100%; max-width:900px; margin-top:22px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
     .plugin-table table { margin:0; }
     .plugin-table tr:last-child td { border-bottom:0; }
@@ -1921,8 +1969,9 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
       <thead><tr><th>插件</th><th>功能定位</th><th>页面</th></tr></thead>
       <tbody>
         <tr><td><a href="/plugins/xiceauditlog">XiceAuditLog</a></td><td>记录关键玩家行为、方块变化、容器变动和登录会话。</td><td><a href="/plugins/xiceauditlog">查看介绍</a></td></tr>
-        <tr><td><a href="/plugins/xiceclaim">XiceClaim</a></td><td>提供三维领地保护、领地戒指 GUI、授权管理和范围预览。</td><td><a href="/plugins/xiceclaim">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xiceclaim">XiceClaim</a></td><td>提供三维领地保护、领地戒指 GUI、领地图腾、图腾核心光环和领地传送。</td><td><a href="/plugins/xiceclaim">查看介绍</a></td></tr>
         <tr><td><a href="/plugins/xicecommandcontrol">XiceCommandControl</a></td><td>用配置文件维护玩家可用的受控指令。</td><td><a href="/plugins/xicecommandcontrol">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xicemorepotioneffects">XiceMorePotionEffects</a></td><td>提供自定义药水效果、跃迁抑制和侧边栏剩余时间显示。</td><td><a href="/plugins/xicemorepotioneffects">查看介绍</a></td></tr>
         <tr><td><a href="/plugins/xicetextarranger">XiceTextArranger</a></td><td>重写白名单、正版验证、黑名单、进退服和维护广播等服务器提示。</td><td><a href="/plugins/xicetextarranger">查看介绍</a></td></tr>
       </tbody>
     </table>
@@ -1940,13 +1989,20 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     <div class="actions"><a class="button secondary" href="/plugins">返回插件列表</a></div>
     <p class="public-lead">XiceClaim 用于把服务器领地保护做成可视化、物品化的交互功能，让玩家不用记复杂命令也能创建和管理自己的建设空间。</p>
     <h2>功能概述</h2>
-    <p>XiceClaim 在服务器上表现为“领地戒指”和三维领地保护系统。玩家手持领地戒指右键即可打开虚拟容器 GUI，完成领地创建、绑定已有领地、查看范围和进入管理菜单等操作，不再需要依赖一组复杂的领地命令。</p>
+    <p>XiceClaim 在服务器上表现为“领地戒指”“领地图腾”和三维领地保护系统。玩家手持领地戒指右键即可打开虚拟容器 GUI，完成领地创建、绑定已有领地、查看范围和进入管理菜单等操作，不再需要依赖一组复杂的领地命令。</p>
     <p>插件按立方体保护空间，领地大小会受最小尺寸、最大水平尺寸、世界边界和重叠检测限制。创建、预览、查询和进入领地时，插件会用仅该玩家可见的粒子短暂显示领地范围，帮助确认边界位置。</p>
     <p>领地保护会拦截未授权玩家的常见破坏与交互行为，并处理火焰、爆炸、活塞跨越边界等会影响领地安全的事件。领地所有者可以在戒指管理菜单中调整授权成员和领地功能权限；每项功能可以处于允许所有人、禁止未授权或全体禁止状态。</p>
+    <p>领地图腾是领地的实体锚点。图腾放置后占用 <code>1 x 1 x 2</code> 空间，使用带插件标记的方块实体保存身份，并通过展示实体和资源包模型显示自定义外观。图腾放在领地内部时会自动绑定到该领地；绑定关系会写入领地数据，图腾被破坏、失去支撑或爆炸波及时会整体回收并同步解绑。</p>
+    <p>绑定了领地图腾的领地支持传送。玩家通过绑定领地的戒指进入管理菜单后，可以传送到图腾正前方；传送会先进行倒计时和粒子施法，期间移动会取消，真正传送前还会再次检查图腾是否存在、目标空间是否安全以及玩家是否拥有对应领地权限。</p>
+    <p>图腾核心是可放入领地图腾的增强物品。已放入核心且图腾仍完整绑定时，领地内玩家会周期性获得夜视、抗火、水下呼吸、速度、抗性提升、生命恢复、急迫、力量和伤害吸收等短时光环效果。该效果只在玩家位于对应领地内时刷新。</p>
     <h2>部署方式</h2>
-    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceClaim.jar</code>。</p>
-    <p>插件运行时配置目录为 <code>/opt/xicemc/runtime/plugins/XiceClaim/</code>。主要配置文件是 <code>config.yml</code>，包含领地数量、尺寸限制、世界边界、粒子预览参数、默认保护策略、<code>/claim give</code> 发放权限和提示文案。领地数据保存为 <code>/opt/xicemc/runtime/plugins/XiceClaim/claims.yml</code>。</p>
-    <p>领地戒指使用服务器资源包中的自定义图标；玩家侧能看到的物品外观由资源包提供，插件侧负责识别领地戒指物品、保存绑定数据并处理右键交互。</p>
+    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceClaim.jar</code>。插件声明了 <code>XiceMorePotionEffects</code> 软依赖：没有该插件时领地保护、戒指、图腾和核心光环仍可工作；有该插件时，领地图腾传送完成后会额外施加跃迁抑制，避免连续传送。</p>
+    <p>插件运行时配置目录为 <code>/opt/xicemc/runtime/plugins/XiceClaim/</code>。主要配置文件是 <code>config.yml</code>，包含领地数量、尺寸限制、世界边界、粒子预览参数、默认保护策略、<code>/claim give</code> 发放权限、领地图腾/图腾核心提示文案和传送提示文案。领地数据保存为 <code>/opt/xicemc/runtime/plugins/XiceClaim/claims.yml</code>，其中包含领地、成员、权限状态、戒指绑定、图腾绑定和图腾核心状态。</p>
+    <p>领地戒指、领地图腾和图腾核心使用服务器资源包中的自定义图标与模型。玩家侧能看到的物品和图腾外观由资源包提供，插件侧负责识别物品、保存绑定数据、处理右键交互、阻止原版合成误用并在玩家获得戒指后解锁后续配方。</p>
+    <figure class="concept-figure">
+      <img src="/assets/xiceclaim-totem-concept.png" alt="领地图腾概念图">
+      <figcaption>领地图腾概念图：以石英、金质镶边、嵌入式末影珍珠和浮空能量碎片构成的 1 x 1 x 2 竖向图腾。</figcaption>
+    </figure>
   </article>
 </section>
 {{end}}
@@ -2002,6 +2058,27 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceCommandControl.jar</code>。</p>
     <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceCommandControl/config.yml</code>。配置中包含 <code>default-allowed-commands</code> 和 <code>players</code> 两部分：前者声明所有玩家默认可用的受控指令，后者按玩家 UUID 配置专属指令列表，<code>name</code> 字段只用于显示和查询。</p>
     <p>修改配置后，插件可通过 <code>/xcc reload</code> 重新加载；<code>/xcc list [玩家名或 UUID]</code> 可用于在游戏内查看配置中的玩家授权。</p>
+  </article>
+</section>
+{{end}}
+
+{{define "pluginXiceMorePotionEffects"}}{{template "pageStart" .}}{{template "pluginXiceMorePotionEffectsContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceMorePotionEffectsContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  <article class="markdown-doc">
+    <p class="public-kicker">Custom Potion Effects</p>
+    <h1>XiceMorePotionEffects 更多药水效果插件</h1>
+    <div class="actions"><a class="button secondary" href="/plugins">返回插件列表</a></div>
+    <p class="public-lead">XiceMorePotionEffects 用于承载服务器自定义状态效果。当前版本重点实现“跃迁抑制”，让传送类能力可以被短时间冷却约束。</p>
+    <h2>功能概述</h2>
+    <p>插件目前提供一个自定义效果：<code>warp_suppression</code>，显示名称为“跃迁抑制”。玩家处于该效果期间再次触发传送会被拦截，并收到对应提示。插件会在玩家完成部分传送后自动施加短时跃迁抑制，例如领地图腾传送、传送门/末地折跃门传送，以及末影珍珠或消耗品类传送。</p>
+    <p>自定义效果不是原版药水效果，插件会自行记录到期时间。在线玩家身上存在自定义效果时，插件会显示侧边栏，按配置格式展示效果名称和剩余秒数；效果结束、玩家离线或插件关闭时会清理或恢复侧边栏状态。</p>
+    <p>插件提供 <code>/morepotioneffects</code> 主命令，别名为 <code>/mpe</code> 和 <code>/xicemorepotioneffects</code>。管理员可使用 <code>give</code>、<code>clear</code>、<code>check</code> 和 <code>reload</code> 管理自定义效果，时长参数支持纯秒数以及 <code>s</code>、<code>m</code>、<code>h</code> 后缀。</p>
+    <h2>部署方式</h2>
+    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceMorePotionEffects.jar</code>。</p>
+    <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceMorePotionEffects/config.yml</code>。配置中包含 <code>access</code> 权限分配、侧边栏标题与行格式，以及命令提示文案。当前 <code>give</code> 动作可通过配置授权给指定玩家，完整管理权限仍由 <code>xicemorepotioneffects.admin</code> 控制。</p>
+    <p>XiceClaim 会以软依赖方式检测该插件。两者同时安装时，领地图腾传送完成后会调用 XiceMorePotionEffects 施加 30 秒跃迁抑制；缺少该插件时，领地图腾传送只跳过这一额外冷却，不影响领地插件加载。</p>
   </article>
 </section>
 {{end}}
@@ -2115,6 +2192,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   <p>世界：{{.World}}</p>
   <p>坐标：{{.MinX}},{{.MinY}},{{.MinZ}} 到 {{.MaxX}},{{.MaxY}},{{.MaxZ}}</p>
   <p>大小：{{.SizeX}} x {{.SizeY}} x {{.SizeZ}}</p>
+  {{if .Totem}}<p>领地图腾：{{.Totem.World}} {{.Totem.X}},{{.Totem.Y}},{{.Totem.Z}}</p>{{else}}<p>领地图腾：未绑定</p>{{end}}
 </article>
 {{end}}
 

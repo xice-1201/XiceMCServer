@@ -145,13 +145,14 @@ type permissionConfigPlayer struct {
 }
 
 var permissionCommands = map[string]permissionCommand{
-	"creative":   {Label: "/creative", ConfigName: "command-control", Token: "creative", Reload: "xcc reload"},
-	"xcc.reload": {Label: "/xcc reload", ConfigName: "command-control", Token: "xcc.reload", Reload: "xcc reload"},
-	"xcc.list":   {Label: "/xcc list", ConfigName: "command-control", Token: "xcc.list", Reload: "xcc reload"},
-	"claim.give": {Label: "/claim give", ConfigName: "claim", Token: "give", Reload: "claim reload"},
+	"creative":               {Label: "/creative", ConfigName: "command-control", Token: "creative", Reload: "xcc reload"},
+	"xcc.reload":             {Label: "/xcc reload", ConfigName: "command-control", Token: "xcc.reload", Reload: "xcc reload"},
+	"xcc.list":               {Label: "/xcc list", ConfigName: "command-control", Token: "xcc.list", Reload: "xcc reload"},
+	"claim.give":             {Label: "/claim give", ConfigName: "claim", Token: "give", Reload: "claim reload"},
+	"morepotioneffects.give": {Label: "/morepotioneffects give", ConfigName: "more-potion-effects", Token: "give", Reload: "mpe reload"},
 }
 
-var permissionCommandOrder = []string{"creative", "xcc.reload", "xcc.list", "claim.give"}
+var permissionCommandOrder = []string{"creative", "xcc.reload", "xcc.list", "claim.give", "morepotioneffects.give"}
 
 func (a *app) handlePlayers(w http.ResponseWriter, r *http.Request, user *userSession) {
 	a.renderPlayers(w, r, user, "", http.StatusOK)
@@ -844,6 +845,8 @@ func (a *app) permissionConfigPath(configName string) (string, error) {
 		return a.cfg.CommandControlConfigPath, nil
 	case "claim":
 		return a.cfg.ClaimConfigPath, nil
+	case "more-potion-effects":
+		return a.cfg.MorePotionEffectsConfigPath, nil
 	default:
 		return "", errors.New("未知权限配置")
 	}
@@ -856,7 +859,7 @@ func (a *app) readPermissionConfig(configName string) (permissionConfig, error) 
 	}
 	data, _ := os.ReadFile(path)
 	text := string(data)
-	if configName == "claim" {
+	if configName == "claim" || configName == "more-potion-effects" {
 		text = extractTopLevelBlock(text, "access")
 		return permissionConfig{Default: parseNestedList(text, "default-allowed-actions"), Players: parseNestedPlayersBlock(text, "players", "actions")}, nil
 	}
@@ -871,7 +874,7 @@ func (a *app) writePermissionConfig(configName string, config permissionConfig) 
 	data, _ := os.ReadFile(path)
 	text := string(data)
 	var updated string
-	if configName == "claim" {
+	if configName == "claim" || configName == "more-potion-effects" {
 		updated = replaceTopLevelBlock(text, "access", renderClaimAccessBlock(config))
 	} else {
 		updated = replaceTopLevelBlock(text, "players", renderPermissionPlayersBlock(config.Players, "players", "commands"))
