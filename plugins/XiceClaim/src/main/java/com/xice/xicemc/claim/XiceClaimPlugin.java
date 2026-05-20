@@ -125,6 +125,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private final Map<UUID, PendingTeleport> pendingTeleports = new HashMap<>();
     private final Map<String, ChaoticWarpQueue> chaoticWarpQueues = new HashMap<>();
     private BukkitTask totemAuraTask;
+    private BukkitTask ringPreviewTask;
     private int maxOnlineSinceStart;
     private int serverMaxWorldSize = DEFAULT_SERVER_MAX_WORLD_SIZE;
     private int claimWorldBorder = DEFAULT_CLAIM_WORLD_BORDER;
@@ -175,6 +176,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         getServer().getPluginManager().registerEvents(this, this);
         Bukkit.getScheduler().runTask(this, this::refreshLoadedTotemBlocks);
         totemAuraTask = Bukkit.getScheduler().runTaskTimer(this, this::applyTotemAuras, TOTEM_AURA_PERIOD_TICKS, TOTEM_AURA_PERIOD_TICKS);
+        int previewIntervalTicks = Math.max(1, getConfig().getInt("visualization.interval-ticks", 10));
+        ringPreviewTask = Bukkit.getScheduler().runTaskTimer(this, this::showHeldRingPreviews, 0L, previewIntervalTicks);
         topUpChaoticWarpQueues();
         var command = getCommand("claim");
         if (command != null) {
@@ -197,6 +200,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (totemAuraTask != null) {
             totemAuraTask.cancel();
             totemAuraTask = null;
+        }
+        if (ringPreviewTask != null) {
+            ringPreviewTask.cancel();
+            ringPreviewTask = null;
         }
         saveChaoticWarpQueues();
         releaseChaoticWarpQueueTickets();
@@ -2243,7 +2250,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         setAction(menu, 44, "adjust:50", adjustItem(true, 50));
         setAction(menu, 45, "bind-menu", menuItem(Material.MAP, "&b绑定至领地", List.of("&7将这枚戒指绑定到自己拥有或被授权的领地。")));
         setAction(menu, 48, "confirm", menuItem(Material.LIME_CONCRETE, "&a确认创建", List.of("&7使用戒指名称和当前坐标创建领地。")));
-        setAction(menu, 49, "preview", menuItem(Material.ENDER_EYE, "&e预览并关闭", List.of("&7保存当前草稿，关闭界面并显示范围。")));
         setAction(menu, 50, "cancel", menuItem(Material.BARRIER, "&c取消", List.of("&7关闭界面，不保存本次改动。")));
     }
 
@@ -2351,14 +2357,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             setAction(menu, 20, "view:members", playerHeadItem(claim.ownerUuid, "&a管理授权玩家", List.of("&7添加或移除可以使用该领地的玩家。")));
             setAction(menu, 22, "teleport", menuItem(Material.ENDER_PEARL, "&b传送至领地", List.of("&7传送到领地图腾正前方。")));
             setAction(menu, 24, "view:features", menuItem(Material.COMPARATOR, "&e管理领地功能", List.of("&7切换领地内的保护规则。")));
-            setAction(menu, 40, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
             setAction(menu, 42, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
         } else {
             inventory.setItem(20, menuItem(Material.OAK_SIGN, canUse ? "&e已授权领地" : "&e公开传送领地", List.of("&7你不能管理该领地。")));
             setAction(menu, 22, "teleport", menuItem(Material.ENDER_PEARL, "&b传送至领地", List.of("&7传送到领地图腾正前方。")));
-            if (canUse) {
-                setAction(menu, 24, "preview", menuItem(Material.ENDER_EYE, "&e范围预览", List.of("&7关闭界面并显示领地边界。")));
-            }
         }
     }
 
@@ -2463,15 +2465,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             }
             menu.session.statusLines.clear();
             renderCreateRingMenu(menu);
-            return;
-        }
-        if ("preview".equals(action)) {
-            saveDraftToRing(menu.session.ring, draft);
-            writeRingToHand(player, menu.session);
-            showDraftStatus(player, menu.session);
-            menu.session.discardOnClose = true;
-            ringSessions.remove(player.getUniqueId());
-            player.closeInventory();
             return;
         }
         if ("confirm".equals(action)) {
@@ -3120,17 +3113,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             renderManageRingMenu(menu, claim);
             return;
         }
-        if ("preview".equals(action)) {
-            if (!claim.canUse(player)) {
-                send(player, message("no-permission"));
-                return;
-            }
-            showClaimParticles(player, claim);
-            menu.session.discardOnClose = true;
-            ringSessions.remove(player.getUniqueId());
-            player.closeInventory();
-            return;
-        }
         if ("teleport".equals(action)) {
             startClaimTotemTeleport(player, claim);
             menu.session.discardOnClose = true;
@@ -3239,11 +3221,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         menu.session.statusLines.clear();
         menu.session.statusLines.addAll(statusLines);
         renderCreateRingMenu(menu);
-    }
-
-    private void showDraftStatus(Player player, RingSession session) {
-        ClaimRegion preview = previewClaim(session, ringDisplayName(session.ring));
-        showClaimParticles(player, preview);
     }
 
     private ClaimRegion synchronizeRingName(Player player, ItemStack ring, ClaimRegion claim) {
@@ -3721,6 +3698,59 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         } catch (IOException exception) {
             getLogger().warning("Failed to save chaotic-warp-queues.yml: " + exception.getMessage());
         }
+    }
+
+    private void showHeldRingPreviews() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            ClaimRegion claim = heldRingPreviewClaim(player);
+            if (claim != null) {
+                drawClaimParticles(player, claim);
+            }
+        }
+    }
+
+    private ClaimRegion heldRingPreviewClaim(Player player) {
+        RingSession session = ringSessions.get(player.getUniqueId());
+        if (session != null
+                && session.mode == RingMenuMode.CREATE
+                && isClaimRing(heldItem(player, session.hand))) {
+            return previewClaim(session, ringDisplayName(session.ring));
+        }
+        ItemStack ring = heldClaimRing(player);
+        if (ring == null) {
+            return null;
+        }
+        String claimId = ring.getItemMeta().getPersistentDataContainer().get(ringClaimIdKey, PersistentDataType.STRING);
+        if (claimId != null && !claimId.isBlank()) {
+            ClaimRegion claim = claims.get(claimId);
+            return claim != null && claim.world.equals(player.getWorld().getName()) ? claim : null;
+        }
+        RingDraft draft = loadDraftFromRing(ring, player);
+        if (!draft.world.equals(player.getWorld().getName())) {
+            return null;
+        }
+        return ClaimRegion.fromSelection(
+                "__preview__",
+                ringDisplayName(ring),
+                player.getUniqueId(),
+                player.getName(),
+                new ClaimPoint(draft.world, draft.x1, draft.y1, draft.z1),
+                new ClaimPoint(draft.world, draft.x2, draft.y2, draft.z2));
+    }
+
+    private ItemStack heldClaimRing(Player player) {
+        ItemStack mainHand = player.getInventory().getItemInMainHand();
+        if (isClaimRing(mainHand)) {
+            return mainHand;
+        }
+        ItemStack offHand = player.getInventory().getItemInOffHand();
+        return isClaimRing(offHand) ? offHand : null;
+    }
+
+    private ItemStack heldItem(Player player, EquipmentSlot hand) {
+        return hand == EquipmentSlot.OFF_HAND
+                ? player.getInventory().getItemInOffHand()
+                : player.getInventory().getItemInMainHand();
     }
 
     private void showClaimParticles(Player player, ClaimRegion claim) {
