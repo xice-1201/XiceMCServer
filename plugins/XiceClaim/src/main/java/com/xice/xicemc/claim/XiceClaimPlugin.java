@@ -2761,6 +2761,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     + " spaceOk=" + result.spaceOk()
                     + " floorOk=" + result.floorOk()
                     + " deepWater=" + result.deepWater()
+                    + " claimBlocked=" + result.claimBlocked()
+                    + " underground=" + result.underground()
                     + " feetBlocked=" + result.feetBlocked()
                     + " headBlocked=" + result.headBlocked());
             topUpChaoticWarpQueue(world);
@@ -2830,7 +2832,9 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 || !world.getWorldBorder().isInside(location)
                 || !hasTeleportSpace(feet)
                 || !hasTeleportFloor(feet)
-                || isDeepWaterLanding(feet)) {
+                || isDeepWaterLanding(feet)
+                || isChaoticWarpClaimBlocked(feet)
+                || isChaoticWarpUndergroundLanding(feet)) {
             return null;
         }
         location.setYaw(player.getLocation().getYaw());
@@ -2911,6 +2915,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         int spaceOk = 0;
         int floorOk = 0;
         int deepWater = 0;
+        int claimBlocked = 0;
+        int underground = 0;
         int feetBlocked = 0;
         int headBlocked = 0;
         for (int y = maxY; y >= minY; y--) {
@@ -2935,13 +2941,34 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     deepWater++;
                     continue;
                 }
+                if (isChaoticWarpClaimBlocked(feet)) {
+                    claimBlocked++;
+                    continue;
+                }
+                if (isChaoticWarpUndergroundLanding(feet)) {
+                    underground++;
+                    continue;
+                }
                 Location destination = feet.getLocation().add(0.5, 0.0, 0.5);
                 destination.setYaw(current.getYaw());
                 destination.setPitch(current.getPitch());
-                return new SafeRandomDestinationResult(destination, scannedBlocks, spaceOk, floorOk, deepWater, feetBlocked, headBlocked);
+                return new SafeRandomDestinationResult(destination, scannedBlocks, spaceOk, floorOk, deepWater, claimBlocked, underground, feetBlocked, headBlocked);
             }
         }
-        return new SafeRandomDestinationResult(null, scannedBlocks, spaceOk, floorOk, deepWater, feetBlocked, headBlocked);
+        return new SafeRandomDestinationResult(null, scannedBlocks, spaceOk, floorOk, deepWater, claimBlocked, underground, feetBlocked, headBlocked);
+    }
+
+    private boolean isChaoticWarpClaimBlocked(Block feet) {
+        return claimAt(feet.getLocation()) != null
+                || claimAt(feet.getRelative(BlockFace.UP).getLocation()) != null;
+    }
+
+    private boolean isChaoticWarpUndergroundLanding(Block feet) {
+        World.Environment environment = feet.getWorld().getEnvironment();
+        if (environment == World.Environment.NETHER) {
+            return false;
+        }
+        return feet.getWorld().getHighestBlockYAt(feet.getX(), feet.getZ()) >= feet.getY();
     }
 
     private void applyWarpSuppression(Player player, long durationMillis) {
@@ -4154,6 +4181,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             int spaceOk,
             int floorOk,
             int deepWater,
+            int claimBlocked,
+            int underground,
             int feetBlocked,
             int headBlocked) {
         private String failureReason() {
@@ -4165,6 +4194,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             }
             if (deepWater > 0) {
                 return "deep-water";
+            }
+            if (claimBlocked > 0) {
+                return "claim-blocked";
+            }
+            if (underground > 0) {
+                return "underground";
             }
             return "no-safe-landing";
         }
