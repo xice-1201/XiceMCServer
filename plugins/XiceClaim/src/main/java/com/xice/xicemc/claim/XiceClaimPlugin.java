@@ -151,6 +151,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey totemCoreItemModelKey;
     private NamespacedKey totemCoreRecipeKey;
     private NamespacedKey chaoticWarpCoreKey;
+    private NamespacedKey chaoticWarpCoreItemModelKey;
     private NamespacedKey chaoticWarpCoreRecipeKey;
     private NamespacedKey totemIdKey;
     private NamespacedKey totemPartKey;
@@ -229,6 +230,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         totemCoreItemModelKey = new NamespacedKey(this, "claim_totem_core");
         totemCoreRecipeKey = new NamespacedKey(this, "claim_totem_core_recipe");
         chaoticWarpCoreKey = new NamespacedKey(this, "chaotic_warp_core");
+        chaoticWarpCoreItemModelKey = new NamespacedKey(this, "chaotic_warp_core");
         chaoticWarpCoreRecipeKey = new NamespacedKey(this, "chaotic_warp_core_recipe");
         totemIdKey = new NamespacedKey(this, "claim_totem_id");
         totemPartKey = new NamespacedKey(this, "claim_totem_part");
@@ -1454,6 +1456,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 color("&7右键启动 3 秒跃迁倒计时。"),
                 color("&7结束后消耗 1 级经验随机传送至当前维度。")));
         meta.setEnchantmentGlintOverride(true);
+        applyChaoticWarpCoreItemModel(meta);
         meta.getPersistentDataContainer().set(chaoticWarpCoreKey, PersistentDataType.BYTE, (byte) 1);
         core.setItemMeta(meta);
         return core;
@@ -3439,6 +3442,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     private void applyTotemCoreItemModel(ItemMeta meta) {
         meta.setItemModel(totemCoreItemModelKey);
+    }
+
+    private void applyChaoticWarpCoreItemModel(ItemMeta meta) {
+        meta.setItemModel(chaoticWarpCoreItemModelKey);
     }
 
     private EquipmentSlot normalizeHand(EquipmentSlot hand) {
