@@ -93,6 +93,7 @@ import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.ShapelessRecipe;
 import org.bukkit.inventory.recipe.CraftingBookCategory;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
@@ -902,6 +903,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent event) {
         refreshMachineDisplays(event.getChunk());
+        cleanupOrphanMachineDisplays(event.getChunk());
         cleanupFailedUndeadTideMobs(event.getChunk());
     }
 
@@ -2685,12 +2687,71 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     }
 
     private void removeMachineDisplays(Block block, MachineState state) {
+        String displayId = customBlockService.blockId(block);
         customBlockService.removeDisplays(
                 block.getWorld(),
                 block.getLocation().add(0.5, 0.5, 0.5),
                 blockDefinitionFor(state.type),
-                state.key(),
+                displayId,
                 1.2D);
+        customBlockService.removeDisplays(
+                block.getWorld(),
+                block.getLocation().add(0.5, 0.5, 0.5),
+                generatorBlockDefinition,
+                displayId,
+                1.2D);
+        customBlockService.removeDisplays(
+                block.getWorld(),
+                block.getLocation().add(0.5, 0.5, 0.5),
+                villagerBreederBlockDefinition,
+                displayId,
+                1.2D);
+        customBlockService.removeDisplays(
+                block.getWorld(),
+                block.getLocation().add(0.5, 0.5, 0.5),
+                villagerTradingStationBlockDefinition,
+                displayId,
+                1.2D);
+    }
+
+    private void cleanupOrphanMachineDisplays(Chunk chunk) {
+        for (Entity entity : chunk.getEntities()) {
+            if (!(entity instanceof ItemDisplay)) {
+                continue;
+            }
+            PersistentDataContainer data = entity.getPersistentDataContainer();
+            if (!data.has(displayKey, PersistentDataType.STRING)) {
+                continue;
+            }
+            String displayId = data.get(displayKey, PersistentDataType.STRING);
+            String machineKey = machineKeyFromDisplayId(displayId);
+            if (!isLiveMachineDisplay(machineKey)) {
+                entity.remove();
+            }
+        }
+    }
+
+    private boolean isLiveMachineDisplay(String machineKey) {
+        if (machineKey == null) {
+            return false;
+        }
+        MachineState state = machines.get(machineKey);
+        if (state == null) {
+            return false;
+        }
+        Block block = blockFor(state);
+        return block != null && block.getType() == MACHINE_CARRIER;
+    }
+
+    private String machineKeyFromDisplayId(String displayId) {
+        if (displayId == null) {
+            return null;
+        }
+        String[] parts = displayId.split("\\|", -1);
+        if (parts.length != 4) {
+            return null;
+        }
+        return parts[0] + ":" + parts[1] + ":" + parts[2] + ":" + parts[3];
     }
 
     private CustomBlockDefinition blockDefinitionFor(MachineType type) {
@@ -3134,10 +3195,25 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         addTrade(catalog, Villager.Profession.LEATHERWORKER, 5, "leatherworker_5_saddle", "鞍", item(Material.SADDLE, 1), item(Material.EMERALD, 6), null);
 
         addTrade(catalog, Villager.Profession.LIBRARIAN, 1, "librarian_1_paper", "纸换绿宝石", item(Material.EMERALD, 1), item(Material.PAPER, 24), null);
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 1, "librarian_1_mending", "经验修补", enchantedBook(Enchantment.MENDING, 1), item(Material.EMERALD, 38), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 1, "librarian_1_unbreaking", "耐久 III", enchantedBook(Enchantment.UNBREAKING, 3), item(Material.EMERALD, 26), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 1, "librarian_1_silk_touch", "精准采集", enchantedBook(Enchantment.SILK_TOUCH, 1), item(Material.EMERALD, 20), item(Material.BOOK, 1));
         addTrade(catalog, Villager.Profession.LIBRARIAN, 2, "librarian_2_bookshelf", "书架", item(Material.BOOKSHELF, 1), item(Material.EMERALD, 9), null);
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 2, "librarian_2_efficiency", "效率 V", enchantedBook(Enchantment.EFFICIENCY, 5), item(Material.EMERALD, 45), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 2, "librarian_2_fortune", "时运 III", enchantedBook(Enchantment.FORTUNE, 3), item(Material.EMERALD, 32), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 2, "librarian_2_protection", "保护 IV", enchantedBook(Enchantment.PROTECTION, 4), item(Material.EMERALD, 36), item(Material.BOOK, 1));
         addTrade(catalog, Villager.Profession.LIBRARIAN, 3, "librarian_3_glass", "玻璃", item(Material.GLASS, 4), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 3, "librarian_3_feather_falling", "摔落保护 IV", enchantedBook(Enchantment.FEATHER_FALLING, 4), item(Material.EMERALD, 28), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 3, "librarian_3_respiration", "水下呼吸 III", enchantedBook(Enchantment.RESPIRATION, 3), item(Material.EMERALD, 24), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 3, "librarian_3_depth_strider", "深海探索者 III", enchantedBook(Enchantment.DEPTH_STRIDER, 3), item(Material.EMERALD, 24), item(Material.BOOK, 1));
         addTrade(catalog, Villager.Profession.LIBRARIAN, 4, "librarian_4_compass", "指南针", item(Material.COMPASS, 1), item(Material.EMERALD, 4), null);
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 4, "librarian_4_sharpness", "锋利 V", enchantedBook(Enchantment.SHARPNESS, 5), item(Material.EMERALD, 45), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 4, "librarian_4_looting", "抢夺 III", enchantedBook(Enchantment.LOOTING, 3), item(Material.EMERALD, 30), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 4, "librarian_4_fire_aspect", "火焰附加 II", enchantedBook(Enchantment.FIRE_ASPECT, 2), item(Material.EMERALD, 22), item(Material.BOOK, 1));
         addTrade(catalog, Villager.Profession.LIBRARIAN, 5, "librarian_5_name_tag", "命名牌", item(Material.NAME_TAG, 1), item(Material.EMERALD, 20), null);
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 5, "librarian_5_power", "力量 V", enchantedBook(Enchantment.POWER, 5), item(Material.EMERALD, 32), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 5, "librarian_5_infinity", "无限", enchantedBook(Enchantment.INFINITY, 1), item(Material.EMERALD, 22), item(Material.BOOK, 1));
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 5, "librarian_5_quick_charge", "快速装填 III", enchantedBook(Enchantment.QUICK_CHARGE, 3), item(Material.EMERALD, 24), item(Material.BOOK, 1));
 
         addTrade(catalog, Villager.Profession.MASON, 1, "mason_1_clay_ball", "黏土球换绿宝石", item(Material.EMERALD, 1), item(Material.CLAY_BALL, 10), null);
         addTrade(catalog, Villager.Profession.MASON, 2, "mason_2_bricks", "红砖", item(Material.BRICK, 10), item(Material.EMERALD, 1), null);
@@ -3184,6 +3260,15 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
 
     private static ItemStack item(Material material, int amount) {
         return new ItemStack(material, amount);
+    }
+
+    private static ItemStack enchantedBook(Enchantment enchantment, int level) {
+        ItemStack item = new ItemStack(Material.ENCHANTED_BOOK);
+        if (item.getItemMeta() instanceof EnchantmentStorageMeta meta) {
+            meta.addStoredEnchant(enchantment, level, true);
+            item.setItemMeta(meta);
+        }
+        return item;
     }
 
     private record TradeSpec(
