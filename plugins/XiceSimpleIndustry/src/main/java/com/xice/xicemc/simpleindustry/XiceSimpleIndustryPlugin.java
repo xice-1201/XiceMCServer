@@ -116,6 +116,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     private static final int TRADING_STATION_CLEAR_SLOT = 53;
     private static final List<Integer> TRADING_STATION_LEVEL_SLOTS = List.of(10, 11, 12, 13, 14);
     private static final List<Integer> TRADING_STATION_CANDIDATE_SLOTS = List.of(19, 20, 21, 22, 23, 24, 25, 28, 29, 30, 31, 32, 33, 34);
+    private static final int TRADING_STATION_REQUIRED_TRADES_PER_LEVEL = 2;
     private static final int WATER_LIMIT = 16;
     private static final int LAVA_LIMIT = 64;
     private static final int VILLAGER_BREEDER_INTERVAL_TICKS = 5 * 60 * 20;
@@ -282,6 +283,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     private NamespacedKey villagerTradingStationRecipeKey;
     private NamespacedKey villagerTradingStationProfessionKey;
     private NamespacedKey villagerTradingStationTradesKey;
+    private NamespacedKey villagerTradingStationLockedKey;
     private NamespacedKey zombieVillagerEggRecipeKey;
     private NamespacedKey undeadDustKey;
     private NamespacedKey undeadDustItemModelKey;
@@ -322,6 +324,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         villagerTradingStationRecipeKey = new NamespacedKey(this, "simple_villager_trading_station");
         villagerTradingStationProfessionKey = new NamespacedKey(this, "simple_villager_trading_station_profession");
         villagerTradingStationTradesKey = new NamespacedKey(this, "simple_villager_trading_station_trades");
+        villagerTradingStationLockedKey = new NamespacedKey(this, "simple_villager_trading_station_locked");
         zombieVillagerEggRecipeKey = new NamespacedKey(this, "zombie_villager_spawn_egg");
         undeadDustKey = new NamespacedKey(this, "undead_dust");
         undeadDustItemModelKey = new NamespacedKey(this, "undead_dust");
@@ -965,6 +968,10 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             openTradingStationJobMenu(player, state);
             return;
         }
+        if (state.tradingLocked) {
+            openTradingStationMerchant(player, state, false);
+            return;
+        }
         openTradingStationTradeMenu(player, state, 1);
     }
 
@@ -981,6 +988,10 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
 
     private void openTradingStationTradeMenu(Player player, MachineState state, int level) {
         if (!machines.containsKey(state.key())) {
+            return;
+        }
+        if (state.tradingLocked) {
+            openTradingStationMerchant(player, state, false);
             return;
         }
         TradingStationTradeMenu menu = new TradingStationTradeMenu(state.key(), clamp(level, 1, 5));
@@ -1018,13 +1029,16 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             inventory.setItem(slot, filler);
         }
-        inventory.setItem(4, menuItem(Material.LECTERN, professionDisplayName(state.tradingProfession), List.of("选择原版可能出现的交易项。")));
+        inventory.setItem(4, menuItem(Material.LECTERN, professionDisplayName(state.tradingProfession), List.of(
+                "每个等级必须选择 2 个交易项。",
+                "第一次打开交易后配置会锁定。")));
         for (int i = 0; i < TRADING_STATION_LEVEL_SLOTS.size(); i++) {
             int level = i + 1;
+            int selectedCount = selectedTradeCountForLevel(state, level);
             inventory.setItem(TRADING_STATION_LEVEL_SLOTS.get(i), menuItem(
                     level == menu.level ? Material.EMERALD_BLOCK : Material.EMERALD,
-                    villagerLevelName(level),
-                    List.of("点击查看该等级交易。")));
+                    villagerLevelName(level) + ": " + selectedCount + "/" + TRADING_STATION_REQUIRED_TRADES_PER_LEVEL,
+                    List.of(selectedCount == TRADING_STATION_REQUIRED_TRADES_PER_LEVEL ? "该等级已完成。" : "点击查看该等级交易。")));
         }
         List<TradeSpec> candidates = tradeCandidates(state.tradingProfession, menu.level);
         for (int i = 0; i < TRADING_STATION_CANDIDATE_SLOTS.size() && i < candidates.size(); i++) {
@@ -1032,7 +1046,9 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             boolean selected = state.selectedTradeIds.contains(trade.id());
             inventory.setItem(TRADING_STATION_CANDIDATE_SLOTS.get(i), tradeMenuItem(trade, selected));
         }
-        inventory.setItem(TRADING_STATION_OPEN_TRADE_SLOT, menuItem(Material.EMERALD, "打开交易", List.of("使用已选交易创建临时商人界面。")));
+        inventory.setItem(TRADING_STATION_OPEN_TRADE_SLOT, menuItem(Material.EMERALD, "锁定并打开交易", List.of(
+                "每个等级恰好 2 个交易项后可打开。",
+                "打开后将无法再修改交易项。")));
         inventory.setItem(TRADING_STATION_CLEAR_SLOT, menuItem(Material.BARRIER, "清空当前等级", List.of("只清空当前等级已选交易。")));
     }
 
@@ -1239,13 +1255,17 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (state == null || state.tradingProfession == null) {
             return;
         }
+        if (state.tradingLocked) {
+            openTradingStationMerchant((Player) event.getWhoClicked(), state, false);
+            return;
+        }
         int levelIndex = TRADING_STATION_LEVEL_SLOTS.indexOf(rawSlot);
         if (levelIndex >= 0) {
             openTradingStationTradeMenu((Player) event.getWhoClicked(), state, levelIndex + 1);
             return;
         }
         if (rawSlot == TRADING_STATION_OPEN_TRADE_SLOT) {
-            openTradingStationMerchant((Player) event.getWhoClicked(), state);
+            openTradingStationMerchant((Player) event.getWhoClicked(), state, true);
             return;
         }
         if (rawSlot == TRADING_STATION_CLEAR_SLOT) {
@@ -1265,6 +1285,10 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         TradeSpec trade = candidates.get(candidateIndex);
         if (!state.selectedTradeIds.add(trade.id())) {
             state.selectedTradeIds.remove(trade.id());
+        } else if (selectedTradeCountForLevel(state, menu.level) > TRADING_STATION_REQUIRED_TRADES_PER_LEVEL) {
+            state.selectedTradeIds.remove(trade.id());
+            event.getWhoClicked().sendMessage("每个等级最多只能选择 2 个交易项。");
+            return;
         }
         saveMachines();
         renderTradingStationTradeMenu(menu, top);
@@ -1287,6 +1311,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         }
         state.tradingProfession = profession;
         state.selectedTradeIds.clear();
+        state.tradingLocked = false;
         saveMachines();
         inventory.setItem(TRADING_STATION_JOB_INPUT_SLOT, null);
         openTradingStationTradeMenu((Player) event.getWhoClicked(), state, 1);
@@ -2453,6 +2478,30 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
                 .toList();
     }
 
+    private int selectedTradeCountForLevel(MachineState state, int level) {
+        int count = 0;
+        for (String id : state.selectedTradeIds) {
+            TradeSpec trade = tradeById(id);
+            if (trade != null && trade.level() == level && trade.profession().equals(state.tradingProfession)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private String tradingStationValidationError(MachineState state) {
+        if (state.tradingProfession == null) {
+            return "请先为交易站选择职业。";
+        }
+        for (int level = 1; level <= 5; level++) {
+            int count = selectedTradeCountForLevel(state, level);
+            if (count != TRADING_STATION_REQUIRED_TRADES_PER_LEVEL) {
+                return villagerLevelName(level) + "等级需要恰好选择 2 个交易项，当前为 " + count + " 个。";
+            }
+        }
+        return null;
+    }
+
     private ItemStack tradeMenuItem(TradeSpec trade, boolean selected) {
         ItemStack item = trade.result().clone();
         ItemMeta meta = item.getItemMeta();
@@ -2533,11 +2582,13 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             TradeSpec trade = tradeById(id);
             return trade == null || trade.level() == level;
         });
+        state.tradingLocked = false;
     }
 
-    private void openTradingStationMerchant(Player player, MachineState state) {
-        if (state.tradingProfession == null || state.selectedTradeIds.isEmpty()) {
-            player.sendMessage("请先为交易站选择职业和交易项。");
+    private void openTradingStationMerchant(Player player, MachineState state, boolean lockOnSuccess) {
+        String validationError = tradingStationValidationError(state);
+        if (validationError != null) {
+            player.sendMessage(validationError);
             return;
         }
         List<MerchantRecipe> recipes = new ArrayList<>();
@@ -2547,6 +2598,11 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (recipes.isEmpty()) {
             player.sendMessage("当前职业没有可用交易项。");
             return;
+        }
+        if (lockOnSuccess && !state.tradingLocked) {
+            state.tradingLocked = true;
+            saveMachines();
+            refreshOpenMenus(state);
         }
         Merchant merchant = Bukkit.createMerchant(Component.text("简易村民交易站 - " + professionDisplayName(state.tradingProfession)));
         merchant.setRecipes(recipes);
@@ -2568,6 +2624,9 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (!state.selectedTradeIds.isEmpty()) {
             data.set(villagerTradingStationTradesKey, PersistentDataType.STRING, String.join(",", selectedTradeIdsForStorage(state)));
         }
+        if (state.tradingLocked) {
+            data.set(villagerTradingStationLockedKey, PersistentDataType.BYTE, (byte) 1);
+        }
         item.setItemMeta(meta);
     }
 
@@ -2587,6 +2646,8 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
                 }
             }
         }
+        Byte locked = data.get(villagerTradingStationLockedKey, PersistentDataType.BYTE);
+        state.tradingLocked = locked != null && locked == (byte) 1 && tradingStationValidationError(state) == null;
     }
 
     private Villager.Profession parseProfession(String professionName) {
@@ -3078,6 +3139,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
                     state.selectedTradeIds.add(tradeId);
                 }
             }
+            state.tradingLocked = section.getBoolean("trading.locked", false) && tradingStationValidationError(state) == null;
             machines.put(state.key(), state);
         }
     }
@@ -3111,6 +3173,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
                 if (professionId != null) {
                     section.set("trading.profession", professionId);
                     section.set("trading.trades", selectedTradeIdsForStorage(state));
+                    section.set("trading.locked", state.tradingLocked);
                 }
             }
         }
@@ -3147,52 +3210,92 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     private static Map<Villager.Profession, List<TradeSpec>> buildVanillaTradeCatalog() {
         Map<Villager.Profession, List<TradeSpec>> catalog = new HashMap<>();
         addTrade(catalog, Villager.Profession.ARMORER, 1, "armorer_1_coal", "煤炭换绿宝石", item(Material.EMERALD, 1), item(Material.COAL, 15), null);
+        addTrade(catalog, Villager.Profession.ARMORER, 1, "armorer_1_iron_boots", "铁靴子", item(Material.IRON_BOOTS, 1), item(Material.EMERALD, 4), null);
         addTrade(catalog, Villager.Profession.ARMORER, 2, "armorer_2_iron_leggings", "铁护腿", item(Material.IRON_LEGGINGS, 1), item(Material.EMERALD, 7), null);
+        addTrade(catalog, Villager.Profession.ARMORER, 2, "armorer_2_iron_ingot", "铁锭换绿宝石", item(Material.EMERALD, 1), item(Material.IRON_INGOT, 4), null);
         addTrade(catalog, Villager.Profession.ARMORER, 3, "armorer_3_lava_bucket", "熔岩桶换绿宝石", item(Material.EMERALD, 1), item(Material.LAVA_BUCKET, 1), null);
+        addTrade(catalog, Villager.Profession.ARMORER, 3, "armorer_3_chainmail_chestplate", "锁链胸甲", item(Material.CHAINMAIL_CHESTPLATE, 1), item(Material.EMERALD, 4), null);
         addTrade(catalog, Villager.Profession.ARMORER, 4, "armorer_4_diamond", "钻石换绿宝石", item(Material.EMERALD, 1), item(Material.DIAMOND, 1), null);
+        addTrade(catalog, Villager.Profession.ARMORER, 4, "armorer_4_diamond_boots", "钻石靴子", item(Material.DIAMOND_BOOTS, 1), item(Material.EMERALD, 13), null);
         addTrade(catalog, Villager.Profession.ARMORER, 5, "armorer_5_diamond_chestplate", "钻石胸甲", item(Material.DIAMOND_CHESTPLATE, 1), item(Material.EMERALD, 21), null);
+        addTrade(catalog, Villager.Profession.ARMORER, 5, "armorer_5_diamond_helmet", "钻石头盔", item(Material.DIAMOND_HELMET, 1), item(Material.EMERALD, 13), null);
 
         addTrade(catalog, Villager.Profession.BUTCHER, 1, "butcher_1_chicken", "生鸡肉换绿宝石", item(Material.EMERALD, 1), item(Material.CHICKEN, 14), null);
+        addTrade(catalog, Villager.Profession.BUTCHER, 1, "butcher_1_rabbit", "生兔肉换绿宝石", item(Material.EMERALD, 1), item(Material.RABBIT, 4), null);
         addTrade(catalog, Villager.Profession.BUTCHER, 2, "butcher_2_porkchop", "生猪排换绿宝石", item(Material.EMERALD, 1), item(Material.PORKCHOP, 7), null);
+        addTrade(catalog, Villager.Profession.BUTCHER, 2, "butcher_2_coal", "煤炭换绿宝石", item(Material.EMERALD, 1), item(Material.COAL, 15), null);
         addTrade(catalog, Villager.Profession.BUTCHER, 3, "butcher_3_mutton", "生羊肉换绿宝石", item(Material.EMERALD, 1), item(Material.MUTTON, 7), null);
+        addTrade(catalog, Villager.Profession.BUTCHER, 3, "butcher_3_cooked_porkchop", "熟猪排", item(Material.COOKED_PORKCHOP, 5), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.BUTCHER, 4, "butcher_4_sweet_berries", "甜浆果换绿宝石", item(Material.EMERALD, 1), item(Material.SWEET_BERRIES, 10), null);
+        addTrade(catalog, Villager.Profession.BUTCHER, 4, "butcher_4_cooked_chicken", "熟鸡肉", item(Material.COOKED_CHICKEN, 8), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.BUTCHER, 5, "butcher_5_rabbit_stew", "兔肉煲", item(Material.RABBIT_STEW, 1), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.BUTCHER, 5, "butcher_5_dried_kelp_block", "干海带块换绿宝石", item(Material.EMERALD, 1), item(Material.DRIED_KELP_BLOCK, 10), null);
 
         addTrade(catalog, Villager.Profession.CARTOGRAPHER, 1, "cartographer_1_paper", "纸换绿宝石", item(Material.EMERALD, 1), item(Material.PAPER, 24), null);
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 1, "cartographer_1_empty_map", "空地图", item(Material.MAP, 1), item(Material.EMERALD, 7), null);
         addTrade(catalog, Villager.Profession.CARTOGRAPHER, 2, "cartographer_2_map", "空地图", item(Material.MAP, 1), item(Material.EMERALD, 7), null);
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 2, "cartographer_2_glass_pane", "玻璃板换绿宝石", item(Material.EMERALD, 1), item(Material.GLASS_PANE, 11), null);
         addTrade(catalog, Villager.Profession.CARTOGRAPHER, 3, "cartographer_3_glass_pane", "玻璃板换绿宝石", item(Material.EMERALD, 1), item(Material.GLASS_PANE, 11), null);
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 3, "cartographer_3_item_frame", "物品展示框", item(Material.ITEM_FRAME, 1), item(Material.EMERALD, 7), null);
         addTrade(catalog, Villager.Profession.CARTOGRAPHER, 4, "cartographer_4_compass", "指南针换绿宝石", item(Material.EMERALD, 1), item(Material.COMPASS, 1), null);
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 4, "cartographer_4_banner", "旗帜图案", item(Material.FLOWER_BANNER_PATTERN, 1), item(Material.EMERALD, 8), null);
         addTrade(catalog, Villager.Profession.CARTOGRAPHER, 5, "cartographer_5_banner", "旗帜图案", item(Material.FLOWER_BANNER_PATTERN, 1), item(Material.EMERALD, 8), null);
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 5, "cartographer_5_globe_banner", "空白旗帜", item(Material.WHITE_BANNER, 1), item(Material.EMERALD, 3), null);
 
         addTrade(catalog, Villager.Profession.CLERIC, 1, "cleric_1_rotten_flesh", "腐肉换绿宝石", item(Material.EMERALD, 1), item(Material.ROTTEN_FLESH, 32), null);
+        addTrade(catalog, Villager.Profession.CLERIC, 1, "cleric_1_redstone", "红石粉", item(Material.REDSTONE, 2), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.CLERIC, 2, "cleric_2_redstone", "红石粉", item(Material.REDSTONE, 2), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.CLERIC, 2, "cleric_2_lapis", "青金石", item(Material.LAPIS_LAZULI, 1), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.CLERIC, 3, "cleric_3_gold_ingot", "金锭换绿宝石", item(Material.EMERALD, 1), item(Material.GOLD_INGOT, 3), null);
+        addTrade(catalog, Villager.Profession.CLERIC, 3, "cleric_3_glowstone", "荧石", item(Material.GLOWSTONE, 1), item(Material.EMERALD, 4), null);
         addTrade(catalog, Villager.Profession.CLERIC, 4, "cleric_4_ender_pearl", "末影珍珠", item(Material.ENDER_PEARL, 1), item(Material.EMERALD, 5), null);
+        addTrade(catalog, Villager.Profession.CLERIC, 4, "cleric_4_rabbit_foot", "兔子脚换绿宝石", item(Material.EMERALD, 1), item(Material.RABBIT_FOOT, 2), null);
         addTrade(catalog, Villager.Profession.CLERIC, 5, "cleric_5_bottle_o_enchanting", "附魔之瓶", item(Material.EXPERIENCE_BOTTLE, 1), item(Material.EMERALD, 3), null);
+        addTrade(catalog, Villager.Profession.CLERIC, 5, "cleric_5_ender_pearl", "末影珍珠", item(Material.ENDER_PEARL, 1), item(Material.EMERALD, 5), null);
 
         addTrade(catalog, Villager.Profession.FARMER, 1, "farmer_1_wheat", "小麦换绿宝石", item(Material.EMERALD, 1), item(Material.WHEAT, 20), null);
+        addTrade(catalog, Villager.Profession.FARMER, 1, "farmer_1_potato", "马铃薯换绿宝石", item(Material.EMERALD, 1), item(Material.POTATO, 26), null);
         addTrade(catalog, Villager.Profession.FARMER, 2, "farmer_2_carrot", "胡萝卜换绿宝石", item(Material.EMERALD, 1), item(Material.CARROT, 22), null);
+        addTrade(catalog, Villager.Profession.FARMER, 2, "farmer_2_bread", "面包", item(Material.BREAD, 6), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.FARMER, 3, "farmer_3_pumpkin", "南瓜换绿宝石", item(Material.EMERALD, 1), item(Material.PUMPKIN, 6), null);
+        addTrade(catalog, Villager.Profession.FARMER, 3, "farmer_3_apple", "苹果", item(Material.APPLE, 4), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.FARMER, 4, "farmer_4_melon", "西瓜换绿宝石", item(Material.EMERALD, 1), item(Material.MELON, 4), null);
+        addTrade(catalog, Villager.Profession.FARMER, 4, "farmer_4_cookie", "曲奇", item(Material.COOKIE, 18), item(Material.EMERALD, 3), null);
         addTrade(catalog, Villager.Profession.FARMER, 5, "farmer_5_golden_carrot", "金胡萝卜", item(Material.GOLDEN_CARROT, 3), item(Material.EMERALD, 3), null);
+        addTrade(catalog, Villager.Profession.FARMER, 5, "farmer_5_suspicious_stew", "迷之炖菜", item(Material.SUSPICIOUS_STEW, 1), item(Material.EMERALD, 1), null);
 
         addTrade(catalog, Villager.Profession.FISHERMAN, 1, "fisherman_1_string", "线换绿宝石", item(Material.EMERALD, 1), item(Material.STRING, 20), null);
+        addTrade(catalog, Villager.Profession.FISHERMAN, 1, "fisherman_1_coal", "煤炭换绿宝石", item(Material.EMERALD, 1), item(Material.COAL, 10), null);
         addTrade(catalog, Villager.Profession.FISHERMAN, 2, "fisherman_2_cod", "生鳕鱼换绿宝石", item(Material.EMERALD, 1), item(Material.COD, 15), null);
+        addTrade(catalog, Villager.Profession.FISHERMAN, 2, "fisherman_2_cooked_cod", "熟鳕鱼", item(Material.COOKED_COD, 6), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.FISHERMAN, 3, "fisherman_3_campfire", "营火", item(Material.CAMPFIRE, 1), item(Material.EMERALD, 2), null);
+        addTrade(catalog, Villager.Profession.FISHERMAN, 3, "fisherman_3_fishing_rod", "钓鱼竿", item(Material.FISHING_ROD, 1), item(Material.EMERALD, 3), null);
         addTrade(catalog, Villager.Profession.FISHERMAN, 4, "fisherman_4_salmon", "生鲑鱼换绿宝石", item(Material.EMERALD, 1), item(Material.SALMON, 13), null);
+        addTrade(catalog, Villager.Profession.FISHERMAN, 4, "fisherman_4_cooked_salmon", "熟鲑鱼", item(Material.COOKED_SALMON, 6), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.FISHERMAN, 5, "fisherman_5_pufferfish", "河豚换绿宝石", item(Material.EMERALD, 1), item(Material.PUFFERFISH, 4), null);
+        addTrade(catalog, Villager.Profession.FISHERMAN, 5, "fisherman_5_boat", "橡木船", item(Material.OAK_BOAT, 1), item(Material.EMERALD, 1), null);
 
         addTrade(catalog, Villager.Profession.FLETCHER, 1, "fletcher_1_stick", "木棍换绿宝石", item(Material.EMERALD, 1), item(Material.STICK, 32), null);
+        addTrade(catalog, Villager.Profession.FLETCHER, 1, "fletcher_1_arrow", "箭", item(Material.ARROW, 16), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.FLETCHER, 2, "fletcher_2_arrow", "箭", item(Material.ARROW, 16), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.FLETCHER, 2, "fletcher_2_bow", "弓", item(Material.BOW, 1), item(Material.EMERALD, 2), null);
         addTrade(catalog, Villager.Profession.FLETCHER, 3, "fletcher_3_flint", "燧石换绿宝石", item(Material.EMERALD, 1), item(Material.FLINT, 26), null);
+        addTrade(catalog, Villager.Profession.FLETCHER, 3, "fletcher_3_crossbow", "弩", item(Material.CROSSBOW, 1), item(Material.EMERALD, 3), null);
         addTrade(catalog, Villager.Profession.FLETCHER, 4, "fletcher_4_string", "线换绿宝石", item(Material.EMERALD, 1), item(Material.STRING, 14), null);
+        addTrade(catalog, Villager.Profession.FLETCHER, 4, "fletcher_4_feather", "羽毛换绿宝石", item(Material.EMERALD, 1), item(Material.FEATHER, 24), null);
         addTrade(catalog, Villager.Profession.FLETCHER, 5, "fletcher_5_crossbow", "弩", item(Material.CROSSBOW, 1), item(Material.EMERALD, 8), null);
+        addTrade(catalog, Villager.Profession.FLETCHER, 5, "fletcher_5_tripwire_hook", "绊线钩", item(Material.TRIPWIRE_HOOK, 8), item(Material.EMERALD, 8), null);
 
         addTrade(catalog, Villager.Profession.LEATHERWORKER, 1, "leatherworker_1_leather", "皮革换绿宝石", item(Material.EMERALD, 1), item(Material.LEATHER, 6), null);
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 1, "leatherworker_1_leather_pants", "皮革裤子", item(Material.LEATHER_LEGGINGS, 1), item(Material.EMERALD, 3), null);
         addTrade(catalog, Villager.Profession.LEATHERWORKER, 2, "leatherworker_2_leather_pants", "皮革裤子", item(Material.LEATHER_LEGGINGS, 1), item(Material.EMERALD, 3), null);
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 2, "leatherworker_2_leather_chestplate", "皮革外套", item(Material.LEATHER_CHESTPLATE, 1), item(Material.EMERALD, 7), null);
         addTrade(catalog, Villager.Profession.LEATHERWORKER, 3, "leatherworker_3_flint", "燧石换绿宝石", item(Material.EMERALD, 1), item(Material.FLINT, 26), null);
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 3, "leatherworker_3_leather_cap", "皮革帽子", item(Material.LEATHER_HELMET, 1), item(Material.EMERALD, 5), null);
         addTrade(catalog, Villager.Profession.LEATHERWORKER, 4, "leatherworker_4_rabbit_hide", "兔子皮换绿宝石", item(Material.EMERALD, 1), item(Material.RABBIT_HIDE, 9), null);
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 4, "leatherworker_4_leather_boots", "皮革靴子", item(Material.LEATHER_BOOTS, 1), item(Material.EMERALD, 4), null);
         addTrade(catalog, Villager.Profession.LEATHERWORKER, 5, "leatherworker_5_saddle", "鞍", item(Material.SADDLE, 1), item(Material.EMERALD, 6), null);
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 5, "leatherworker_5_leather_horse_armor", "皮革马铠", item(Material.LEATHER_HORSE_ARMOR, 1), item(Material.EMERALD, 6), null);
 
         addTrade(catalog, Villager.Profession.LIBRARIAN, 1, "librarian_1_paper", "纸换绿宝石", item(Material.EMERALD, 1), item(Material.PAPER, 24), null);
         addTrade(catalog, Villager.Profession.LIBRARIAN, 1, "librarian_1_mending", "经验修补", enchantedBook(Enchantment.MENDING, 1), item(Material.EMERALD, 38), item(Material.BOOK, 1));
@@ -3216,28 +3319,48 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         addTrade(catalog, Villager.Profession.LIBRARIAN, 5, "librarian_5_quick_charge", "快速装填 III", enchantedBook(Enchantment.QUICK_CHARGE, 3), item(Material.EMERALD, 24), item(Material.BOOK, 1));
 
         addTrade(catalog, Villager.Profession.MASON, 1, "mason_1_clay_ball", "黏土球换绿宝石", item(Material.EMERALD, 1), item(Material.CLAY_BALL, 10), null);
+        addTrade(catalog, Villager.Profession.MASON, 1, "mason_1_brick", "红砖", item(Material.BRICK, 10), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.MASON, 2, "mason_2_bricks", "红砖", item(Material.BRICK, 10), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.MASON, 2, "mason_2_stone_bricks", "石砖", item(Material.STONE_BRICKS, 4), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.MASON, 3, "mason_3_stone", "石头换绿宝石", item(Material.EMERALD, 1), item(Material.STONE, 20), null);
+        addTrade(catalog, Villager.Profession.MASON, 3, "mason_3_polished_andesite", "磨制安山岩", item(Material.POLISHED_ANDESITE, 4), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.MASON, 4, "mason_4_quartz", "石英块", item(Material.QUARTZ_BLOCK, 1), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.MASON, 4, "mason_4_terracotta", "陶瓦", item(Material.TERRACOTTA, 1), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.MASON, 5, "mason_5_glazed_terracotta", "带釉陶瓦", item(Material.WHITE_GLAZED_TERRACOTTA, 1), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.MASON, 5, "mason_5_quartz_pillar", "石英柱", item(Material.QUARTZ_PILLAR, 1), item(Material.EMERALD, 1), null);
 
         addTrade(catalog, Villager.Profession.SHEPHERD, 1, "shepherd_1_wool", "白色羊毛换绿宝石", item(Material.EMERALD, 1), item(Material.WHITE_WOOL, 18), null);
+        addTrade(catalog, Villager.Profession.SHEPHERD, 1, "shepherd_1_shears", "剪刀", item(Material.SHEARS, 1), item(Material.EMERALD, 2), null);
         addTrade(catalog, Villager.Profession.SHEPHERD, 2, "shepherd_2_shears", "剪刀", item(Material.SHEARS, 1), item(Material.EMERALD, 2), null);
+        addTrade(catalog, Villager.Profession.SHEPHERD, 2, "shepherd_2_carpet", "白色地毯", item(Material.WHITE_CARPET, 4), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.SHEPHERD, 3, "shepherd_3_dye", "黑色染料换绿宝石", item(Material.EMERALD, 1), item(Material.BLACK_DYE, 12), null);
+        addTrade(catalog, Villager.Profession.SHEPHERD, 3, "shepherd_3_bed", "白色床", item(Material.WHITE_BED, 1), item(Material.EMERALD, 3), null);
         addTrade(catalog, Villager.Profession.SHEPHERD, 4, "shepherd_4_banner", "白色旗帜", item(Material.WHITE_BANNER, 1), item(Material.EMERALD, 3), null);
+        addTrade(catalog, Villager.Profession.SHEPHERD, 4, "shepherd_4_wool", "白色羊毛", item(Material.WHITE_WOOL, 1), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.SHEPHERD, 5, "shepherd_5_painting", "画", item(Material.PAINTING, 3), item(Material.EMERALD, 2), null);
+        addTrade(catalog, Villager.Profession.SHEPHERD, 5, "shepherd_5_banner_pattern", "旗帜图案", item(Material.FLOWER_BANNER_PATTERN, 1), item(Material.EMERALD, 8), null);
 
         addTrade(catalog, Villager.Profession.TOOLSMITH, 1, "toolsmith_1_coal", "煤炭换绿宝石", item(Material.EMERALD, 1), item(Material.COAL, 15), null);
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 1, "toolsmith_1_stone_shovel", "石锹", item(Material.STONE_SHOVEL, 1), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.TOOLSMITH, 2, "toolsmith_2_stone_axe", "石斧", item(Material.STONE_AXE, 1), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 2, "toolsmith_2_stone_pickaxe", "石镐", item(Material.STONE_PICKAXE, 1), item(Material.EMERALD, 1), null);
         addTrade(catalog, Villager.Profession.TOOLSMITH, 3, "toolsmith_3_iron_ingot", "铁锭换绿宝石", item(Material.EMERALD, 1), item(Material.IRON_INGOT, 4), null);
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 3, "toolsmith_3_iron_axe", "铁斧", item(Material.IRON_AXE, 1), item(Material.EMERALD, 3), null);
         addTrade(catalog, Villager.Profession.TOOLSMITH, 4, "toolsmith_4_flint", "燧石换绿宝石", item(Material.EMERALD, 1), item(Material.FLINT, 30), null);
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 4, "toolsmith_4_diamond_hoe", "钻石锄", item(Material.DIAMOND_HOE, 1), item(Material.EMERALD, 4), null);
         addTrade(catalog, Villager.Profession.TOOLSMITH, 5, "toolsmith_5_diamond_pickaxe", "钻石镐", item(Material.DIAMOND_PICKAXE, 1), item(Material.EMERALD, 18), null);
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 5, "toolsmith_5_diamond_axe", "钻石斧", item(Material.DIAMOND_AXE, 1), item(Material.EMERALD, 17), null);
 
         addTrade(catalog, Villager.Profession.WEAPONSMITH, 1, "weaponsmith_1_coal", "煤炭换绿宝石", item(Material.EMERALD, 1), item(Material.COAL, 15), null);
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 1, "weaponsmith_1_iron_axe", "铁斧", item(Material.IRON_AXE, 1), item(Material.EMERALD, 3), null);
         addTrade(catalog, Villager.Profession.WEAPONSMITH, 2, "weaponsmith_2_iron_axe", "铁斧", item(Material.IRON_AXE, 1), item(Material.EMERALD, 3), null);
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 2, "weaponsmith_2_iron_sword", "铁剑", item(Material.IRON_SWORD, 1), item(Material.EMERALD, 7), null);
         addTrade(catalog, Villager.Profession.WEAPONSMITH, 3, "weaponsmith_3_flint", "燧石换绿宝石", item(Material.EMERALD, 1), item(Material.FLINT, 24), null);
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 3, "weaponsmith_3_iron_ingot", "铁锭换绿宝石", item(Material.EMERALD, 1), item(Material.IRON_INGOT, 4), null);
         addTrade(catalog, Villager.Profession.WEAPONSMITH, 4, "weaponsmith_4_diamond", "钻石换绿宝石", item(Material.EMERALD, 1), item(Material.DIAMOND, 1), null);
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 4, "weaponsmith_4_diamond_axe", "钻石斧", item(Material.DIAMOND_AXE, 1), item(Material.EMERALD, 17), null);
         addTrade(catalog, Villager.Profession.WEAPONSMITH, 5, "weaponsmith_5_diamond_sword", "钻石剑", item(Material.DIAMOND_SWORD, 1), item(Material.EMERALD, 16), null);
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 5, "weaponsmith_5_diamond_axe", "钻石斧", item(Material.DIAMOND_AXE, 1), item(Material.EMERALD, 17), null);
 
         catalog.replaceAll((profession, trades) -> List.copyOf(trades));
         return Map.copyOf(catalog);
@@ -3334,6 +3457,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         private ItemStack breederOutput;
         private Villager.Profession tradingProfession;
         private final Set<String> selectedTradeIds = new LinkedHashSet<>();
+        private boolean tradingLocked;
 
         private MachineState(MachineType type, String world, int x, int y, int z, BlockFace front) {
             this.type = type;
