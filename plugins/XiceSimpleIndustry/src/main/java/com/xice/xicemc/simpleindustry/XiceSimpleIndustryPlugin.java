@@ -54,7 +54,7 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Villager;
+import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Zombie;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -67,6 +67,7 @@ import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockRedstoneEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.EntityTeleportEvent;
@@ -86,13 +87,13 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
+import org.bukkit.inventory.ShapelessRecipe;
 import org.bukkit.inventory.recipe.CraftingBookCategory;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.potion.PotionEffect;
-import org.bukkit.potion.PotionEffectType;
+import org.bukkit.projectiles.ProjectileSource;
 import org.bukkit.util.Vector;
 
 public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listener, TabExecutor {
@@ -208,21 +209,6 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             "IRON_AXE",
             "GOLDEN_AXE"
     );
-    private static final List<Villager.Profession> RESCUED_VILLAGER_PROFESSIONS = List.of(
-            Villager.Profession.ARMORER,
-            Villager.Profession.BUTCHER,
-            Villager.Profession.CARTOGRAPHER,
-            Villager.Profession.CLERIC,
-            Villager.Profession.FARMER,
-            Villager.Profession.FISHERMAN,
-            Villager.Profession.FLETCHER,
-            Villager.Profession.LEATHERWORKER,
-            Villager.Profession.LIBRARIAN,
-            Villager.Profession.MASON,
-            Villager.Profession.SHEPHERD,
-            Villager.Profession.TOOLSMITH,
-            Villager.Profession.WEAPONSMITH
-    );
 
     private final Map<String, MachineState> machines = new HashMap<>();
     private final Map<String, Long> lastRedstonePulseTicks = new HashMap<>();
@@ -238,6 +224,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     private NamespacedKey villagerBreederItemModelKey;
     private NamespacedKey villagerBreederRecipeKey;
     private NamespacedKey villagerEggKnowledgeKey;
+    private NamespacedKey zombieVillagerEggRecipeKey;
     private NamespacedKey undeadDustKey;
     private NamespacedKey undeadDustItemModelKey;
     private NamespacedKey undeadDustKnowledgeKey;
@@ -271,6 +258,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         villagerBreederItemModelKey = NamespacedKey.minecraft("composter");
         villagerBreederRecipeKey = new NamespacedKey(this, "simple_villager_breeder");
         villagerEggKnowledgeKey = new NamespacedKey(this, "knows_villager_spawn_egg");
+        zombieVillagerEggRecipeKey = new NamespacedKey(this, "zombie_villager_spawn_egg");
         undeadDustKey = new NamespacedKey(this, "undead_dust");
         undeadDustItemModelKey = new NamespacedKey(this, "undead_dust");
         undeadDustKnowledgeKey = new NamespacedKey(this, "knows_undead_dust");
@@ -311,7 +299,9 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         Objects.requireNonNull(getCommand("simpleindustry")).setTabCompleter(this);
         registerGeneratorRecipe();
         registerVillagerBreederRecipe();
+        registerZombieVillagerEggRecipe();
         registerUndeadCoreRecipe();
+        customItemService.allowCustomIngredientRecipe(zombieVillagerEggRecipeKey);
 
         refreshLoadedMachines();
         outputTaskId = Bukkit.getScheduler().runTaskTimer(this, this::tickMachines, outputIntervalTicks, outputIntervalTicks).getTaskId();
@@ -345,10 +335,12 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (customItemService != null) {
             customItemService.unregisterRecipe(generatorRecipeKey);
             customItemService.unregisterRecipe(villagerBreederRecipeKey);
+            customItemService.unregisterRecipe(zombieVillagerEggRecipeKey);
             customItemService.unregisterRecipe(undeadCoreRecipeKey);
         } else {
             Bukkit.removeRecipe(generatorRecipeKey);
             Bukkit.removeRecipe(villagerBreederRecipeKey);
+            Bukkit.removeRecipe(zombieVillagerEggRecipeKey);
             Bukkit.removeRecipe(undeadCoreRecipeKey);
         }
         if (customBlockService != null) {
@@ -633,6 +625,10 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (tideId != null) {
             event.getDrops().clear();
             event.setDroppedExp(event.getDroppedExp() * 5);
+            Player killer = event.getEntity().getKiller();
+            if (killer != null) {
+                recordUndeadTideMobContributor(event.getEntity().getUniqueId(), tideId, killer.getUniqueId());
+            }
             handleUndeadTideMobDeath(event.getEntity().getUniqueId(), tideId);
             return;
         }
@@ -657,6 +653,18 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         }
         if (ThreadLocalRandom.current().nextDouble() < chance) {
             event.getDrops().add(createUndeadDust(1));
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        String tideId = event.getEntity().getPersistentDataContainer().get(undeadTideMobKey, PersistentDataType.STRING);
+        if (tideId == null) {
+            return;
+        }
+        Player player = damagingPlayer(event.getDamager());
+        if (player != null) {
+            recordUndeadTideMobContributor(event.getEntity().getUniqueId(), tideId, player.getUniqueId());
         }
     }
 
@@ -1412,6 +1420,17 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         customItemService.registerRecipe(recipe);
     }
 
+    private void registerZombieVillagerEggRecipe() {
+        customItemService.unregisterRecipe(zombieVillagerEggRecipeKey);
+        ShapelessRecipe recipe = new ShapelessRecipe(
+                zombieVillagerEggRecipeKey,
+                new ItemStack(Material.ZOMBIE_VILLAGER_SPAWN_EGG));
+        recipe.setCategory(CraftingBookCategory.MISC);
+        recipe.addIngredient(Material.VILLAGER_SPAWN_EGG);
+        recipe.addIngredient(new RecipeChoice.ExactChoice(createUndeadDust(1)));
+        customItemService.registerRecipe(recipe);
+    }
+
     private void registerUndeadCoreRecipe() {
         customItemService.unregisterRecipe(undeadCoreRecipeKey);
         ShapedRecipe recipe = new ShapedRecipe(undeadCoreRecipeKey, createUndeadCore(1));
@@ -1530,10 +1549,12 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         tide.zombieIds.removeIf(id -> {
             Entity entity = Bukkit.getEntity(id);
             if (!(entity instanceof Zombie zombie) || zombie.isDead() || !zombie.isValid()) {
+                tide.zombieContributors.remove(id);
                 return true;
             }
             if (!zombie.getWorld().equals(tide.center.getWorld())) {
                 zombie.remove();
+                tide.zombieContributors.remove(id);
                 return true;
             }
             return false;
@@ -1783,6 +1804,32 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         return ThreadLocalRandom.current().nextInt(UNDEAD_TIDE_MIN_SPAWN_TICKS, UNDEAD_TIDE_MAX_SPAWN_TICKS + 1);
     }
 
+    private Player damagingPlayer(Entity damager) {
+        if (damager instanceof Player player) {
+            return player;
+        }
+        if (damager instanceof Projectile projectile) {
+            ProjectileSource shooter = projectile.getShooter();
+            if (shooter instanceof Player player) {
+                return player;
+            }
+        }
+        return null;
+    }
+
+    private void recordUndeadTideMobContributor(UUID mobId, String tideId, UUID playerId) {
+        UndeadTideState tide;
+        try {
+            tide = undeadTides.get(UUID.fromString(tideId));
+        } catch (IllegalArgumentException ex) {
+            return;
+        }
+        if (tide == null || !tide.zombieIds.contains(mobId)) {
+            return;
+        }
+        tide.zombieContributors.computeIfAbsent(mobId, ignored -> new HashSet<>()).add(playerId);
+    }
+
     private void handleUndeadTideMobDeath(UUID mobId, String tideId) {
         UndeadTideState tide;
         try {
@@ -1794,6 +1841,10 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             return;
         }
         tide.zombieIds.remove(mobId);
+        Set<UUID> contributors = tide.zombieContributors.remove(mobId);
+        if (contributors != null) {
+            tide.rewardPlayerIds.addAll(contributors);
+        }
         tide.progress++;
         if (tide.progress >= UNDEAD_TIDE_REQUIRED_PROGRESS) {
             beginUndeadTideVictory(tide);
@@ -1807,6 +1858,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             UndeadTideState tide = undeadTides.get(UUID.fromString(tideId));
             if (tide != null) {
                 tide.zombieIds.remove(mobId);
+                tide.zombieContributors.remove(mobId);
             }
         } catch (IllegalArgumentException ignored) {
         }
@@ -1824,6 +1876,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             }
         }
         tide.zombieIds.clear();
+        tide.zombieContributors.clear();
         playUndeadTideVictory(tide);
         updateUndeadTideBossBar(tide);
     }
@@ -1840,7 +1893,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     private void finishUndeadTideVictory(UndeadTideState tide) {
         undeadTides.remove(tide.id);
         tide.bossBar.removeAll();
-        spawnRescuedVillager(tide.center);
+        giveUndeadTideRewards(tide);
     }
 
     private void endUndeadTide(UndeadTideState tide, boolean success) {
@@ -1853,8 +1906,9 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             }
         }
         tide.zombieIds.clear();
+        tide.zombieContributors.clear();
         if (success) {
-            spawnRescuedVillager(tide.center);
+            giveUndeadTideRewards(tide);
         }
     }
 
@@ -1869,7 +1923,23 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             }
         }
         tide.zombieIds.clear();
+        tide.zombieContributors.clear();
         cleanupFailedUndeadTideMobs();
+    }
+
+    private void giveUndeadTideRewards(UndeadTideState tide) {
+        for (UUID playerId : tide.rewardPlayerIds) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player == null) {
+                continue;
+            }
+            ItemStack reward = new ItemStack(Material.VILLAGER_SPAWN_EGG);
+            Map<Integer, ItemStack> leftovers = player.getInventory().addItem(reward);
+            for (ItemStack leftover : leftovers.values()) {
+                player.getWorld().dropItemNaturally(player.getLocation(), leftover);
+            }
+            rememberVillagerEggAndUnlockBreederRecipe(player);
+        }
     }
 
     private void cleanupFailedUndeadTideMobs() {
@@ -1911,32 +1981,6 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             }
         }
         return false;
-    }
-
-    private void spawnRescuedVillager(Location center) {
-        World world = center.getWorld();
-        if (world == null) {
-            return;
-        }
-        Location spawn = findVillagerSpawnLocation(center);
-        world.spawn(spawn, Villager.class, villager -> {
-            villager.setAdult();
-            villager.setProfession(randomFrom(RESCUED_VILLAGER_PROFESSIONS));
-            villager.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 20 * 20, 4, false, true, true));
-        });
-    }
-
-    private Location findVillagerSpawnLocation(Location center) {
-        Location spawn = center.clone();
-        if (!spawn.getBlock().isPassable() || !spawn.clone().add(0.0D, 1.0D, 0.0D).getBlock().isPassable()) {
-            World world = spawn.getWorld();
-            if (world != null) {
-                spawn.setY(world.getHighestBlockYAt(spawn) + 1.0D);
-            }
-        }
-        spawn.setX(spawn.getBlockX() + 0.5D);
-        spawn.setZ(spawn.getBlockZ() + 0.5D);
-        return spawn;
     }
 
     private boolean clickMayGrantRedstone(InventoryClickEvent event) {
@@ -1995,7 +2039,8 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     }
 
     private void rememberVillagerEggAndUnlockBreederRecipe(Player player) {
-        customItemService.rememberAndDiscoverRecipe(player, villagerEggKnowledgeKey, villagerBreederRecipeKey);
+        customItemService.rememberRecipeKnowledge(player, villagerEggKnowledgeKey);
+        customItemService.discoverRecipes(player, List.of(villagerBreederRecipeKey, zombieVillagerEggRecipeKey));
     }
 
     private void unlockUndeadCoreRecipeIfKnowsDust(Player player) {
@@ -2177,7 +2222,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     }
 
     private boolean craftingMatrixContainsBlockedCustomItem(ItemStack[] matrix) {
-        if (isUndeadCoreRecipeMatrix(matrix)) {
+        if (isUndeadCoreRecipeMatrix(matrix) || isZombieVillagerEggRecipeMatrix(matrix)) {
             return false;
         }
         for (ItemStack item : matrix) {
@@ -2205,6 +2250,26 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             }
         }
         return true;
+    }
+
+    private boolean isZombieVillagerEggRecipeMatrix(ItemStack[] matrix) {
+        int villagerEggs = 0;
+        int undeadDusts = 0;
+        for (ItemStack item : matrix) {
+            if (isAir(item)) {
+                continue;
+            }
+            if (isVillagerSpawnEgg(item)) {
+                villagerEggs++;
+                continue;
+            }
+            if (isUndeadDust(item)) {
+                undeadDusts++;
+                continue;
+            }
+            return false;
+        }
+        return villagerEggs == 1 && undeadDusts == 1;
     }
 
     private ItemStack menuItem(Material material, String name, List<String> lore) {
@@ -2371,6 +2436,8 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         private final Location center;
         private final HudBossBar bossBar;
         private final Set<UUID> zombieIds = new HashSet<>();
+        private final Map<UUID, Set<UUID>> zombieContributors = new HashMap<>();
+        private final Set<UUID> rewardPlayerIds = new HashSet<>();
         private int progress;
         private int ageTicks;
         private int nextSpawnTicks;
