@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "front": "xicesimpleindustry:block/simple_villager_trading_station_front",
+    "side": "xicesimpleindustry:block/simple_villager_trading_station_side",
+    "top": "xicesimpleindustry:block/simple_villager_trading_station_top"
+  }
+}

@@ -316,11 +316,11 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         generatorItemModelKey = new NamespacedKey(this, "simple_cobblestone_generator");
         generatorRecipeKey = new NamespacedKey(this, "simple_cobblestone_generator");
         villagerBreederItemKey = new NamespacedKey(this, "simple_villager_breeder_item");
-        villagerBreederItemModelKey = NamespacedKey.minecraft("composter");
+        villagerBreederItemModelKey = new NamespacedKey(this, "simple_villager_breeder");
         villagerBreederRecipeKey = new NamespacedKey(this, "simple_villager_breeder");
         villagerEggKnowledgeKey = new NamespacedKey(this, "knows_villager_spawn_egg");
         villagerTradingStationItemKey = new NamespacedKey(this, "simple_villager_trading_station_item");
-        villagerTradingStationItemModelKey = NamespacedKey.minecraft("lectern");
+        villagerTradingStationItemModelKey = new NamespacedKey(this, "simple_villager_trading_station");
         villagerTradingStationRecipeKey = new NamespacedKey(this, "simple_villager_trading_station");
         villagerTradingStationProfessionKey = new NamespacedKey(this, "simple_villager_trading_station_profession");
         villagerTradingStationTradesKey = new NamespacedKey(this, "simple_villager_trading_station_trades");
