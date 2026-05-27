@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "front": "xicerpg:block/dungeon_starter_front",
+    "side": "xicerpg:block/dungeon_starter_side",
+    "top": "xicerpg:block/dungeon_starter_top"
+  }
+}

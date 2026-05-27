@@ -4,10 +4,11 @@ main: com.xice.xicemc.morepotioneffects.XiceMorePotionEffectsPlugin
 api-version: '1.21'
 author: Xice
 description: More custom potion effects for XiceMCServer.
+depend: [XiceHUD]
 commands:
   morepotioneffects:
     description: Manage custom potion effects.
-    usage: /morepotioneffects <give|clear|check|reload> <player|selector> <effect> [duration]
+    usage: /morepotioneffects <give|clear|check|enchant|reload> ...
     aliases: [mpe, xicemorepotioneffects]
 permissions:
   xicemorepotioneffects.admin:

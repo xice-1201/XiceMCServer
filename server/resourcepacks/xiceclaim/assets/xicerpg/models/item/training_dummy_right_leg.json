@@ -1,0 +1,28 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "xicerpg:item/training_dummy_steve",
+    "steve": "xicerpg:item/training_dummy_steve"
+  },
+  "elements": [
+    {
+      "from": [6, 2, 6],
+      "to": [10, 14, 10],
+      "faces": {
+        "down": { "uv": [2, 5, 3, 6], "texture": "#steve" },
+        "up": { "uv": [1, 5, 2, 6], "texture": "#steve" },
+        "north": { "uv": [1, 5, 2, 8], "texture": "#steve" },
+        "south": { "uv": [3, 5, 4, 8], "texture": "#steve" },
+        "west": { "uv": [2, 5, 3, 8], "texture": "#steve" },
+        "east": { "uv": [0, 5, 1, 8], "texture": "#steve" }
+      }
+    }
+  ],
+  "display": {
+    "fixed": {
+      "rotation": [0, 0, 0],
+      "translation": [0, 0, 0],
+      "scale": [1.0, 1.0, 1.0]
+    }
+  }
+}

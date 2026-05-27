@@ -1,0 +1,32 @@
+name: XiceEconomy
+version: 0.0.1
+main: com.xice.xicemc.economy.XiceEconomyPlugin
+api-version: '1.21'
+author: Xice
+description: Simple virtual economy for XiceMCServer.
+depend: [XiceCustomItem]
+commands:
+  money:
+    description: Check economy balances and account history.
+    usage: /money [top|log|player]
+    aliases: [balance, bal]
+  pay:
+    description: Transfer virtual currency to another player.
+    usage: /pay <player> <amount>
+  eco:
+    description: Admin economy management.
+    usage: /eco <balance|give|take|set|top|log|reload>
+  xiceeconomy:
+    description: Manage XiceEconomy.
+    usage: /xiceeconomy reload
+    aliases: [economy]
+permissions:
+  xiceeconomy.use:
+    description: Use balance and payment commands.
+    default: true
+  xiceeconomy.pay:
+    description: Transfer money to other players.
+    default: true
+  xiceeconomy.admin:
+    description: Manage economy accounts and reload configuration.
+    default: op

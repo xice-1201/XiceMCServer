@@ -1,0 +1,28 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "xicerpg:item/rotten_guard_model",
+    "guard": "xicerpg:item/rotten_guard_model"
+  },
+  "elements": [
+    {
+      "from": [6, 2, 6],
+      "to": [10, 14, 10],
+      "faces": {
+        "down": { "uv": [12, 5, 13, 6], "texture": "#guard" },
+        "up": { "uv": [11, 5, 12, 6], "texture": "#guard" },
+        "north": { "uv": [11, 5, 12, 8], "texture": "#guard" },
+        "south": { "uv": [13, 5, 14, 8], "texture": "#guard" },
+        "west": { "uv": [12, 5, 13, 8], "texture": "#guard" },
+        "east": { "uv": [10, 5, 11, 8], "texture": "#guard" }
+      }
+    }
+  ],
+  "display": {
+    "fixed": {
+      "rotation": [0, 0, 0],
+      "translation": [0, 0, 0],
+      "scale": [1.0, 1.0, 1.0]
+    }
+  }
+}

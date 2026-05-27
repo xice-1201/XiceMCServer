@@ -1,5 +1,10 @@
 package com.xice.xicemc.claim;
 
+import com.xice.xicemc.customitem.CustomBlockService;
+import com.xice.xicemc.customitem.CustomItemDefinition;
+import com.xice.xicemc.customitem.CustomItemService;
+import com.xice.xicemc.customitem.CustomMultiBlockDefinition;
+import com.xice.xicemc.customitem.CustomMultiBlockPart;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -16,8 +21,12 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Pattern;
 import java.util.concurrent.ThreadLocalRandom;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Color;
@@ -36,6 +45,7 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockSupport;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.TileState;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Waterlogged;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -83,6 +93,7 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.raid.RaidTriggerEvent;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
@@ -110,11 +121,16 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private static final int TOTEM_CORE_SLOT = 4;
     private static final int TOTEM_AURA_PERIOD_TICKS = 200;
     private static final int TOTEM_AURA_DURATION_TICKS = 500;
+    private static final int TOTEM_CLIENT_VIEW_PERIOD_TICKS = 40;
     private static final long CHAOTIC_WARP_SUPPRESSION_MILLIS = 15L * 60L * 1000L;
     private static final int CHAOTIC_WARP_EFFECT_DURATION_TICKS = 20 * 20;
     private static final int CHAOTIC_WARP_RANDOM_ATTEMPTS = 64;
     private static final int CHAOTIC_WARP_MAX_CONCURRENT_SEARCHES = 2;
     private static final int CHAOTIC_WARP_QUEUE_EXTRA_SIZE = 2;
+    private static final int CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS = 2;
+    private static final int TEMPORARY_VIEW_DISTANCE = 2;
+    private static final long PRE_TELEPORT_VIEW_DISTANCE_LEAD_TICKS = 10L;
+    private static final long VIEW_DISTANCE_RAMP_INTERVAL_TICKS = 20L;
     private static final int DEFAULT_SERVER_MAX_WORLD_SIZE = 29_999_984;
     private static final int DEFAULT_CLAIM_WORLD_BORDER = 50_000;
     private static final double TELEPORT_MOVE_CANCEL_DISTANCE_SQUARED = 0.0009D;
@@ -123,8 +139,10 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private final Map<String, ClaimRegion> claims = new HashMap<>();
     private final Map<UUID, RingSession> ringSessions = new HashMap<>();
     private final Map<UUID, PendingTeleport> pendingTeleports = new HashMap<>();
+    private final Map<UUID, PlayerViewDistanceState> temporaryViewDistances = new HashMap<>();
     private final Map<String, ChaoticWarpQueue> chaoticWarpQueues = new HashMap<>();
     private BukkitTask totemAuraTask;
+    private BukkitTask totemClientViewTask;
     private BukkitTask ringPreviewTask;
     private int maxOnlineSinceStart;
     private int serverMaxWorldSize = DEFAULT_SERVER_MAX_WORLD_SIZE;
@@ -132,6 +150,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private File claimsFile;
     private File chaoticWarpQueuesFile;
     private FileConfiguration claimsConfig;
+    private CustomItemService customItemService;
+    private CustomBlockService customBlockService;
     private NamespacedKey ringKey;
     private NamespacedKey ringClaimIdKey;
     private NamespacedKey ringClaimNameKey;
@@ -161,11 +181,26 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     private NamespacedKey totemOwnerNameKey;
     private NamespacedKey totemPlacedAtKey;
     private NamespacedKey totemDisplayKey;
+    private CustomMultiBlockDefinition claimTotemStructureDefinition;
 
     @Override
     public void onEnable() {
         initializeKeys();
         saveDefaultConfig();
+        customItemService = Bukkit.getServicesManager().load(CustomItemService.class);
+        if (customItemService == null) {
+            getLogger().severe("XiceCustomItem service is not available.");
+            Bukkit.getPluginManager().disablePlugin(this);
+            return;
+        }
+        customBlockService = Bukkit.getServicesManager().load(CustomBlockService.class);
+        if (customBlockService == null) {
+            getLogger().severe("XiceCustomItem custom block service is not available.");
+            Bukkit.getPluginManager().disablePlugin(this);
+            return;
+        }
+        registerCustomItems();
+        registerCustomMultiBlocks();
         registerClaimRingRecipe();
         registerClaimTotemRecipe();
         registerTotemCoreRecipe();
@@ -177,6 +212,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         getServer().getPluginManager().registerEvents(this, this);
         Bukkit.getScheduler().runTask(this, this::refreshLoadedTotemBlocks);
         totemAuraTask = Bukkit.getScheduler().runTaskTimer(this, this::applyTotemAuras, TOTEM_AURA_PERIOD_TICKS, TOTEM_AURA_PERIOD_TICKS);
+        totemClientViewTask = Bukkit.getScheduler().runTaskTimer(this, () -> sendLoadedTotemClientViews(), TOTEM_CLIENT_VIEW_PERIOD_TICKS, TOTEM_CLIENT_VIEW_PERIOD_TICKS);
         int previewIntervalTicks = Math.max(1, getConfig().getInt("visualization.interval-ticks", 10));
         ringPreviewTask = Bukkit.getScheduler().runTaskTimer(this, this::showHeldRingPreviews, 0L, previewIntervalTicks);
         topUpChaoticWarpQueues();
@@ -187,7 +223,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         for (Player player : Bukkit.getOnlinePlayers()) {
             synchronizePlayerRingNames(player);
-            player.discoverRecipe(chaoticWarpCoreRecipeKey);
+            customItemService.discoverRecipe(player, chaoticWarpCoreRecipeKey);
         }
         getLogger().info("XiceClaim enabled. Claims: " + claims.size());
     }
@@ -198,13 +234,29 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             pending.cancel();
         }
         pendingTeleports.clear();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            restorePlayerViewDistance(player, "disable");
+        }
         if (totemAuraTask != null) {
             totemAuraTask.cancel();
             totemAuraTask = null;
         }
+        if (totemClientViewTask != null) {
+            totemClientViewTask.cancel();
+            totemClientViewTask = null;
+        }
         if (ringPreviewTask != null) {
             ringPreviewTask.cancel();
             ringPreviewTask = null;
+        }
+        if (customItemService != null) {
+            customItemService.unregisterRecipe(ringRecipeKey);
+            customItemService.unregisterRecipe(totemRecipeKey);
+            customItemService.unregisterRecipe(totemCoreRecipeKey);
+            customItemService.unregisterRecipe(chaoticWarpCoreRecipeKey);
+        }
+        if (customBlockService != null) {
+            customBlockService.unregisterMultiBlock(totemKey);
         }
         saveChaoticWarpQueues();
         releaseChaoticWarpQueueTickets();
@@ -258,10 +310,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             send(sender, message("reload-complete"));
             return true;
         }
-        if ("give".equalsIgnoreCase(args[0])) {
-            giveClaimItem(sender, args);
-            return true;
-        }
         if (!(sender instanceof Player player)) {
             send(sender, message("player-only"));
             return true;
@@ -273,56 +321,6 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             default -> sendUsage(sender);
         }
         return true;
-    }
-
-    private void giveClaimItem(CommandSender sender, String[] args) {
-        if (!canUseAction(sender, "give")) {
-            send(sender, message("no-permission"));
-            return;
-        }
-        if (args.length < 2) {
-            send(sender, message("give-usage", "&c用法：/claim give <ring|totem|core|warp_core> [玩家|选择器]"));
-            return;
-        }
-        List<Player> targets = claimGiveTargets(sender, args);
-        if (targets.isEmpty()) {
-            send(sender, message("player-not-found", "&c没有找到目标玩家。"));
-            return;
-        }
-        String messageKey;
-        if ("ring".equalsIgnoreCase(args[1])) {
-            messageKey = "ring-given";
-        } else if ("totem".equalsIgnoreCase(args[1])) {
-            messageKey = "totem-given";
-        } else if ("core".equalsIgnoreCase(args[1])) {
-            messageKey = "totem-core-given";
-        } else if ("warp_core".equalsIgnoreCase(args[1]) || "warp-core".equalsIgnoreCase(args[1]) || "chaotic_warp_core".equalsIgnoreCase(args[1])) {
-            messageKey = "chaotic-warp-core-given";
-        } else {
-            send(sender, message("give-usage", "&c用法：/claim give <ring|totem|core|warp_core> [玩家|选择器]"));
-            return;
-        }
-        for (Player target : targets) {
-            ItemStack item;
-            if ("ring".equalsIgnoreCase(args[1])) {
-                item = createEmptyRing(ClaimPoint.from(target.getLocation()));
-                unlockPostRingRecipes(target);
-            } else if ("totem".equalsIgnoreCase(args[1])) {
-                item = createClaimTotem();
-            } else if ("core".equalsIgnoreCase(args[1])) {
-                item = createTotemCore();
-            } else {
-                item = createChaoticWarpCore();
-            }
-            Map<Integer, ItemStack> leftover = target.getInventory().addItem(item);
-            for (ItemStack leftoverItem : leftover.values()) {
-                target.getWorld().dropItemNaturally(target.getLocation(), leftoverItem);
-            }
-            send(target, message(messageKey, "&a已获得物品。"));
-        }
-        if (!(sender instanceof Player player) || !targets.contains(player) || targets.size() > 1) {
-            send(sender, message("give-summary", "&a已向 {count} 名玩家发放物品。"), "count", targets.size());
-        }
     }
 
     private boolean canUseAction(CommandSender sender, String action) {
@@ -340,29 +338,13 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return allowed.contains(normalized);
     }
 
-    private List<Player> claimGiveTargets(CommandSender sender, String[] args) {
-        if (args.length < 3) {
-            if (sender instanceof Player player) {
-                return List.of(player);
-            }
-            return List.of();
+    public boolean canStartEvent(Player player, Location location) {
+        ClaimRegion claim = claimAt(location);
+        if (claim == null || !claim.blocks(ClaimFeature.START_EVENT, player)) {
+            return true;
         }
-        return resolveTargetPlayers(sender, args[2]);
-    }
-
-    private List<Player> resolveTargetPlayers(CommandSender sender, String selector) {
-        if (selector.startsWith("@")) {
-            try {
-                return Bukkit.selectEntities(sender, selector).stream()
-                        .filter(Player.class::isInstance)
-                        .map(Player.class::cast)
-                        .toList();
-            } catch (IllegalArgumentException ignored) {
-                return List.of();
-            }
-        }
-        Player player = Bukkit.getPlayer(selector);
-        return player == null ? List.of() : List.of(player);
+        sendProtected(player, claim, ClaimFeature.START_EVENT);
+        return false;
     }
 
     private void setPosition(Player player, String[] args, boolean first) {
@@ -602,10 +584,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
+        BlockState originalState = event.getBlock().getState();
         if (isClaimTotemBlock(event.getBlock())) {
             if (getConfig().getBoolean("protection.block-break", true) && isProtectedFrom(event.getPlayer(), event.getBlock(), ClaimFeature.BLOCK_BREAK)) {
                 ClaimRegion claim = claimAt(event.getBlock().getLocation());
                 event.setCancelled(true);
+                restoreProtectedBlockState(event.getBlock(), originalState);
                 sendProtected(event.getPlayer(), claim, ClaimFeature.BLOCK_BREAK);
                 return;
             }
@@ -616,6 +600,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (getConfig().getBoolean("protection.block-break", true)) {
             protect(event.getPlayer(), event.getBlock(), event, ClaimFeature.BLOCK_BREAK);
             if (event.isCancelled()) {
+                restoreProtectedBlockState(event.getBlock(), originalState);
                 return;
             }
         }
@@ -628,16 +613,36 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockDamage(BlockDamageEvent event) {
         if (!isClaimTotemBlock(event.getBlock())) {
+            if (getConfig().getBoolean("protection.block-break", true) && isProtectedFrom(event.getPlayer(), event.getBlock(), ClaimFeature.BLOCK_BREAK)) {
+                BlockState originalState = event.getBlock().getState();
+                ClaimRegion claim = claimAt(event.getBlock().getLocation());
+                event.setCancelled(true);
+                restoreProtectedBlockState(event.getBlock(), originalState);
+                sendProtected(event.getPlayer(), claim, ClaimFeature.BLOCK_BREAK);
+            }
             return;
         }
         if (getConfig().getBoolean("protection.block-break", true) && isProtectedFrom(event.getPlayer(), event.getBlock(), ClaimFeature.BLOCK_BREAK)) {
+            BlockState originalState = event.getBlock().getState();
             ClaimRegion claim = claimAt(event.getBlock().getLocation());
             event.setCancelled(true);
+            restoreProtectedBlockState(event.getBlock(), originalState);
             sendProtected(event.getPlayer(), claim, ClaimFeature.BLOCK_BREAK);
             return;
         }
         event.setCancelled(true);
         collapseTotem(event.getBlock(), event.getPlayer().getGameMode() != GameMode.CREATIVE, true);
+    }
+
+    private void restoreProtectedBlockState(Block block, BlockState originalState) {
+        Bukkit.getScheduler().runTask(this, () -> {
+            originalState.update(true, false);
+            for (Player viewer : block.getWorld().getPlayers()) {
+                if (viewer.getLocation().distanceSquared(block.getLocation()) <= 64.0D * 64.0D) {
+                    viewer.sendBlockChange(block.getLocation(), block.getBlockData());
+                }
+            }
+        });
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -809,19 +814,21 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     public void onPlayerQuit(PlayerQuitEvent event) {
         ringSessions.remove(event.getPlayer().getUniqueId());
         cancelPendingTeleport(event.getPlayer(), null);
+        restorePlayerViewDistance(event.getPlayer(), "quit");
     }
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         maxOnlineSinceStart = Math.max(maxOnlineSinceStart, Bukkit.getOnlinePlayers().size());
         topUpChaoticWarpQueues();
-        event.getPlayer().discoverRecipe(ringRecipeKey);
-        event.getPlayer().discoverRecipe(chaoticWarpCoreRecipeKey);
+        customItemService.discoverRecipe(event.getPlayer(), ringRecipeKey);
+        customItemService.discoverRecipe(event.getPlayer(), chaoticWarpCoreRecipeKey);
         Bukkit.getScheduler().runTask(this, () -> {
             synchronizePlayerRingNames(event.getPlayer());
             if (hasClaimRing(event.getPlayer())) {
                 unlockPostRingRecipes(event.getPlayer());
             }
+            sendLoadedTotemClientViews(event.getPlayer());
         });
     }
 
@@ -832,6 +839,19 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 synchronizePlayerRingNames(player);
                 unlockPostRingRecipes(player);
             });
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onRaidTrigger(RaidTriggerEvent event) {
+        Player player = event.getPlayer();
+        ClaimRegion claim = claimAt(event.getRaid().getLocation());
+        if (claim == null) {
+            claim = claimAt(player.getLocation());
+        }
+        if (claim != null && claim.blocks(ClaimFeature.START_EVENT, player)) {
+            event.setCancelled(true);
+            sendProtected(player, claim, ClaimFeature.START_EVENT);
         }
     }
 
@@ -1351,6 +1371,22 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         return errors;
     }
 
+    private List<String> validateClaimResize(ClaimRegion oldClaim, ClaimRegion resized) {
+        List<String> errors = new ArrayList<>(validateClaimShape(resized));
+        if (!oldClaim.world.equals(resized.world)) {
+            errors.add("不能改变领地所在世界");
+        }
+        if (resized.minX > oldClaim.minX
+                || resized.maxX < oldClaim.maxX
+                || resized.minY > oldClaim.minY
+                || resized.maxY < oldClaim.maxY
+                || resized.minZ > oldClaim.minZ
+                || resized.maxZ < oldClaim.maxZ) {
+            errors.add("新范围必须完整包含旧范围");
+        }
+        return errors;
+    }
+
     private ItemStack createEmptyRing(ClaimPoint point) {
         ItemStack ring = createEmptyRing();
         RingDraft draft = RingDraft.fromPoint(point);
@@ -1359,15 +1395,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private ItemStack createEmptyRing() {
-        ItemStack ring = new ItemStack(Material.FLINT);
-        ItemMeta meta = ring.getItemMeta();
-        meta.setDisplayName(color("&b领地戒指"));
-        meta.setLore(List.of(color("&7右键打开领地创建界面。"), color("&7可用铁砧改名，戒指名即领地名。")));
-        applyRingItemModel(meta);
-        PersistentDataContainer data = meta.getPersistentDataContainer();
-        data.set(ringKey, PersistentDataType.BYTE, (byte) 1);
-        ring.setItemMeta(meta);
-        return ring;
+        return customItemService.create(ringKey, 1);
     }
 
     private void registerClaimRingRecipe() {
@@ -1377,20 +1405,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         recipe.setIngredient('D', Material.DIAMOND);
         recipe.setIngredient('N', Material.IRON_NUGGET);
         recipe.setIngredient('S', Material.STRING);
-        getServer().removeRecipe(ringRecipeKey);
-        getServer().addRecipe(recipe);
+        customItemService.registerRecipe(recipe);
     }
 
     private void registerClaimTotemRecipe() {
         ShapedRecipe recipe = new ShapedRecipe(totemRecipeKey, createClaimTotem());
         recipe.shape("Q*Q", "GEG", "SSS");
         recipe.setIngredient('Q', Material.QUARTZ);
-        recipe.setIngredient('*', Material.NETHER_STAR);
+        recipe.setIngredient('*', Material.AMETHYST_SHARD);
         recipe.setIngredient('G', Material.GOLD_INGOT);
         recipe.setIngredient('E', Material.ENDER_PEARL);
         recipe.setIngredient('S', Material.QUARTZ_SLAB);
-        getServer().removeRecipe(totemRecipeKey);
-        getServer().addRecipe(recipe);
+        customItemService.registerRecipe(recipe);
     }
 
     private void registerTotemCoreRecipe() {
@@ -1399,8 +1425,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         recipe.setIngredient('N', Material.NETHER_BRICK);
         recipe.setIngredient('G', Material.GOLD_INGOT);
         recipe.setIngredient('*', Material.NETHER_STAR);
-        getServer().removeRecipe(totemCoreRecipeKey);
-        getServer().addRecipe(recipe);
+        customItemService.registerRecipe(recipe);
     }
 
     private void registerChaoticWarpCoreRecipe() {
@@ -1420,79 +1445,107 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 Material.BAMBOO_PLANKS,
                 Material.CRIMSON_PLANKS,
                 Material.WARPED_PLANKS));
-        getServer().removeRecipe(chaoticWarpCoreRecipeKey);
-        getServer().addRecipe(recipe);
+        customItemService.registerRecipe(recipe);
+    }
+
+    private void registerCustomItems() {
+        customItemService.register(new CustomItemDefinition(
+                ringKey,
+                Material.FLINT,
+                ringKey,
+                ringItemModelKey,
+                Component.text("领地戒指", NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false),
+                List.of(
+                        Component.text("右键打开领地创建界面。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                        Component.text("可用铁砧改名，戒指名即领地名。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)),
+                null));
+        customItemService.register(new CustomItemDefinition(
+                totemKey,
+                TOTEM_ITEM_MATERIAL,
+                totemKey,
+                totemItemModelKey,
+                Component.text("领地图腾", NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false),
+                List.of(
+                        Component.text("右键放置，需要下方有方块支撑。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                        Component.text("放置后占用 1 x 1 x 2 空间。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)),
+                false));
+        customItemService.register(new CustomItemDefinition(
+                totemCoreKey,
+                TOTEM_CORE_ITEM_MATERIAL,
+                totemCoreKey,
+                totemCoreItemModelKey,
+                Component.text("图腾核心", NamedTextColor.LIGHT_PURPLE).decoration(TextDecoration.ITALIC, false),
+                List.of(Component.text("可放入已绑定的领地图腾。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)),
+                false));
+        customItemService.register(new CustomItemDefinition(
+                chaoticWarpCoreKey,
+                Material.FIREWORK_STAR,
+                chaoticWarpCoreKey,
+                chaoticWarpCoreItemModelKey,
+                Component.text("紊乱跃迁晶核", NamedTextColor.LIGHT_PURPLE).decoration(TextDecoration.ITALIC, false),
+                List.of(
+                        Component.text("右键启动 3 秒跃迁倒计时。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                        Component.text("结束后消耗 1 级经验随机传送至当前维度。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)),
+                true));
+    }
+
+    private void registerCustomMultiBlocks() {
+        Map<BlockFace, String> bottomData = Map.of(
+                BlockFace.NORTH, totemBlockData("bottom", BlockFace.NORTH),
+                BlockFace.EAST, totemBlockData("bottom", BlockFace.EAST),
+                BlockFace.SOUTH, totemBlockData("bottom", BlockFace.SOUTH),
+                BlockFace.WEST, totemBlockData("bottom", BlockFace.WEST));
+        Map<BlockFace, String> topData = Map.of(
+                BlockFace.NORTH, totemBlockData("top", BlockFace.NORTH),
+                BlockFace.EAST, totemBlockData("top", BlockFace.EAST),
+                BlockFace.SOUTH, totemBlockData("top", BlockFace.SOUTH),
+                BlockFace.WEST, totemBlockData("top", BlockFace.WEST));
+        claimTotemStructureDefinition = new CustomMultiBlockDefinition(
+                totemKey,
+                totemDisplayKey,
+                totemPartKey,
+                Component.text("Claim Totem"),
+                List.of(
+                        new CustomMultiBlockPart("bottom", 0, 0, 0, bottomData, bottomData, 1.0F, 1.0F),
+                        new CustomMultiBlockPart("top", 0, 1, 0, topData, topData, 1.0F, 1.0F)),
+                3.5D,
+                null,
+                null,
+                Component.text("Claim Totem"),
+                List.of());
+        customBlockService.registerMultiBlock(claimTotemStructureDefinition);
     }
 
     private ItemStack createClaimTotem() {
-        ItemStack totem = new ItemStack(TOTEM_ITEM_MATERIAL);
-        ItemMeta meta = totem.getItemMeta();
-        meta.setDisplayName(color("&b领地图腾"));
-        meta.setLore(List.of(color("&7右键放置，需要下方有方块支撑。"), color("&7放置后占用 1 x 1 x 2 空间。")));
-        meta.setEnchantmentGlintOverride(false);
-        applyTotemItemModel(meta);
-        meta.getPersistentDataContainer().set(totemKey, PersistentDataType.BYTE, (byte) 1);
-        totem.setItemMeta(meta);
-        return totem;
+        return customItemService.create(totemKey, 1);
     }
 
     private ItemStack createTotemCore() {
-        ItemStack core = new ItemStack(TOTEM_CORE_ITEM_MATERIAL);
-        ItemMeta meta = core.getItemMeta();
-        meta.setDisplayName(color("&d图腾核心"));
-        meta.setLore(List.of(color("&7可放入已绑定的领地图腾。")));
-        meta.setEnchantmentGlintOverride(false);
-        applyTotemCoreItemModel(meta);
-        meta.getPersistentDataContainer().set(totemCoreKey, PersistentDataType.BYTE, (byte) 1);
-        core.setItemMeta(meta);
-        return core;
+        return customItemService.create(totemCoreKey, 1);
     }
 
     private ItemStack createChaoticWarpCore() {
-        ItemStack core = new ItemStack(Material.FIREWORK_STAR);
-        ItemMeta meta = core.getItemMeta();
-        meta.setDisplayName(color("&d紊乱跃迁晶核"));
-        meta.setLore(List.of(
-                color("&7右键启动 3 秒跃迁倒计时。"),
-                color("&7结束后消耗 1 级经验随机传送至当前维度。")));
-        meta.setEnchantmentGlintOverride(true);
-        applyChaoticWarpCoreItemModel(meta);
-        meta.getPersistentDataContainer().set(chaoticWarpCoreKey, PersistentDataType.BYTE, (byte) 1);
-        core.setItemMeta(meta);
-        return core;
+        return customItemService.create(chaoticWarpCoreKey, 1);
     }
 
     private boolean isClaimRing(ItemStack item) {
-        if (item == null || item.getType() != Material.FLINT || !item.hasItemMeta()) {
-            return false;
-        }
-        return item.getItemMeta().getPersistentDataContainer().has(ringKey, PersistentDataType.BYTE);
+        return customItemService != null && customItemService.isCustomItem(item, ringKey);
     }
 
     private boolean isClaimTotemItem(ItemStack item) {
-        if (item == null || item.getType() != TOTEM_ITEM_MATERIAL || !item.hasItemMeta()) {
-            return false;
-        }
-        return item.getItemMeta().getPersistentDataContainer().has(totemKey, PersistentDataType.BYTE);
+        return customItemService != null && customItemService.isCustomItem(item, totemKey);
     }
 
     private boolean isTotemCoreItem(ItemStack item) {
-        if (item == null || item.getType() != TOTEM_CORE_ITEM_MATERIAL || !item.hasItemMeta()) {
-            return false;
-        }
-        return item.getItemMeta().getPersistentDataContainer().has(totemCoreKey, PersistentDataType.BYTE);
+        return customItemService != null && customItemService.isCustomItem(item, totemCoreKey);
     }
 
     private boolean isChaoticWarpCoreItem(ItemStack item) {
-        if (item == null || item.getType() != Material.FIREWORK_STAR || !item.hasItemMeta()) {
-            return false;
-        }
-        return item.getItemMeta().getPersistentDataContainer().has(chaoticWarpCoreKey, PersistentDataType.BYTE);
+        return customItemService != null && customItemService.isCustomItem(item, chaoticWarpCoreKey);
     }
 
     private void unlockPostRingRecipes(Player player) {
-        player.discoverRecipe(totemRecipeKey);
-        player.discoverRecipe(totemCoreRecipeKey);
+        customItemService.discoverRecipes(player, List.of(totemRecipeKey, totemCoreRecipeKey));
     }
 
     private boolean hasClaimRing(Player player) {
@@ -1516,7 +1569,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (top.getY() >= world.getMaxHeight()) {
             return;
         }
-        if (!bottom.isReplaceable() || !top.isReplaceable() || !hasTotemSupport(bottom)) {
+        if (!customBlockService.canPlaceMultiBlock(bottom, claimTotemStructureDefinition, totemFrontFor(player))
+                || !hasTotemSupport(bottom)) {
             return;
         }
         if (getConfig().getBoolean("protection.block-place", true)) {
@@ -1535,11 +1589,11 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         String totemId = UUID.randomUUID().toString();
         long placedAt = System.currentTimeMillis();
         BlockFace front = totemFrontFor(player);
-        setTotemBlockData(bottom, "bottom", front);
-        setTotemBlockData(top, "top", front);
+        customBlockService.setMultiBlockCarrierBlocks(bottom, claimTotemStructureDefinition, front);
         markTotemBlock(bottom, totemId, "bottom", front, player, placedAt);
         markTotemBlock(top, totemId, "top", front, player, placedAt);
         tryBindClaimTotem(bottom, top, totemId);
+        refreshTotemBlock(bottom);
         if (player.getGameMode() != GameMode.CREATIVE) {
             consumeOneTotem(player, event.getHand());
         }
@@ -1626,6 +1680,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private void removeTotemDisplays(Block bottom, String totemId) {
+        customBlockService.removeMultiBlockDisplays(
+                bottom.getWorld(),
+                bottom.getLocation().add(0.5, 1.0, 0.5),
+                claimTotemStructureDefinition,
+                totemId,
+                2.5D);
         Location center = bottom.getLocation().add(0.5, 1.0, 0.5);
         for (Entity entity : bottom.getWorld().getNearbyEntities(center, 2.0, 2.5, 2.0)) {
             PersistentDataContainer data = entity.getPersistentDataContainer();
@@ -1669,23 +1729,70 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
         BlockFace front = totemFront(bottom);
         removeTotemDisplays(bottom, id);
-        if (isTotemBlockData(bottom, "bottom", front) && isTotemBlockData(top, "top", front)) {
-            return;
+        if (!isTotemBlockData(bottom, "bottom", front) || !isTotemBlockData(top, "top", front)) {
+            String ownerUuid = totemString(bottom, totemOwnerUuidKey);
+            String ownerName = totemString(bottom, totemOwnerNameKey);
+            String claimId = totemString(bottom, totemClaimIdKey);
+            long placedAt = totemLong(bottom, totemPlacedAtKey);
+            customBlockService.setMultiBlockCarrierBlocks(bottom, claimTotemStructureDefinition, front);
+            markTotemBlock(bottom, id, "bottom", front, ownerUuid, ownerName, placedAt);
+            markTotemBlock(top, id, "top", front, ownerUuid, ownerName, placedAt);
+            markTotemClaim(bottom, claimId);
         }
-
-        String ownerUuid = totemString(bottom, totemOwnerUuidKey);
-        String ownerName = totemString(bottom, totemOwnerNameKey);
-        String claimId = totemString(bottom, totemClaimIdKey);
-        long placedAt = totemLong(bottom, totemPlacedAtKey);
-        setTotemBlockData(bottom, "bottom", front);
-        setTotemBlockData(top, "top", front);
-        markTotemBlock(bottom, id, "bottom", front, ownerUuid, ownerName, placedAt);
-        markTotemBlock(top, id, "top", front, ownerUuid, ownerName, placedAt);
-        markTotemClaim(bottom, claimId);
+        customBlockService.spawnOrReplaceMultiBlockDisplays(bottom, claimTotemStructureDefinition, front, id);
+        sendTotemClientView(bottom);
     }
 
-    private void setTotemBlockData(Block block, String part, BlockFace front) {
-        block.setBlockData(Bukkit.createBlockData(totemBlockData(part, front)), false);
+    private void sendLoadedTotemClientViews() {
+        for (World world : Bukkit.getWorlds()) {
+            for (Chunk chunk : world.getLoadedChunks()) {
+                for (BlockState state : chunk.getTileEntities()) {
+                    Block block = state.getBlock();
+                    if (isClaimTotemBottom(block)) {
+                        sendTotemClientView(block);
+                    }
+                }
+            }
+        }
+    }
+
+    private void sendLoadedTotemClientViews(Player player) {
+        World world = player.getWorld();
+        for (Chunk chunk : world.getLoadedChunks()) {
+            for (BlockState state : chunk.getTileEntities()) {
+                Block block = state.getBlock();
+                if (isClaimTotemBottom(block)) {
+                    sendTotemClientView(player, block);
+                }
+            }
+        }
+    }
+
+    private void sendTotemClientView(Block bottom) {
+        for (Player player : bottom.getWorld().getPlayers()) {
+            sendTotemClientView(player, bottom);
+        }
+    }
+
+    private void sendTotemClientView(Player player, Block bottom) {
+        if (!player.getWorld().equals(bottom.getWorld())) {
+            return;
+        }
+        if (player.getLocation().distanceSquared(bottom.getLocation()) > 128.0D * 128.0D) {
+            return;
+        }
+        Block top = bottom.getRelative(BlockFace.UP);
+        BlockData hiddenCarrier = Material.BARRIER.createBlockData();
+        player.sendBlockChange(bottom.getLocation(), hiddenCarrier);
+        player.sendBlockChange(top.getLocation(), hiddenCarrier);
+    }
+
+    private void sendRealBlockView(Block block) {
+        for (Player player : block.getWorld().getPlayers()) {
+            if (player.getLocation().distanceSquared(block.getLocation()) <= 128.0D * 128.0D) {
+                player.sendBlockChange(block.getLocation(), block.getBlockData());
+            }
+        }
     }
 
     private boolean isTotemBlockData(Block block, String part, BlockFace front) {
@@ -1807,6 +1914,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (isClaimTotemBlock(bottom)) {
             bottom.setType(Material.AIR, false);
         }
+        sendRealBlockView(bottom);
+        sendRealBlockView(top);
         if (dropItem) {
             bottom.getWorld().dropItemNaturally(dropLocation, createClaimTotem());
         }
@@ -2337,11 +2446,33 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 new ClaimPoint(draft.world, draft.x2, draft.y2, draft.z2));
     }
 
+    private ClaimRegion previewResizeClaim(RingSession session, ClaimRegion claim) {
+        RingDraft draft = resizeDraft(session, claim);
+        return ClaimRegion.fromSelection(
+                claim.id,
+                claim.name,
+                claim.ownerUuid,
+                claim.ownerName,
+                new ClaimPoint(claim.world, draft.x1, draft.y1, draft.z1),
+                new ClaimPoint(claim.world, draft.x2, draft.y2, draft.z2))
+                .withClaimDataFrom(claim);
+    }
+
+    private RingDraft resizeDraft(RingSession session, ClaimRegion claim) {
+        if (session.resizeDraft == null || !claim.id.equals(session.resizeClaimId)) {
+            session.resizeDraft = RingDraft.fromClaim(claim);
+            session.resizeClaimId = claim.id;
+            session.selectedField = DraftField.X1;
+        }
+        return session.resizeDraft;
+    }
+
     private void renderManageRingMenu(RingMenu menu, ClaimRegion claim) {
         switch (menu.session.manageView) {
             case MAIN -> renderManageMainMenu(menu, claim);
             case MEMBERS -> renderManageMembersMenu(menu, claim);
             case FEATURES -> renderManageFeaturesMenu(menu, claim);
+            case RESIZE -> renderResizeClaimMenu(menu, claim);
             case DELETE_CONFIRM -> renderDeleteConfirmMenu(menu, claim);
         }
     }
@@ -2360,6 +2491,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             setAction(menu, 20, "view:members", playerHeadItem(claim.ownerUuid, "&a管理授权玩家", List.of("&7添加或移除可以使用该领地的玩家。")));
             setAction(menu, 22, "teleport", menuItem(Material.ENDER_PEARL, "&b传送至领地", List.of("&7传送到领地图腾正前方。")));
             setAction(menu, 24, "view:features", menuItem(Material.COMPARATOR, "&e管理领地功能", List.of("&7切换领地内的保护规则。")));
+            setAction(menu, 38, "view:resize", menuItem(Material.LIGHT_BLUE_STAINED_GLASS, "&b扩张领地", List.of("&7调整领地边界，新的范围必须完整包含旧范围。")));
             setAction(menu, 42, "view:delete_confirm", menuItem(Material.TNT, "&c删除领地", List.of("&7进入删除确认页面。")));
         } else {
             inventory.setItem(20, menuItem(Material.OAK_SIGN, canUse ? "&e已授权领地" : "&e公开传送领地", List.of("&7你不能管理该领地。")));
@@ -2413,6 +2545,58 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             setAction(menu, slots[index], "feature:" + feature.id, featureItem(feature, state));
         }
         setAction(menu, 49, "view:main", menuItem(Material.ARROW, "&e返回主菜单", List.of("&7回到领地管理菜单。")));
+    }
+
+    private void renderResizeClaimMenu(RingMenu menu, ClaimRegion claim) {
+        menu.actions.clear();
+        Inventory inventory = menu.inventory;
+        inventory.clear();
+        RingDraft draft = resizeDraft(menu.session, claim);
+        inventory.setItem(4, menuItem(Material.LIGHT_BLUE_STAINED_GLASS, "&b扩张领地", List.of(
+                "&7领地：&f" + claim.name,
+                "&7旧范围：&f" + claim.minX + "," + claim.minY + "," + claim.minZ + " 到 " + claim.maxX + "," + claim.maxY + "," + claim.maxZ,
+                "&7新的范围必须完整包含旧范围。")));
+        setFieldItem(menu, 10, DraftField.X1, "最小 X", draft.x1);
+        setFieldItem(menu, 11, DraftField.Y1, "最小 Y", draft.y1);
+        setFieldItem(menu, 12, DraftField.Z1, "最小 Z", draft.z1);
+        setFieldItem(menu, 14, DraftField.X2, "最大 X", draft.x2);
+        setFieldItem(menu, 15, DraftField.Y2, "最大 Y", draft.y2);
+        setFieldItem(menu, 16, DraftField.Z2, "最大 Z", draft.z2);
+        setAction(menu, 20, "resize-use-pos1", menuItem(Material.COMPASS, "&a使用当前位置作为最小角", List.of("&7把当前位置写入最小角。")));
+        setAction(menu, 24, "resize-use-pos2", menuItem(Material.COMPASS, "&a使用当前位置作为最大角", List.of("&7把当前位置写入最大角。")));
+        setAction(menu, 36, "resize-adjust:-50", adjustItem(false, 50));
+        setAction(menu, 37, "resize-adjust:-10", adjustItem(false, 10));
+        setAction(menu, 38, "resize-adjust:-1", adjustItem(false, 1));
+        inventory.setItem(40, createResizeStatusItem(menu, claim));
+        setAction(menu, 42, "resize-adjust:1", adjustItem(true, 1));
+        setAction(menu, 43, "resize-adjust:10", adjustItem(true, 10));
+        setAction(menu, 44, "resize-adjust:50", adjustItem(true, 50));
+        setAction(menu, 45, "resize-reset", menuItem(Material.YELLOW_DYE, "&e重置为当前范围", List.of("&7撤销本次界面中的范围调整。")));
+        setAction(menu, 48, "resize-confirm", menuItem(Material.LIME_CONCRETE, "&a确认扩张", List.of("&7保存新的领地范围。")));
+        setAction(menu, 50, "view:main", menuItem(Material.ARROW, "&e返回主菜单", List.of("&7不保存本次范围调整。")));
+    }
+
+    private ItemStack createResizeStatusItem(RingMenu menu, ClaimRegion claim) {
+        ClaimRegion preview = previewResizeClaim(menu.session, claim);
+        List<String> lore = new ArrayList<>();
+        lore.add("&7世界：&f" + preview.world);
+        lore.add("&7新大小：&e" + preview.sizeX() + " x " + preview.sizeY() + " x " + preview.sizeZ());
+        lore.add("&7新体积：&e" + preview.volume());
+        lore.add("&7原体积：&f" + claim.volume());
+        List<String> errors = validateClaimResize(claim, preview);
+        if (errors.isEmpty()) {
+            lore.add("&a当前范围可用于扩张。");
+        } else {
+            lore.add("&c当前范围不能保存：");
+            for (String error : errors) {
+                lore.add("&c" + error);
+            }
+        }
+        if (!menu.session.statusLines.isEmpty()) {
+            lore.add("&8----------------");
+            lore.addAll(menu.session.statusLines);
+        }
+        return menuItem(Material.OAK_SIGN, "&e扩张状态", lore);
     }
 
     private void renderDeleteConfirmMenu(RingMenu menu, ClaimRegion claim) {
@@ -2573,6 +2757,12 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         pendingTeleports.put(player.getUniqueId(), pending);
         pending.particleTask = startTeleportParticles(player);
         topUpChaoticWarpQueue(player.getWorld());
+        pending.viewDistanceTask = Bukkit.getScheduler().runTaskLater(this, () -> {
+            PendingTeleport currentPending = pendingTeleports.get(player.getUniqueId());
+            if (currentPending == pending && player.isOnline()) {
+                reducePlayerViewDistance(player, "chaotic-warp-pre-teleport");
+            }
+        }, Math.max(1L, 60L - PRE_TELEPORT_VIEW_DISTANCE_LEAD_TICKS));
         pending.teleportTask = Bukkit.getScheduler().runTaskLater(this, () -> {
             PendingTeleport currentPending = pendingTeleports.get(player.getUniqueId());
             if (currentPending != pending) {
@@ -2584,12 +2774,14 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             }
             if (player.getGameMode() != GameMode.CREATIVE && player.getLevel() < 1) {
                 finishPendingTeleport(player);
+                restorePlayerViewDistance(player, "chaotic-warp-no-level");
                 send(player, message("chaotic-warp-no-level", "&c经验等级不足，紊乱跃迁失败。"));
                 return;
             }
             ConsumedWarpDestination consumed = consumeChaoticWarpDestination(player);
             if (consumed == null) {
                 finishPendingTeleport(player);
+                restorePlayerViewDistance(player, "chaotic-warp-no-target");
                 topUpChaoticWarpQueue(player.getWorld());
                 send(player, message("chaotic-warp-no-target", "&d晶核内似乎空空如也……"));
                 return;
@@ -2597,12 +2789,15 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             Location departure = player.getLocation();
             Location destination = consumed.location();
             finishPendingTeleport(player);
+            reducePlayerViewDistanceIfNeeded(player, "chaotic-warp-teleport");
             if (!player.teleport(destination)) {
                 releaseChaoticWarpDestination(consumed.destination());
+                restorePlayerViewDistance(player, "chaotic-warp-teleport-failed");
                 topUpChaoticWarpQueue(player.getWorld());
                 send(player, message("teleport-failed", "&c传送失败，请稍后再试。"));
                 return;
             }
+            rampRestorePlayerViewDistance(player, "chaotic-warp-success");
             releaseChaoticWarpDestination(consumed.destination());
             topUpChaoticWarpQueue(destination.getWorld());
             if (player.getGameMode() != GameMode.CREATIVE) {
@@ -2743,12 +2938,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                         chunk.getX(),
                         chunk.getZ());
                 retainChaoticWarpDestination(warpDestination);
-                queue.destinations.addLast(warpDestination);
-                queue.searchAttempts = 0;
-                logChaoticWarpQueue(world, queue, "candidate-accepted attempt=" + attempt
-                        + " destination=" + destination.getBlockX() + "," + destination.getBlockY() + "," + destination.getBlockZ());
-                saveChaoticWarpQueues();
-                topUpChaoticWarpQueue(world);
+                warmChaoticWarpDestination(world, queue, warpDestination, attempt);
                 return;
             }
             String reason = destination == null
@@ -2793,6 +2983,52 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 + " inFlight=" + queue.inFlightSearches
                 + " target=" + chaoticWarpQueueTargetSize()
                 + " maxConcurrent=" + CHAOTIC_WARP_MAX_CONCURRENT_SEARCHES);
+    }
+
+    private void warmChaoticWarpDestination(World world, ChaoticWarpQueue queue, WarpDestination destination, int attempt) {
+        long startNanos = System.nanoTime();
+        List<CompletableFuture<Chunk>> futures = new ArrayList<>();
+        for (int dx = -CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dx <= CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dx++) {
+            for (int dz = -CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dz <= CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dz++) {
+                futures.add(world.getChunkAtAsync(destination.chunkX + dx, destination.chunkZ + dz, true));
+            }
+        }
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).whenComplete((ignored, throwable) -> Bukkit.getScheduler().runTask(this, () -> {
+            if (!isEnabled() || queue != chaoticWarpQueues.get(world.getName())) {
+                releaseChaoticWarpDestination(destination);
+                return;
+            }
+            double warmMillis = (System.nanoTime() - startNanos) / 1_000_000.0D;
+            if (throwable != null) {
+                releaseChaoticWarpDestination(destination);
+                logChaoticWarpQueue(world, queue, "candidate-warm-failed attempt=" + attempt
+                        + " destination=" + destination.x + "," + destination.y + "," + destination.z
+                        + " radius=" + CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS
+                        + " chunks=" + futures.size()
+                        + " duration=" + String.format(Locale.ROOT, "%.2fms", warmMillis)
+                        + " reason=" + throwable.getClass().getSimpleName());
+                topUpChaoticWarpQueue(world);
+                return;
+            }
+            if (queue.destinations.size() >= chaoticWarpQueueTargetSize()) {
+                releaseChaoticWarpDestination(destination);
+                logChaoticWarpQueue(world, queue, "candidate-warm-discarded-full attempt=" + attempt
+                        + " destination=" + destination.x + "," + destination.y + "," + destination.z
+                        + " radius=" + CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS
+                        + " chunks=" + futures.size()
+                        + " duration=" + String.format(Locale.ROOT, "%.2fms", warmMillis));
+                return;
+            }
+            queue.destinations.addLast(destination);
+            queue.searchAttempts = 0;
+            logChaoticWarpQueue(world, queue, "candidate-accepted attempt=" + attempt
+                    + " destination=" + destination.x + "," + destination.y + "," + destination.z
+                    + " radius=" + CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS
+                    + " chunks=" + futures.size()
+                    + " warm=" + String.format(Locale.ROOT, "%.2fms", warmMillis));
+            saveChaoticWarpQueues();
+            topUpChaoticWarpQueue(world);
+        }));
     }
 
     private ConsumedWarpDestination consumeChaoticWarpDestination(Player player) {
@@ -2856,12 +3092,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         ChaoticWarpQueue queue = chaoticWarpQueue(world);
-        long key = chunkKey(destination.chunkX, destination.chunkZ);
-        int current = queue.chunkTicketCounts.getOrDefault(key, 0);
-        if (current == 0) {
-            world.addPluginChunkTicket(destination.chunkX, destination.chunkZ, this);
+        for (int dx = -CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dx <= CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dx++) {
+            for (int dz = -CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dz <= CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dz++) {
+                int chunkX = destination.chunkX + dx;
+                int chunkZ = destination.chunkZ + dz;
+                long key = chunkKey(chunkX, chunkZ);
+                int current = queue.chunkTicketCounts.getOrDefault(key, 0);
+                if (current == 0) {
+                    world.addPluginChunkTicket(chunkX, chunkZ, this);
+                }
+                queue.chunkTicketCounts.put(key, current + 1);
+            }
         }
-        queue.chunkTicketCounts.put(key, current + 1);
     }
 
     private void releaseChaoticWarpDestination(WarpDestination destination) {
@@ -2873,13 +3115,19 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         if (queue == null) {
             return;
         }
-        long key = chunkKey(destination.chunkX, destination.chunkZ);
-        int current = queue.chunkTicketCounts.getOrDefault(key, 0);
-        if (current <= 1) {
-            queue.chunkTicketCounts.remove(key);
-            world.removePluginChunkTicket(destination.chunkX, destination.chunkZ, this);
-        } else {
-            queue.chunkTicketCounts.put(key, current - 1);
+        for (int dx = -CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dx <= CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dx++) {
+            for (int dz = -CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dz <= CHAOTIC_WARP_PRELOAD_CHUNK_RADIUS; dz++) {
+                int chunkX = destination.chunkX + dx;
+                int chunkZ = destination.chunkZ + dz;
+                long key = chunkKey(chunkX, chunkZ);
+                int current = queue.chunkTicketCounts.getOrDefault(key, 0);
+                if (current <= 1) {
+                    queue.chunkTicketCounts.remove(key);
+                    world.removePluginChunkTicket(chunkX, chunkZ, this);
+                } else {
+                    queue.chunkTicketCounts.put(key, current - 1);
+                }
+            }
         }
     }
 
@@ -3035,6 +3283,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         pending.cancel();
+        restorePlayerViewDistance(player, "teleport-cancel");
         if (message != null && !message.isBlank()) {
             send(player, message);
         }
@@ -3044,6 +3293,98 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         PendingTeleport pending = pendingTeleports.remove(player.getUniqueId());
         if (pending != null) {
             pending.cancel();
+        }
+    }
+
+    private void reducePlayerViewDistance(Player player, String reason) {
+        restorePlayerViewDistance(player, "replace");
+        PlayerViewDistanceState state = new PlayerViewDistanceState(player.getViewDistance(), player.getSendViewDistance());
+        temporaryViewDistances.put(player.getUniqueId(), state);
+        applyPlayerViewDistance(player, TEMPORARY_VIEW_DISTANCE, TEMPORARY_VIEW_DISTANCE);
+        getLogger().info("[Perf] view-distance reduce plugin=XiceClaim reason=" + reason
+                + " player=" + player.getName()
+                + " originalView=" + state.originalViewDistance
+                + " originalSend=" + state.originalSendViewDistance
+                + " temporary=" + TEMPORARY_VIEW_DISTANCE);
+    }
+
+    private void reducePlayerViewDistanceIfNeeded(Player player, String reason) {
+        if (temporaryViewDistances.containsKey(player.getUniqueId())) {
+            return;
+        }
+        reducePlayerViewDistance(player, reason);
+    }
+
+    private void rampRestorePlayerViewDistance(Player player, String reason) {
+        PlayerViewDistanceState state = temporaryViewDistances.get(player.getUniqueId());
+        if (state == null) {
+            return;
+        }
+        if (state.restoreTask != null) {
+            state.restoreTask.cancel();
+        }
+        state.restoreTask = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            PlayerViewDistanceState current = temporaryViewDistances.get(player.getUniqueId());
+            if (current != state || !player.isOnline()) {
+                if (state.restoreTask != null) {
+                    state.restoreTask.cancel();
+                }
+                return;
+            }
+            int nextView = nextRestoredDistance(player.getViewDistance(), state.originalViewDistance);
+            int nextSend = nextRestoredDistance(player.getSendViewDistance(), state.originalSendViewDistance);
+            applyPlayerViewDistance(player, nextView, nextSend);
+            if (nextView == state.originalViewDistance && nextSend == state.originalSendViewDistance) {
+                if (state.restoreTask != null) {
+                    state.restoreTask.cancel();
+                    state.restoreTask = null;
+                }
+                temporaryViewDistances.remove(player.getUniqueId());
+                getLogger().info("[Perf] view-distance restored plugin=XiceClaim reason=" + reason
+                        + " player=" + player.getName()
+                        + " view=" + nextView
+                        + " send=" + nextSend);
+            }
+        }, VIEW_DISTANCE_RAMP_INTERVAL_TICKS, VIEW_DISTANCE_RAMP_INTERVAL_TICKS);
+    }
+
+    private void restorePlayerViewDistance(Player player, String reason) {
+        PlayerViewDistanceState state = temporaryViewDistances.remove(player.getUniqueId());
+        if (state == null) {
+            return;
+        }
+        if (state.restoreTask != null) {
+            state.restoreTask.cancel();
+            state.restoreTask = null;
+        }
+        applyPlayerViewDistance(player, state.originalViewDistance, state.originalSendViewDistance);
+        getLogger().info("[Perf] view-distance restore-immediate plugin=XiceClaim reason=" + reason
+                + " player=" + player.getName()
+                + " view=" + state.originalViewDistance
+                + " send=" + state.originalSendViewDistance);
+    }
+
+    private int nextRestoredDistance(int current, int target) {
+        if (current < target) {
+            return Math.min(target, current + 1);
+        }
+        if (current > target) {
+            return Math.max(target, current - 1);
+        }
+        return target;
+    }
+
+    private void applyPlayerViewDistance(Player player, int viewDistance, int sendViewDistance) {
+        int safeViewDistance = Math.max(TEMPORARY_VIEW_DISTANCE, viewDistance);
+        int safeSendViewDistance = Math.max(TEMPORARY_VIEW_DISTANCE, sendViewDistance);
+        try {
+            player.setViewDistance(safeViewDistance);
+            player.setSendViewDistance(safeSendViewDistance);
+        } catch (IllegalArgumentException exception) {
+            getLogger().warning("[Perf] view-distance apply-failed plugin=XiceClaim player=" + player.getName()
+                    + " view=" + safeViewDistance
+                    + " send=" + safeSendViewDistance
+                    + " error=" + exception.getMessage());
         }
     }
 
@@ -3139,8 +3480,21 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 send(player, message("no-permission"));
                 return;
             }
+            if (nextView == ManageView.RESIZE) {
+                menu.session.resizeDraft = RingDraft.fromClaim(claim);
+                menu.session.resizeClaimId = claim.id;
+                menu.session.selectedField = DraftField.X1;
+            } else if (menu.session.manageView == ManageView.RESIZE) {
+                menu.session.resizeDraft = null;
+                menu.session.resizeClaimId = "";
+            }
+            menu.session.statusLines.clear();
             menu.session.manageView = nextView;
             renderManageRingMenu(menu, claim);
+            return;
+        }
+        if (menu.session.manageView == ManageView.RESIZE) {
+            handleResizeRingMenuClick(player, menu, claim, action);
             return;
         }
         if ("teleport".equals(action)) {
@@ -3206,6 +3560,55 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         }
     }
 
+    private void handleResizeRingMenuClick(Player player, RingMenu menu, ClaimRegion claim, String action) {
+        if (!canManage(player, claim)) {
+            send(player, message("no-permission"));
+            return;
+        }
+        RingDraft draft = resizeDraft(menu.session, claim);
+        if (action.startsWith("field:")) {
+            menu.session.selectedField = DraftField.valueOf(action.substring("field:".length()));
+            menu.session.statusLines.clear();
+            renderResizeClaimMenu(menu, claim);
+            return;
+        }
+        if (action.startsWith("resize-adjust:")) {
+            draft.adjust(menu.session.selectedField, Integer.parseInt(action.substring("resize-adjust:".length())));
+            menu.session.statusLines.clear();
+            renderResizeClaimMenu(menu, claim);
+            return;
+        }
+        if ("resize-use-pos1".equals(action) || "resize-use-pos2".equals(action)) {
+            ClaimPoint point = ClaimPoint.from(player.getLocation());
+            if (!claim.world.equals(point.world)) {
+                setResizeStatus(menu, claim, List.of("&c当前位置不在该领地所在世界。"));
+                return;
+            }
+            if ("resize-use-pos1".equals(action)) {
+                draft.x1 = point.x;
+                draft.y1 = point.y;
+                draft.z1 = point.z;
+            } else {
+                draft.x2 = point.x;
+                draft.y2 = point.y;
+                draft.z2 = point.z;
+            }
+            menu.session.statusLines.clear();
+            renderResizeClaimMenu(menu, claim);
+            return;
+        }
+        if ("resize-reset".equals(action)) {
+            menu.session.resizeDraft = RingDraft.fromClaim(claim);
+            menu.session.resizeClaimId = claim.id;
+            menu.session.statusLines.clear();
+            renderResizeClaimMenu(menu, claim);
+            return;
+        }
+        if ("resize-confirm".equals(action)) {
+            resizeClaimFromRing(player, menu, claim);
+        }
+    }
+
     private void createClaimFromRing(Player player, RingMenu menu) {
         RingDraft draft = menu.session.draft;
         String claimName = ringDisplayName(menu.session.ring);
@@ -3247,10 +3650,37 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         player.closeInventory();
     }
 
+    private void resizeClaimFromRing(Player player, RingMenu menu, ClaimRegion claim) {
+        ClaimRegion resized = previewResizeClaim(menu.session, claim);
+        List<String> errors = validateClaimResize(claim, resized);
+        if (!errors.isEmpty()) {
+            setResizeStatus(menu, claim, errors.stream().map(error -> "&c" + error).toList());
+            return;
+        }
+        claims.put(resized.id, resized);
+        bindExistingTotemInsideClaim(resized);
+        saveClaims();
+        bindRing(menu.session.ring, resized, RingDraft.fromClaim(resized));
+        writeRingToHand(player, menu.session);
+        showClaimParticles(player, resized);
+        send(player, "&a领地 " + resized.name + " 已扩张为 " + resized.sizeX() + " x " + resized.sizeY() + " x " + resized.sizeZ() + "。");
+        menu.session.resizeDraft = null;
+        menu.session.resizeClaimId = "";
+        menu.session.statusLines.clear();
+        menu.session.manageView = ManageView.MAIN;
+        renderManageRingMenu(menu, resized);
+    }
+
     private void setCreateStatus(RingMenu menu, List<String> statusLines) {
         menu.session.statusLines.clear();
         menu.session.statusLines.addAll(statusLines);
         renderCreateRingMenu(menu);
+    }
+
+    private void setResizeStatus(RingMenu menu, ClaimRegion claim, List<String> statusLines) {
+        menu.session.statusLines.clear();
+        menu.session.statusLines.addAll(statusLines);
+        renderResizeClaimMenu(menu, claim);
     }
 
     private ClaimRegion synchronizeRingName(Player player, ItemStack ring, ClaimRegion claim) {
@@ -3750,6 +4180,15 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                 && isClaimRing(heldItem(player, session.hand))) {
             return previewClaim(session, ringDisplayName(session.ring));
         }
+        if (session != null
+                && session.mode == RingMenuMode.MANAGE
+                && session.manageView == ManageView.RESIZE
+                && isClaimRing(heldItem(player, session.hand))) {
+            ClaimRegion claim = claims.get(session.claimId);
+            if (claim != null && claim.world.equals(player.getWorld().getName())) {
+                return previewResizeClaim(session, claim);
+            }
+        }
         ItemStack ring = heldClaimRing(player);
         if (ring == null) {
             return null;
@@ -3899,25 +4338,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             String prefix = args[0].toLowerCase(Locale.ROOT);
-            return List.of("help", "give", "reload").stream()
+            return List.of("help", "reload").stream()
                     .filter(value -> value.startsWith(prefix))
-                    .toList();
-        }
-        if (args.length == 2 && "give".equalsIgnoreCase(args[0])) {
-            String prefix = args[1].toLowerCase(Locale.ROOT);
-            return List.of("ring", "totem", "core", "warp_core").stream()
-                    .filter(value -> value.startsWith(prefix))
-                    .toList();
-        }
-        if (args.length == 3 && "give".equalsIgnoreCase(args[0])) {
-            String prefix = args[2].toLowerCase(Locale.ROOT);
-            List<String> suggestions = new ArrayList<>(List.of("@s", "@a", "@p", "@r"));
-            suggestions.addAll(Bukkit.getOnlinePlayers().stream()
-                    .map(Player::getName)
-                    .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
-                    .toList());
-            return suggestions.stream()
-                    .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
                     .toList();
         }
         return List.of();
@@ -3933,6 +4355,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         MAIN,
         MEMBERS,
         FEATURES,
+        RESIZE,
         DELETE_CONFIRM
     }
 
@@ -3956,7 +4379,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         MONSTER_DAMAGE("monster-damage", Material.IRON_SWORD, "&e伤害怪物", PermissionState.DENY_UNTRUSTED),
         PVP("pvp", Material.DIAMOND_SWORD, "&e允许PVP", PermissionState.ALLOW_ALL),
         TOTEM_BLESSING("totem-blessing", Material.TOTEM_OF_UNDYING, "&e图腾祝福", PermissionState.ALLOW_ALL),
-        TELEPORT("teleport", Material.ENDER_PEARL, "&e传送权限", PermissionState.DENY_UNTRUSTED);
+        TELEPORT("teleport", Material.ENDER_PEARL, "&e传送权限", PermissionState.DENY_UNTRUSTED),
+        START_EVENT("start-event", Material.OMINOUS_BOTTLE, "&e开启事件", PermissionState.DENY_UNTRUSTED);
 
         private final String id;
         private final Material material;
@@ -4033,6 +4457,8 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private DraftField selectedField = DraftField.X1;
         private ManageView manageView = ManageView.MAIN;
         private String claimId = "";
+        private String resizeClaimId = "";
+        private RingDraft resizeDraft;
         private boolean discardOnClose;
 
         private RingSession(RingMenuMode mode, ItemStack ring, RingDraft draft, EquipmentSlot hand, UUID playerUuid, String playerName, boolean admin) {
@@ -4231,6 +4657,7 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         private final String claimId;
         private BukkitTask teleportTask;
         private BukkitTask particleTask;
+        private BukkitTask viewDistanceTask;
 
         private PendingTeleport(String claimId) {
             this.claimId = claimId;
@@ -4243,6 +4670,20 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
             if (particleTask != null) {
                 particleTask.cancel();
             }
+            if (viewDistanceTask != null) {
+                viewDistanceTask.cancel();
+            }
+        }
+    }
+
+    private static final class PlayerViewDistanceState {
+        private final int originalViewDistance;
+        private final int originalSendViewDistance;
+        private BukkitTask restoreTask;
+
+        private PlayerViewDistanceState(int originalViewDistance, int originalSendViewDistance) {
+            this.originalViewDistance = originalViewDistance;
+            this.originalSendViewDistance = originalSendViewDistance;
         }
     }
 
@@ -4480,6 +4921,27 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
                     featureStates,
                     totemBinding,
                     totemCore);
+        }
+
+        private ClaimRegion withClaimDataFrom(ClaimRegion source) {
+            return new ClaimRegion(
+                    id,
+                    name,
+                    source.ownerUuid,
+                    source.ownerName,
+                    world,
+                    minX,
+                    maxX,
+                    minY,
+                    maxY,
+                    minZ,
+                    maxZ,
+                    source.createdAt,
+                    new HashSet<>(source.members),
+                    new HashMap<>(source.memberNames),
+                    new HashMap<>(source.featureStates),
+                    source.totemBinding,
+                    source.totemCore);
         }
 
         private int sizeX() {

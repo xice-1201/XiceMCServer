@@ -1,0 +1,21 @@
+hud:
+  enabled-by-default: true
+  update-interval-ticks: 40
+  retry-after-error-ticks: 200
+
+modules:
+  economy:
+    enabled: true
+    plugin-name: XiceEconomy
+    offset: '                        '
+    format: '{offset}&f{coin} &e{balance}'
+    unavailable: '&7货币: 暂不可用'
+
+messages:
+  prefix: '&6[XiceHUD] &f'
+  player-only: '&c该指令只能由玩家执行。'
+  no-permission: '&c你没有权限执行该操作。'
+  usage: '&e/xicehud on|off|reload'
+  enabled: '&aHUD 已开启。'
+  disabled: '&eHUD 已关闭。'
+  reload-complete: '&aXiceHUD 配置已重新加载。'

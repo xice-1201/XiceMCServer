@@ -1,0 +1,17 @@
+name: XiceSimpleIndustry
+version: 0.0.1
+main: com.xice.xicemc.simpleindustry.XiceSimpleIndustryPlugin
+api-version: '1.21'
+author: Xice
+description: Simple custom industry machines for XiceMCServer.
+depend: [XiceCustomItem, XiceHUD]
+softdepend: [XiceClaim]
+commands:
+  simpleindustry:
+    description: Manage XiceSimpleIndustry machines.
+    usage: /simpleindustry reload
+    aliases: [xicesimpleindustry, industry]
+permissions:
+  xicesimpleindustry.admin:
+    description: Manage simple industry machines.
+    default: op

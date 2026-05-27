@@ -39,6 +39,12 @@ jobs:
           - XiceAuditLog
           - XiceClaim
           - XiceCommandControl
+          - XiceCustomItem
+          - XiceEconomy
+          - XiceHUD
+          - XiceMorePotionEffects
+          - XiceRPG
+          - XiceSimpleIndustry
           - XiceTextArranger
     steps:
       - name: Checkout
@@ -50,6 +56,14 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+
+      - name: Install shared plugin API
+        if: matrix.plugin != 'XiceCustomItem'
+        run: mvn -B -f "plugins/XiceCustomItem/pom.xml" install
+
+      - name: Install HUD plugin API
+        if: matrix.plugin != 'XiceHUD'
+        run: mvn -B -f "plugins/XiceHUD/pom.xml" install
 
       - name: Build plugin
         run: mvn -B -f "plugins/${{ matrix.plugin }}/pom.xml" package

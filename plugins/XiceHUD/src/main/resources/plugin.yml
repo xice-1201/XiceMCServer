@@ -1,0 +1,19 @@
+name: XiceHUD
+version: 0.0.1
+main: com.xice.xicemc.hud.XiceHudPlugin
+api-version: '1.21'
+author: Xice
+description: Lightweight HUD display layer for XiceMCServer.
+softdepend: [XiceEconomy]
+commands:
+  xicehud:
+    description: Manage personal HUD display.
+    usage: /xicehud <on|off|reload>
+    aliases: [hud]
+permissions:
+  xicehud.use:
+    description: Toggle personal HUD display.
+    default: true
+  xicehud.admin:
+    description: Reload XiceHUD configuration.
+    default: op
