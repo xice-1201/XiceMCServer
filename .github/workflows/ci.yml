@@ -61,5 +61,9 @@ jobs:
         if: matrix.plugin != 'XiceCustomItem'
         run: mvn -B -f "plugins/XiceCustomItem/pom.xml" install
 
+      - name: Install HUD plugin API
+        if: matrix.plugin != 'XiceHUD'
+        run: mvn -B -f "plugins/XiceHUD/pom.xml" install
+
       - name: Build plugin
         run: mvn -B -f "plugins/${{ matrix.plugin }}/pom.xml" package
