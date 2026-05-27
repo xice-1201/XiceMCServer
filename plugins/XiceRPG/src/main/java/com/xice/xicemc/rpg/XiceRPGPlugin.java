@@ -5079,7 +5079,6 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                     dungeonStarterBlockDefinition,
                     id,
                     1.2D);
-            return;
         }
         Location center = new Location(world, pos.x() + 0.5D, pos.y() + 0.5D, pos.z() + 0.5D);
         for (Entity entity : world.getNearbyEntities(center, 1.2D, 1.2D, 1.2D)) {
