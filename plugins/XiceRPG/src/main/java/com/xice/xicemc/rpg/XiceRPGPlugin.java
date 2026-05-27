@@ -158,6 +158,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final long TRAINING_DUMMY_DPS_WINDOW_TICKS = 20L * 60L;
     private static final long SPLIT_DAMAGE_INVULNERABILITY_TICKS = 20L;
     private static final long SPLIT_DAMAGE_REPLACE_TICKS = 10L;
+    private static final long REBIRTH_BLESSING_DURATION_MILLIS = 5_000L;
     private static final String TRAINING_DUMMY_TAG_UNDEAD = "undead";
     private static final String TRAINING_DUMMY_TAG_ARTHROPOD = "arthropod";
     private static final String TRAINING_DUMMY_TAG_AQUATIC = "aquatic";
@@ -1154,6 +1155,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         Location spawn = moduleRecord.spawn(instanceWorld);
         configureWorld(instanceWorld, spawn, moduleRecord.borderDistance());
         event.setRespawnLocation(spawn);
+        Bukkit.getScheduler().runTask(this, () -> callPotionEffectsPlugin(
+                "applyRebirthBlessing",
+                player,
+                REBIRTH_BLESSING_DURATION_MILLIS));
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -3530,6 +3535,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         callPotionEffectsPlugin("clearWarpSuppression", player);
         callPotionEffectsPlugin("clearStrongBan", player);
         callPotionEffectsPlugin("clearSwordsmanMemory", player);
+        callPotionEffectsPlugin("clearRebirthBlessing", player);
     }
 
     private Set<UUID> tickDungeonDamageRules() {

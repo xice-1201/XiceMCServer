@@ -33,17 +33,24 @@ import org.bukkit.entity.Trident;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.enchantment.EnchantItemEvent;
 import org.bukkit.event.entity.EntityCombustByEntityEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerItemMendEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
@@ -58,6 +65,7 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.potion.PotionEffectTypeCategory;
 import org.bukkit.scheduler.BukkitTask;
+import io.papermc.paper.event.player.PlayerArmSwingEvent;
 
 public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final String WARP_SUPPRESSION_ID = "warp_suppression";
@@ -65,6 +73,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     private static final String STRONG_BAN_ID = "strong_ban";
     private static final String STRONG_BAN_NAME = "强效封禁";
     private static final String SWORDSMAN_MEMORY_ID = "swordsman_memory";
+    private static final String REBIRTH_BLESSING_ID = "rebirth_blessing";
+    private static final String REBIRTH_BLESSING_NAME = "\u590d\u751f\u4e4b\u795d\u798f";
     private static final String SWORDSMAN_MEMORY_NAME = "剑士的记忆";
     private static final String SIDEBAR_OWNER = "xicemorepotioneffects:effects";
     private static final String WITHERING_BLADE_ID = "withering_blade";
@@ -92,6 +102,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     private final Map<UUID, WarpSuppression> suppressions = new HashMap<>();
     private final Map<UUID, StrongBan> strongBans = new HashMap<>();
     private final Map<UUID, SwordsmanMemory> swordsmanMemories = new HashMap<>();
+    private final Map<UUID, RebirthBlessing> rebirthBlessings = new HashMap<>();
     private final Set<UUID> playerIgnitedThisTick = new HashSet<>();
     private HudService hudService;
     private NamespacedKey witheringBladeKey;
@@ -175,8 +186,49 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         Bukkit.getScheduler().runTask(this, () -> applyWarpSuppression(event.getPlayer(), durationMillis));
     }
 
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onRebirthBlessingDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player player && hasRebirthBlessing(player)) {
+            event.setCancelled(true);
+            player.setNoDamageTicks(Math.max(player.getNoDamageTicks(), 10));
+        }
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onRebirthBlessingInteract(PlayerInteractEvent event) {
+        if (event.getAction() != Action.PHYSICAL) {
+            consumeRebirthBlessing(event.getPlayer());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onRebirthBlessingInteractEntity(PlayerInteractEntityEvent event) {
+        consumeRebirthBlessing(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onRebirthBlessingArmSwing(PlayerArmSwingEvent event) {
+        consumeRebirthBlessing(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onRebirthBlessingBlockBreak(BlockBreakEvent event) {
+        consumeRebirthBlessing(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onRebirthBlessingBlockPlace(BlockPlaceEvent event) {
+        consumeRebirthBlessing(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onRebirthBlessingCommand(PlayerCommandPreprocessEvent event) {
+        consumeRebirthBlessing(event.getPlayer());
+    }
+
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerConsume(PlayerItemConsumeEvent event) {
+        consumeRebirthBlessing(event.getPlayer());
         if (event.getItem().getType() != Material.MILK_BUCKET) {
             return;
         }
@@ -198,6 +250,9 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityShootBow(EntityShootBowEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            consumeRebirthBlessing(player);
+        }
         if (event.getEntity() instanceof Player player && hasSwordsmanMemory(player)) {
             event.setCancelled(true);
             player.sendMessage(color("&c剑士的记忆排斥远程武器。"));
@@ -209,6 +264,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         if (!(event.getEntity().getShooter() instanceof Player player)) {
             return;
         }
+        consumeRebirthBlessing(player);
         if (!(event.getEntity() instanceof AbstractArrow) && !(event.getEntity() instanceof Trident)) {
             return;
         }
@@ -224,6 +280,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         if (!(event.getDamager() instanceof Player player)) {
             return;
         }
+        consumeRebirthBlessing(player);
         if (hasSwordsmanMemory(player)) {
             event.setDamage(event.getDamage() * 1.2D);
         }
@@ -536,6 +593,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
 
     @EventHandler(ignoreCancelled = true)
     public void onPlayerDropItem(PlayerDropItemEvent event) {
+        consumeRebirthBlessing(event.getPlayer());
         refreshExtendingHandNextTick(event.getPlayer());
     }
 
@@ -552,6 +610,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         removeSatietyVigorHealthModifier(event.getPlayer());
         removeExtendingHandModifiers(event.getPlayer());
         removeSteadyModifier(event.getPlayer());
+        rebirthBlessings.remove(uuid);
         if (hudService != null) {
             hudService.clearSidebar(uuid, SIDEBAR_OWNER);
         }
@@ -617,6 +676,13 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         applyEffectSilently(player, CustomEffect.SWORDSMAN_MEMORY, durationMillis);
     }
 
+    public void applyRebirthBlessing(Player player, long durationMillis) {
+        if (player == null || !player.isOnline() || durationMillis <= 0L) {
+            return;
+        }
+        applyEffectSilently(player, CustomEffect.REBIRTH_BLESSING, durationMillis);
+    }
+
     public void clearWarpSuppression(Player player) {
         if (player == null) {
             return;
@@ -638,6 +704,14 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             return;
         }
         swordsmanMemories.remove(player.getUniqueId());
+        updateSidebar(player);
+    }
+
+    public void clearRebirthBlessing(Player player) {
+        if (player == null) {
+            return;
+        }
+        rebirthBlessings.remove(player.getUniqueId());
         updateSidebar(player);
     }
 
@@ -678,6 +752,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
                 strongBans.remove(target.getUniqueId());
             } else if (effect == CustomEffect.SWORDSMAN_MEMORY) {
                 swordsmanMemories.remove(target.getUniqueId());
+            } else if (effect == CustomEffect.REBIRTH_BLESSING) {
+                rebirthBlessings.remove(target.getUniqueId());
             }
             updateSidebar(target);
         }
@@ -823,6 +899,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             strongBans.put(target.getUniqueId(), new StrongBan(expiresAt));
         } else if (effect == CustomEffect.SWORDSMAN_MEMORY) {
             swordsmanMemories.put(target.getUniqueId(), new SwordsmanMemory(expiresAt));
+        } else if (effect == CustomEffect.REBIRTH_BLESSING) {
+            rebirthBlessings.put(target.getUniqueId(), new RebirthBlessing(expiresAt));
         }
         updateSidebar(target);
     }
@@ -831,6 +909,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         suppressions.remove(player.getUniqueId());
         strongBans.remove(player.getUniqueId());
         swordsmanMemories.remove(player.getUniqueId());
+        rebirthBlessings.remove(player.getUniqueId());
         updateSidebar(player);
     }
 
@@ -903,6 +982,28 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         return true;
     }
 
+    private boolean hasRebirthBlessing(Player player) {
+        RebirthBlessing blessing = rebirthBlessings.get(player.getUniqueId());
+        if (blessing == null) {
+            return false;
+        }
+        if (blessing.expiresAt <= System.currentTimeMillis()) {
+            rebirthBlessings.remove(player.getUniqueId());
+            updateSidebar(player);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean consumeRebirthBlessing(Player player) {
+        if (!hasRebirthBlessing(player)) {
+            return false;
+        }
+        rebirthBlessings.remove(player.getUniqueId());
+        updateSidebar(player);
+        return true;
+    }
+
     public boolean hasNegativeCustomEffect(LivingEntity entity) {
         if (!(entity instanceof Player player)) {
             return false;
@@ -954,6 +1055,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             strongBans.remove(player.getUniqueId());
         } else if (effect == CustomEffect.SWORDSMAN_MEMORY) {
             swordsmanMemories.remove(player.getUniqueId());
+        } else if (effect == CustomEffect.REBIRTH_BLESSING) {
+            rebirthBlessings.remove(player.getUniqueId());
         }
     }
 
@@ -969,6 +1072,10 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         if (effect == CustomEffect.SWORDSMAN_MEMORY) {
             SwordsmanMemory swordsmanMemory = swordsmanMemories.get(player.getUniqueId());
             return swordsmanMemory == null ? null : new TimedEffectState(swordsmanMemory.expiresAt);
+        }
+        if (effect == CustomEffect.REBIRTH_BLESSING) {
+            RebirthBlessing blessing = rebirthBlessings.get(player.getUniqueId());
+            return blessing == null ? null : new TimedEffectState(blessing.expiresAt);
         }
         return null;
     }
@@ -1045,6 +1152,15 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
                 swordsmanMemories.remove(player.getUniqueId());
             } else {
                 active.add(new ActiveEffect(CustomEffect.SWORDSMAN_MEMORY, remainingSeconds(remainingMillis)));
+            }
+        }
+        RebirthBlessing rebirthBlessing = rebirthBlessings.get(player.getUniqueId());
+        if (rebirthBlessing != null) {
+            long remainingMillis = rebirthBlessing.expiresAt - System.currentTimeMillis();
+            if (remainingMillis <= 0L) {
+                rebirthBlessings.remove(player.getUniqueId());
+            } else {
+                active.add(new ActiveEffect(CustomEffect.REBIRTH_BLESSING, remainingSeconds(remainingMillis)));
             }
         }
         return active;
@@ -1633,7 +1749,9 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         }
         if (args.length == 3) {
             String prefix = args[2].toLowerCase(Locale.ROOT);
-            return List.of(WARP_SUPPRESSION_ID, WARP_SUPPRESSION_NAME, STRONG_BAN_ID, STRONG_BAN_NAME, SWORDSMAN_MEMORY_ID, SWORDSMAN_MEMORY_NAME).stream()
+            return List.of(WARP_SUPPRESSION_ID, WARP_SUPPRESSION_NAME, STRONG_BAN_ID, STRONG_BAN_NAME,
+                            SWORDSMAN_MEMORY_ID, SWORDSMAN_MEMORY_NAME, REBIRTH_BLESSING_ID, REBIRTH_BLESSING_NAME)
+                    .stream()
                     .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
                     .toList();
         }
@@ -1655,6 +1773,9 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     private record SwordsmanMemory(long expiresAt) {
     }
 
+    private record RebirthBlessing(long expiresAt) {
+    }
+
     private record TimedEffectState(long expiresAt) {
     }
 
@@ -1664,7 +1785,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     private enum CustomEffect {
         WARP_SUPPRESSION(WARP_SUPPRESSION_ID, WARP_SUPPRESSION_NAME, true),
         STRONG_BAN(STRONG_BAN_ID, STRONG_BAN_NAME, true),
-        SWORDSMAN_MEMORY(SWORDSMAN_MEMORY_ID, SWORDSMAN_MEMORY_NAME, false);
+        SWORDSMAN_MEMORY(SWORDSMAN_MEMORY_ID, SWORDSMAN_MEMORY_NAME, false),
+        REBIRTH_BLESSING(REBIRTH_BLESSING_ID, REBIRTH_BLESSING_NAME, false);
 
         private final String id;
         private final String displayName;
@@ -1698,6 +1820,13 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
                 || normalized.equals("melee")
                 || raw.trim().equals(SWORDSMAN_MEMORY_NAME)) {
             return CustomEffect.SWORDSMAN_MEMORY;
+        }
+        if (normalized.equals(REBIRTH_BLESSING_ID)
+                || normalized.equals("rebirth")
+                || normalized.equals("revive")
+                || normalized.equals("respawn")
+                || raw.trim().equals(REBIRTH_BLESSING_NAME)) {
+            return CustomEffect.REBIRTH_BLESSING;
         }
         return null;
     }
