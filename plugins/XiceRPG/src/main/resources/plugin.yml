@@ -1,0 +1,21 @@
+name: XiceRPG
+version: 0.0.1
+main: com.xice.xicemc.rpg.XiceRPGPlugin
+api-version: '1.21'
+author: Xice
+description: RPG module and dungeon world management for XiceMCServer.
+depend: [XiceCustomItem, XiceHUD]
+softdepend: [XiceMorePotionEffects]
+commands:
+  module:
+    description: Manage RPG template worlds.
+    usage: /module <create|enter|exit|delete|reload>
+    aliases: [xicerpgmodule]
+  rpgmob:
+    description: Spawn and test XiceRPG custom monsters.
+    usage: /rpgmob spawn <monster> [amount]
+    aliases: [xicemob]
+permissions:
+  xicerpg.admin:
+    description: Reload XiceRPG configuration.
+    default: op

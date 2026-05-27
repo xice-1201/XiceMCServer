@@ -21,7 +21,7 @@ Web 图标来自仓库内 `server/assets/xicemc-logo.png`，浏览器会通过 `
 11. `/reports`：举报受理页面。仅“管理员”和“服主”身份可见，可查看举报并选择“不予处理”或“封禁”。
 12. `/players`：玩家列表页面。所有登录玩家可见，数据来自服务器白名单，展示玩家 ID、UUID、身份、注册时间和玩家 ID 卡弹窗。仅“服主”可以修改其他玩家身份，且不能修改自己的身份。
 13. `/blacklist`：黑名单列表页面。所有登录玩家可见，可查看黑名单记录；仅“管理员”和“服主”可以手动添加黑名单或解除黑名单。手动添加黑名单时，玩家游戏 ID 输入框支持自动补全，封禁时间和单位并排展示，勾选“永久”后隐藏。
-14. `/permissions`：权限管理页面，左侧菜单位于“玩家列表”下方。仅“管理员”和“服主”可见，可按指令筛选拥有对应权限的玩家，默认展示 `/creative`。添加权限时支持输入玩家 ID 或 UUID 并自动补全，保存后写入对应插件运行时配置并通过 RCON 重载。
+14. `/permissions`：权限管理页面，左侧菜单位于“玩家列表”下方。仅“管理员”和“服主”可见，可按指令筛选拥有对应权限的玩家，默认展示 `/creative`。添加权限时支持输入玩家 ID 或 UUID 并自动补全，保存后写入对应插件运行时配置并通过 RCON 重载。当前可管理 `/creative`、`/xcc reload`、`/xcc list`、`/xicecustomitem give`、`/morepotioneffects give`、`/morepotioneffects enchant`、`/module` 和 `/rpgmob spawn`。
 
 ## Web 后端结构
 
@@ -180,6 +180,8 @@ XICEMC_RCON_PORT=25575
 XICEMC_RCON_PASSWORD=change-this-password
 XICEMC_VERIFY_CODES_PATH=/opt/xicemc/runtime/plugins/XiceTextArranger/verification-codes.tsv
 XICEMC_CLAIMS_PATH=/opt/xicemc/runtime/plugins/XiceClaim/claims.yml
+XICEMC_ECONOMY_CONFIG_PATH=/opt/xicemc/runtime/plugins/XiceEconomy/config.yml
+XICEMC_SIMPLE_INDUSTRY_CONFIG_PATH=/opt/xicemc/runtime/plugins/XiceSimpleIndustry/config.yml
 XICE_AUDIT_DB_PASSWORD=change-this-password
 XICE_AUDIT_RETENTION_DAYS=3
 XICEMC_BACKUP_DIR=/opt/xicemc/backups

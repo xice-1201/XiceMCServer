@@ -1,13 +1,8 @@
-# 备案审核期访问控制与备案页脚
+# 备案通过后访问策略与备案页脚
 
-## 当前临时策略
+## 当前策略
 
-备案审核期间，Web 端仅允许服主当前公网 IP 访问：
-
-```text
-203.0.113.10
-203.0.113.11
-```
+ICP备案已通过，Web 端公开首页恢复公网访问。后台页面仍由登录态、用户身份和页面权限控制。
 
 Nginx 配置位于：
 
@@ -15,46 +10,46 @@ Nginx 配置位于：
 deploy/nginx/xicemc-web.conf
 ```
 
-该限制只作用于 HTTP Web 入口，不影响 Minecraft Java 服务端口 `25565`。
-
 ## 当前访问入口
 
-资源和 Web 入口仍保留 IP 访问：
-
-```text
-http://150.158.93.80/
-http://150.158.93.80/resourcepacks/xiceclaim.zip
-```
-
-域名访问通道已经在 Nginx 中预留：
+正式 Web 入口：
 
 ```text
 http://xicemc.site/
 http://www.xicemc.site/
 ```
 
-备案通过前，即使域名已解析，也会受到同一份 IP 白名单限制。
+资源包入口：
 
-## 备案页脚预留项
+```text
+http://xicemc.site/resourcepacks/xiceclaim.zip
+```
 
-Web 端已经准备好 ICP 与公安联网备案页脚。备案号尚未下发时，会显示“备案号待下发”；备案号下发后，通过环境变量填入即可：
+IP 入口仍可由 Nginx default server 转发到 Web 服务，但公开展示和资源地址以域名为准。
+
+## 备案页脚
+
+Web 端页脚显示 ICP 与公安联网备案信息。当前 ICP 备案号：
+
+```text
+粤ICP备2026065077号
+```
+
+运行时环境变量可覆盖默认值：
 
 ```env
-XICEMC_PUBLIC_SITE_BASE_URL=http://150.158.93.80
+XICEMC_PUBLIC_SITE_BASE_URL=http://xicemc.site
 XICEMC_PUBLIC_SITE_DOMAIN=xicemc.site
-XICEMC_ICP_RECORD_NO=粤ICP备xxxxxxxx号
+XICEMC_ICP_RECORD_NO=粤ICP备2026065077号
 XICEMC_ICP_RECORD_URL=https://beian.miit.gov.cn/
 XICEMC_PUBLIC_SECURITY_RECORD_NO=粤公网安备xxxxxxxxxxxxxx号
 XICEMC_PUBLIC_SECURITY_RECORD_URL=https://beian.mps.gov.cn/#/query/webSearch?code=xxxxxxxxxxxxxx
 ```
 
-备案通过后建议将 `XICEMC_PUBLIC_SITE_BASE_URL` 切换为正式域名，并将 `server/config/server.properties.template` 中的资源包地址同步切换到域名。
+## 公安联网备案
 
-## 解除临时限制
-
-备案通过且页脚配置完成后，可以从 `deploy/nginx/xicemc-web.conf` 中移除临时 `allow/deny` 白名单，重新加载 Nginx：
+公安联网备案通过后，将公安备案号和查询链接填入运行时环境变量，并重启 Web 服务：
 
 ```bash
-sudo nginx -t
-sudo systemctl reload nginx
+sudo systemctl restart xicemc-whitelist.service
 ```

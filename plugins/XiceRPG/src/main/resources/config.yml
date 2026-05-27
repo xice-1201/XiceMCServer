@@ -1,0 +1,21 @@
+# XiceRPG runtime configuration.
+
+module:
+  main-world: main
+  world-prefix: xicerpg_module_
+  instance-world-prefix: xicerpg_instance_
+  snapshot-world-prefix: xicerpg_snapshot_
+  default-border-distance: 256
+  default-curse-escape-deaths: 2
+  default-spawn-y: 80
+  min-border-distance: 32
+  max-border-distance: 4096
+
+access:
+  default-allowed-actions: []
+  players:
+    00000000-0000-0000-0000-000000000000:
+      name: ExamplePlayer
+      actions:
+        - module
+        - mob

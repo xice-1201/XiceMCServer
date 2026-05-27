@@ -59,6 +59,26 @@ if compgen -G "${REPO_DIR}/plugins/*/pom.xml" > /dev/null; then
     exit 1
   fi
 
+  if [[ -f "${REPO_DIR}/plugins/XiceCustomItem/pom.xml" ]]; then
+    echo "Installing shared plugin API: XiceCustomItem"
+    if [[ -d "${BUILD_JAVA_HOME}" ]]; then
+      run_as_server_user env JAVA_HOME="${BUILD_JAVA_HOME}" PATH="${BUILD_JAVA_HOME}/bin:${PATH}" \
+        mvn -q -f "${REPO_DIR}/plugins/XiceCustomItem/pom.xml" clean install
+    else
+      run_as_server_user mvn -q -f "${REPO_DIR}/plugins/XiceCustomItem/pom.xml" clean install
+    fi
+  fi
+
+  if [[ -f "${REPO_DIR}/plugins/XiceHUD/pom.xml" ]]; then
+    echo "Installing shared plugin API: XiceHUD"
+    if [[ -d "${BUILD_JAVA_HOME}" ]]; then
+      run_as_server_user env JAVA_HOME="${BUILD_JAVA_HOME}" PATH="${BUILD_JAVA_HOME}/bin:${PATH}" \
+        mvn -q -f "${REPO_DIR}/plugins/XiceHUD/pom.xml" clean install
+    else
+      run_as_server_user mvn -q -f "${REPO_DIR}/plugins/XiceHUD/pom.xml" clean install
+    fi
+  fi
+
   mkdir -p "${RUNTIME_DIR}/plugins"
   for pom in "${REPO_DIR}"/plugins/*/pom.xml; do
     plugin_dir="$(dirname "${pom}")"

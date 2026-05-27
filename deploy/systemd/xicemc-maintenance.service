@@ -9,4 +9,5 @@ User=root
 Group=root
 WorkingDirectory=/opt/xicemc/repo
 EnvironmentFile=-/opt/xicemc/secrets/xicemc.env
+EnvironmentFile=-/opt/xicemc/secrets/whitelist-web.env
 ExecStart=/opt/xicemc/repo/scripts/daily-maintenance.sh

@@ -145,14 +145,17 @@ type permissionConfigPlayer struct {
 }
 
 var permissionCommands = map[string]permissionCommand{
-	"creative":               {Label: "/creative", ConfigName: "command-control", Token: "creative", Reload: "xcc reload"},
-	"xcc.reload":             {Label: "/xcc reload", ConfigName: "command-control", Token: "xcc.reload", Reload: "xcc reload"},
-	"xcc.list":               {Label: "/xcc list", ConfigName: "command-control", Token: "xcc.list", Reload: "xcc reload"},
-	"claim.give":             {Label: "/claim give", ConfigName: "claim", Token: "give", Reload: "claim reload"},
-	"morepotioneffects.give": {Label: "/morepotioneffects give", ConfigName: "more-potion-effects", Token: "give", Reload: "mpe reload"},
+	"creative":                  {Label: "/creative", ConfigName: "command-control", Token: "creative", Reload: "xcc reload"},
+	"xcc.reload":                {Label: "/xcc reload", ConfigName: "command-control", Token: "xcc.reload", Reload: "xcc reload"},
+	"xcc.list":                  {Label: "/xcc list", ConfigName: "command-control", Token: "xcc.list", Reload: "xcc reload"},
+	"customitem.give":           {Label: "/xicecustomitem give", ConfigName: "custom-item", Token: "give", Reload: "xicecustomitem reload"},
+	"morepotioneffects.give":    {Label: "/morepotioneffects give", ConfigName: "more-potion-effects", Token: "give", Reload: "mpe reload"},
+	"morepotioneffects.enchant": {Label: "/morepotioneffects enchant", ConfigName: "more-potion-effects", Token: "enchant", Reload: "mpe reload"},
+	"module":                    {Label: "/module", ConfigName: "rpg", Token: "module", Reload: "module reload"},
+	"rpgmob.spawn":              {Label: "/rpgmob spawn", ConfigName: "rpg", Token: "mob", Reload: "module reload"},
 }
 
-var permissionCommandOrder = []string{"creative", "xcc.reload", "xcc.list", "claim.give", "morepotioneffects.give"}
+var permissionCommandOrder = []string{"creative", "xcc.reload", "xcc.list", "customitem.give", "morepotioneffects.give", "morepotioneffects.enchant", "module", "rpgmob.spawn"}
 
 func (a *app) handlePlayers(w http.ResponseWriter, r *http.Request, user *userSession) {
 	a.renderPlayers(w, r, user, "", http.StatusOK)
@@ -845,11 +848,28 @@ func (a *app) permissionConfigPath(configName string) (string, error) {
 		return a.cfg.CommandControlConfigPath, nil
 	case "claim":
 		return a.cfg.ClaimConfigPath, nil
+	case "custom-item":
+		return a.cfg.CustomItemConfigPath, nil
 	case "more-potion-effects":
 		return a.cfg.MorePotionEffectsConfigPath, nil
+	case "economy":
+		return a.cfg.EconomyConfigPath, nil
+	case "simple-industry":
+		return a.cfg.SimpleIndustryConfigPath, nil
+	case "rpg":
+		return a.cfg.RPGConfigPath, nil
 	default:
 		return "", errors.New("未知权限配置")
 	}
+}
+
+func isActionAccessConfig(configName string) bool {
+	return configName == "claim" ||
+		configName == "custom-item" ||
+		configName == "more-potion-effects" ||
+		configName == "economy" ||
+		configName == "simple-industry" ||
+		configName == "rpg"
 }
 
 func (a *app) readPermissionConfig(configName string) (permissionConfig, error) {
@@ -859,7 +879,7 @@ func (a *app) readPermissionConfig(configName string) (permissionConfig, error) 
 	}
 	data, _ := os.ReadFile(path)
 	text := string(data)
-	if configName == "claim" || configName == "more-potion-effects" {
+	if isActionAccessConfig(configName) {
 		text = extractTopLevelBlock(text, "access")
 		return permissionConfig{Default: parseNestedList(text, "default-allowed-actions"), Players: parseNestedPlayersBlock(text, "players", "actions")}, nil
 	}
@@ -874,7 +894,7 @@ func (a *app) writePermissionConfig(configName string, config permissionConfig) 
 	data, _ := os.ReadFile(path)
 	text := string(data)
 	var updated string
-	if configName == "claim" || configName == "more-potion-effects" {
+	if isActionAccessConfig(configName) {
 		updated = replaceTopLevelBlock(text, "access", renderClaimAccessBlock(config))
 	} else {
 		updated = replaceTopLevelBlock(text, "players", renderPermissionPlayersBlock(config.Players, "players", "commands"))

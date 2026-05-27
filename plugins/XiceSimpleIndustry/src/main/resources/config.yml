@@ -1,0 +1,12 @@
+# XiceSimpleIndustry runtime configuration.
+
+simple-cobblestone-generator:
+  output-interval-ticks: 30
+
+access:
+  default-allowed-actions: []
+  players:
+    00000000-0000-0000-0000-000000000000:
+      name: ExamplePlayer
+      actions:
+        - give

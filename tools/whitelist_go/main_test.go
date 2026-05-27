@@ -187,7 +187,7 @@ func TestPublicTemplatesExecute(t *testing.T) {
 		Active: "public-home",
 		Public: publicData{SiteBaseURL: "http://127.0.0.1", SiteDomain: "xicemc.site"},
 	}
-	for _, name := range []string{"public", "publicTech", "publicPlugins", "pluginXiceClaim", "pluginXiceAuditLog", "pluginXiceCommandControl", "pluginXiceMorePotionEffects", "pluginXiceTextArranger", "publicOps", "publicChangelog"} {
+	for _, name := range []string{"public", "publicTech", "publicPlugins", "pluginXiceClaim", "pluginXiceAuditLog", "pluginXiceCommandControl", "pluginXiceCustomItem", "pluginXiceEconomy", "pluginXiceHUD", "pluginXiceMorePotionEffects", "pluginXiceRPG", "pluginXiceSimpleIndustry", "pluginXiceTextArranger", "publicOps", "publicChangelog"} {
 		if err := templates.ExecuteTemplate(&bytes.Buffer{}, name, data); err != nil {
 			t.Fatalf("ExecuteTemplate(%s) error = %v", name, err)
 		}
