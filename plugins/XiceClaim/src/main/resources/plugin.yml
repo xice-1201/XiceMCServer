@@ -4,11 +4,12 @@ main: com.xice.xicemc.claim.XiceClaimPlugin
 api-version: '1.21'
 author: Xice
 description: Lightweight claim protection for XiceMCServer.
+depend: [XiceCustomItem]
 softdepend: [XiceMorePotionEffects]
 commands:
   claim:
     description: Manage land claims.
-    usage: /claim <help|give <ring|totem|core|warp_core> [player|selector]|reload>
+    usage: /claim <help|reload>
     aliases: [xiceclaim]
 permissions:
   xiceclaim.admin:

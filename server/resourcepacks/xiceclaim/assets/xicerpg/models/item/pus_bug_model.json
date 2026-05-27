@@ -1,0 +1,107 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "xicerpg:item/pus_bug_model",
+    "bug": "xicerpg:item/pus_bug_model"
+  },
+  "elements": [
+    {
+      "name": "slime_belly",
+      "from": [2.5, 0.2, 1.5],
+      "to": [13.5, 1.3, 14.8],
+      "faces": {
+        "down": { "uv": [8, 8, 16, 12], "texture": "#bug" },
+        "up": { "uv": [8, 8, 16, 12], "texture": "#bug" },
+        "north": { "uv": [8, 8, 16, 12], "texture": "#bug" },
+        "south": { "uv": [8, 8, 16, 12], "texture": "#bug" },
+        "west": { "uv": [8, 8, 16, 12], "texture": "#bug" },
+        "east": { "uv": [8, 8, 16, 12], "texture": "#bug" }
+      }
+    },
+    {
+      "name": "head",
+      "from": [3, 1.1, 1],
+      "to": [13, 6.6, 6],
+      "faces": {
+        "down": { "uv": [0, 8, 8, 12], "texture": "#bug" },
+        "up": { "uv": [0, 0, 8, 4], "texture": "#bug" },
+        "north": { "uv": [8, 0, 12, 4], "texture": "#bug" },
+        "south": { "uv": [0, 4, 8, 8], "texture": "#bug" },
+        "west": { "uv": [0, 4, 8, 8], "texture": "#bug" },
+        "east": { "uv": [0, 4, 8, 8], "texture": "#bug" }
+      }
+    },
+    {
+      "name": "body",
+      "from": [2.5, 1, 5],
+      "to": [13.5, 6.2, 13],
+      "faces": {
+        "down": { "uv": [0, 8, 8, 12], "texture": "#bug" },
+        "up": { "uv": [0, 0, 8, 4], "texture": "#bug" },
+        "north": { "uv": [0, 4, 8, 8], "texture": "#bug" },
+        "south": { "uv": [12, 0, 16, 4], "texture": "#bug" },
+        "west": { "uv": [0, 4, 8, 8], "texture": "#bug" },
+        "east": { "uv": [0, 4, 8, 8], "texture": "#bug" }
+      }
+    },
+    {
+      "name": "tail",
+      "from": [4, 0.8, 12],
+      "to": [12, 4.3, 15],
+      "faces": {
+        "down": { "uv": [0, 8, 8, 12], "texture": "#bug" },
+        "up": { "uv": [0, 0, 8, 4], "texture": "#bug" },
+        "north": { "uv": [0, 4, 8, 8], "texture": "#bug" },
+        "south": { "uv": [12, 0, 16, 4], "texture": "#bug" },
+        "west": { "uv": [12, 0, 16, 4], "texture": "#bug" },
+        "east": { "uv": [12, 0, 16, 4], "texture": "#bug" }
+      }
+    },
+    {
+      "name": "large_pustule",
+      "from": [4, 6.1, 6.2],
+      "to": [6.6, 8.1, 8.8],
+      "faces": {
+        "down": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "up": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "north": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "south": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "west": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "east": { "uv": [8, 4, 16, 8], "texture": "#bug" }
+      }
+    },
+    {
+      "name": "middle_pustule",
+      "from": [8.2, 5.9, 7],
+      "to": [10.4, 7.6, 9.2],
+      "faces": {
+        "down": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "up": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "north": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "south": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "west": { "uv": [8, 4, 16, 8], "texture": "#bug" },
+        "east": { "uv": [8, 4, 16, 8], "texture": "#bug" }
+      }
+    },
+    {
+      "name": "scab_patch",
+      "from": [9, 6, 10],
+      "to": [12, 7.2, 12.4],
+      "faces": {
+        "down": { "uv": [0, 12, 8, 16], "texture": "#bug" },
+        "up": { "uv": [0, 12, 8, 16], "texture": "#bug" },
+        "north": { "uv": [0, 12, 8, 16], "texture": "#bug" },
+        "south": { "uv": [0, 12, 8, 16], "texture": "#bug" },
+        "west": { "uv": [0, 12, 8, 16], "texture": "#bug" },
+        "east": { "uv": [0, 12, 8, 16], "texture": "#bug" }
+      }
+    }
+  ],
+  "display": {
+    "fixed": {
+      "rotation": [0, 0, 0],
+      "translation": [0, 0, 0],
+      "scale": [1.35, 1.35, 1.35]
+    }
+  }
+}

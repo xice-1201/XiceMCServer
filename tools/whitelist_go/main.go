@@ -63,7 +63,11 @@ type config struct {
 	ServiceName                 string
 	CommandControlConfigPath    string
 	ClaimConfigPath             string
+	CustomItemConfigPath        string
 	MorePotionEffectsConfigPath string
+	EconomyConfigPath           string
+	SimpleIndustryConfigPath    string
+	RPGConfigPath               string
 	WebIconPath                 string
 	WebFaviconPath              string
 	ClaimTotemConceptPath       string
@@ -256,7 +260,11 @@ func loadConfig() config {
 		ServiceName:                 env("XICEMC_SERVICE_NAME", "xicemc.service"),
 		CommandControlConfigPath:    env("XICEMC_COMMAND_CONTROL_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceCommandControl", "config.yml")),
 		ClaimConfigPath:             env("XICEMC_CLAIM_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceClaim", "config.yml")),
+		CustomItemConfigPath:        env("XICEMC_CUSTOM_ITEM_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceCustomItem", "config.yml")),
 		MorePotionEffectsConfigPath: env("XICEMC_MORE_POTION_EFFECTS_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceMorePotionEffects", "config.yml")),
+		EconomyConfigPath:           env("XICEMC_ECONOMY_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceEconomy", "config.yml")),
+		SimpleIndustryConfigPath:    env("XICEMC_SIMPLE_INDUSTRY_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceSimpleIndustry", "config.yml")),
+		RPGConfigPath:               env("XICEMC_RPG_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceRPG", "config.yml")),
 		WebIconPath:                 env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
 		WebFaviconPath:              env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
 		ClaimTotemConceptPath:       env("XICEMC_CLAIM_TOTEM_CONCEPT_PATH", filepath.Join(repoRoot, "server", "assets", "xiceclaim-totem-concept.png")),
@@ -264,9 +272,9 @@ func loadConfig() config {
 		ServerDocsPath:              env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
 		ServerDocsMaxLength:         envInt("XICEMC_DOCS_MAX_LENGTH", 100000),
 		SessionSecret:               env("WHITELIST_WEB_SESSION_SECRET", rconPassword),
-		PublicSiteBaseURL:           strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "http://150.158.93.80"), "/"),
+		PublicSiteBaseURL:           strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "http://xicemc.site"), "/"),
 		PublicSiteDomain:            env("XICEMC_PUBLIC_SITE_DOMAIN", "xicemc.site"),
-		ICPRecordNo:                 env("XICEMC_ICP_RECORD_NO", ""),
+		ICPRecordNo:                 env("XICEMC_ICP_RECORD_NO", "粤ICP备2026065077号"),
 		ICPRecordURL:                env("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/"),
 		PublicSecurityRecordNo:      env("XICEMC_PUBLIC_SECURITY_RECORD_NO", ""),
 		PublicSecurityRecordURL:     env("XICEMC_PUBLIC_SECURITY_RECORD_URL", ""),
@@ -334,7 +342,12 @@ func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /plugins/xiceclaim", a.handlePublicStatic("pluginXiceClaim", "XiceClaim 领地插件", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xiceauditlog", a.handlePublicStatic("pluginXiceAuditLog", "XiceAuditLog 审计插件", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xicecommandcontrol", a.handlePublicStatic("pluginXiceCommandControl", "XiceCommandControl 指令权限插件", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xicecustomitem", a.handlePublicStatic("pluginXiceCustomItem", "XiceCustomItem 自定义物品插件", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xiceeconomy", a.handlePublicStatic("pluginXiceEconomy", "XiceEconomy 经济插件", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xicehud", a.handlePublicStatic("pluginXiceHUD", "XiceHUD 显示插件", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xicemorepotioneffects", a.handlePublicStatic("pluginXiceMorePotionEffects", "XiceMorePotionEffects 更多药水效果插件", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xicerpg", a.handlePublicStatic("pluginXiceRPG", "XiceRPG 副本插件", "public-plugins"))
+	mux.HandleFunc("GET /plugins/xicesimpleindustry", a.handlePublicStatic("pluginXiceSimpleIndustry", "XiceSimpleIndustry 简易工业插件", "public-plugins"))
 	mux.HandleFunc("GET /plugins/xicetextarranger", a.handlePublicStatic("pluginXiceTextArranger", "XiceTextArranger 文本交互插件", "public-plugins"))
 	mux.HandleFunc("GET /ops", a.handlePublicStatic("publicOps", "运维记录", "public-ops"))
 	mux.HandleFunc("GET /changelog", a.handlePublicStatic("publicChangelog", "更新日志", "public-changelog"))
@@ -1971,7 +1984,12 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
         <tr><td><a href="/plugins/xiceauditlog">XiceAuditLog</a></td><td>记录关键玩家行为、方块变化、容器变动和登录会话。</td><td><a href="/plugins/xiceauditlog">查看介绍</a></td></tr>
         <tr><td><a href="/plugins/xiceclaim">XiceClaim</a></td><td>提供三维领地保护、领地戒指 GUI、领地图腾、图腾核心光环和领地传送。</td><td><a href="/plugins/xiceclaim">查看介绍</a></td></tr>
         <tr><td><a href="/plugins/xicecommandcontrol">XiceCommandControl</a></td><td>用配置文件维护玩家可用的受控指令。</td><td><a href="/plugins/xicecommandcontrol">查看介绍</a></td></tr>
-        <tr><td><a href="/plugins/xicemorepotioneffects">XiceMorePotionEffects</a></td><td>提供自定义药水效果、跃迁抑制和侧边栏剩余时间显示。</td><td><a href="/plugins/xicemorepotioneffects">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xicecustomitem">XiceCustomItem</a></td><td>提供自定义物品、展示方块、资源包检查和统一发放能力。</td><td><a href="/plugins/xicecustomitem">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xiceeconomy">XiceEconomy</a></td><td>提供虚拟货币账户、实体货币物品、虚拟货币机、玩家转账、管理员调账和流水记录。</td><td><a href="/plugins/xiceeconomy">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xicehud">XiceHUD</a></td><td>提供 action bar、侧边栏和 BossBar 的统一 HUD 显示服务。</td><td><a href="/plugins/xicehud">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xicemorepotioneffects">XiceMorePotionEffects</a></td><td>提供自定义状态效果、自定义附魔、跃迁抑制和侧边栏剩余时间显示。</td><td><a href="/plugins/xicemorepotioneffects">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xicerpg">XiceRPG</a></td><td>提供 RPG 模板世界、魔塔副本、自定义怪物和魔法装备交互。</td><td><a href="/plugins/xicerpg">查看介绍</a></td></tr>
+        <tr><td><a href="/plugins/xicesimpleindustry">XiceSimpleIndustry</a></td><td>提供简易刷石机、亡灵粉尘、亡灵核心和亡灵潮事件。</td><td><a href="/plugins/xicesimpleindustry">查看介绍</a></td></tr>
         <tr><td><a href="/plugins/xicetextarranger">XiceTextArranger</a></td><td>重写白名单、正版验证、黑名单、进退服和维护广播等服务器提示。</td><td><a href="/plugins/xicetextarranger">查看介绍</a></td></tr>
       </tbody>
     </table>
@@ -1997,7 +2015,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     <p>图腾核心是可放入领地图腾的增强物品。已放入核心且图腾仍完整绑定时，领地内玩家会周期性获得夜视、抗火、水下呼吸、速度、抗性提升、生命恢复、急迫、力量和伤害吸收等短时光环效果。该效果只在玩家位于对应领地内时刷新。</p>
     <h2>部署方式</h2>
     <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceClaim.jar</code>。插件声明了 <code>XiceMorePotionEffects</code> 软依赖：没有该插件时领地保护、戒指、图腾和核心光环仍可工作；有该插件时，领地图腾传送完成后会额外施加跃迁抑制，避免连续传送。</p>
-    <p>插件运行时配置目录为 <code>/opt/xicemc/runtime/plugins/XiceClaim/</code>。主要配置文件是 <code>config.yml</code>，包含领地数量、尺寸限制、世界边界、粒子预览参数、默认保护策略、<code>/claim give</code> 发放权限、领地图腾/图腾核心提示文案和传送提示文案。领地数据保存为 <code>/opt/xicemc/runtime/plugins/XiceClaim/claims.yml</code>，其中包含领地、成员、权限状态、戒指绑定、图腾绑定和图腾核心状态。</p>
+    <p>插件运行时配置目录为 <code>/opt/xicemc/runtime/plugins/XiceClaim/</code>。主要配置文件是 <code>config.yml</code>，包含领地数量、尺寸限制、世界边界、粒子预览参数、默认保护策略、<code>/xicecustomitem give</code> 发放权限、领地图腾/图腾核心提示文案和传送提示文案。领地数据保存为 <code>/opt/xicemc/runtime/plugins/XiceClaim/claims.yml</code>，其中包含领地、成员、权限状态、戒指绑定、图腾绑定和图腾核心状态。</p>
     <p>领地戒指、领地图腾和图腾核心使用服务器资源包中的自定义图标与模型。玩家侧能看到的物品和图腾外观由资源包提供，插件侧负责识别物品、保存绑定数据、处理右键交互、阻止原版合成误用并在玩家获得戒指后解锁后续配方。</p>
     <figure class="concept-figure">
       <img src="/assets/xiceclaim-totem-concept.png" alt="领地图腾概念图">
@@ -2062,6 +2080,93 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 </section>
 {{end}}
 
+{{define "pluginXiceCustomItem"}}{{template "pageStart" .}}{{template "pluginXiceCustomItemContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceCustomItemContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  <article class="markdown-doc">
+    <p class="public-kicker">Custom Item Core</p>
+    <h1>XiceCustomItem 自定义物品插件</h1>
+    <div class="actions"><a class="button secondary" href="/plugins">返回插件列表</a></div>
+    <p class="public-lead">XiceCustomItem 是服务器自定义物品和展示方块的公共能力层，让经济、领地、RPG 和工业插件可以共享同一套物品标记、模型、发放和资源包检查逻辑。</p>
+    <h2>功能概述</h2>
+    <p>插件向其它插件提供 <code>CustomItemService</code>，用于注册自定义物品定义、创建带持久化标记的物品、设置模型 key、显示名、描述和发光覆盖。它会统一识别自定义物品，避免把普通基底物品误当作插件物品。</p>
+    <p><code>CustomBlockService</code> 提供基于 <code>ItemDisplay</code> 的展示方块能力，统一计算六向朝向、展示实体旋转和类石质挖掘进度。虚拟货币机、简易刷石机、魔法砧、魔法砂轮和副本启动仪等展示方块都依赖这套公共逻辑。</p>
+    <p>插件还会阻止已注册自定义物品进入普通原版合成配方，避免玩家把领地戒指、实体货币、魔法粉末等物品当作基底材料误消耗；产物本身是插件自定义物品的专用配方仍可正常合成。</p>
+    <h3>命令入口</h3>
+    <ul>
+      <li><code>/xicecustomitem give &lt;物品ID&gt; [玩家|选择器] [数量]</code>：统一发放已注册自定义物品。</li>
+      <li><code>/xicecustomitem list</code>：查看当前注册的自定义物品。</li>
+      <li><code>/xicecustomitem checkpack [资源包根目录]</code>：检查资源包中对应物品模型文件是否存在。</li>
+      <li><code>/xicecustomitem reload</code>：重载发放权限配置。</li>
+    </ul>
+    <h2>部署方式</h2>
+    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceCustomItem.jar</code>。</p>
+    <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceCustomItem/config.yml</code>。配置中包含 <code>access</code> 授权表，当前 Web 权限页通过它管理 <code>/xicecustomitem give</code> 的使用人。</p>
+    <p>领地、经济、简易工业和 RPG 插件会在启动时向 XiceCustomItem 注册自己的物品。当前已接入的命名空间包括 <code>xiceclaim</code>、<code>xiceeconomy</code>、<code>xicesimpleindustry</code> 和 <code>xicerpg</code>。</p>
+  </article>
+</section>
+{{end}}
+
+{{define "pluginXiceEconomy"}}{{template "pageStart" .}}{{template "pluginXiceEconomyContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceEconomyContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  <article class="markdown-doc">
+    <p class="public-kicker">Economy Plugin</p>
+    <h1>XiceEconomy 经济插件</h1>
+    <div class="actions"><a class="button secondary" href="/plugins">返回插件列表</a></div>
+    <p class="public-lead">XiceEconomy 用于给服务器提供基础经济账户能力。当前包含一种名为“货币”的数值货币、一个绿宝石基底实体货币物品，以及用于存取转换的虚拟货币机。</p>
+    <h2>功能概述</h2>
+    <p>插件为每个玩家 UUID 建立账户，记录当前余额和每一次余额变化。玩家可以通过 <code>/money</code> 查看自己的余额，通过 <code>/pay</code> 向已有账户或在线玩家转账；管理员可以通过 <code>/eco</code> 查询、发放、扣除或设置玩家余额。</p>
+    <p>经济数据按 <code>currency_code</code> 和玩家 UUID 存储。当前默认货币代码为 <code>money</code>，显示名称为“货币”；表结构已经预留多货币字段，后续可以在同一套账户和流水模型上扩展更多货币。</p>
+    <p>实体货币使用绿宝石作为基底，但会写入 <code>XiceEconomy</code> 的持久化标记。普通绿宝石不会自动视为实体货币。插件启动时只会移除结果为实体货币物品的配方，普通绿宝石和绿宝石块原版配方保持可用。</p>
+    <p>虚拟货币机是自定义机器方块，玩家右键打开 GUI 后可以把实体货币存入账户余额，也可以从账户余额取出实体货币。机器位置、朝向和展示实体会保存到运行时数据中，重启后自动恢复。</p>
+    <h3>命令入口</h3>
+    <ul>
+      <li><code>/money</code>：查看自己的余额。</li>
+      <li><code>/money top [数量]</code>：查看余额排行榜。</li>
+      <li><code>/money log [数量]</code>：查看自己的最近流水。</li>
+      <li><code>/pay &lt;玩家&gt; &lt;金额&gt;</code>：向其他玩家转账。</li>
+      <li><code>/eco balance|give|take|set|top|log|reload</code>：管理员维护入口。</li>
+      <li><code>/xicecustomitem give xiceeconomy:physical_currency [玩家|选择器] [数量]</code>：发放实体货币物品。</li>
+      <li><code>/xicecustomitem give xiceeconomy:virtual_currency_machine [玩家|选择器] [数量]</code>：发放虚拟货币机。</li>
+    </ul>
+    <h2>部署方式</h2>
+    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。它依赖 <code>XiceCustomItem</code> 注册实体货币和虚拟货币机；PostgreSQL JDBC 驱动通过 Maven Shade 打包进插件 jar，不需要额外把 JDBC jar 放入服务器插件目录。</p>
+    <p>Maven 构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceEconomy.jar</code>。运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceEconomy/config.yml</code>，主要字段包括数据库连接参数、货币代码、显示名称、初始余额、是否允许负数，以及流水和排行榜查询上限。虚拟货币机位置保存在 <code>/opt/xicemc/runtime/plugins/XiceEconomy/virtual-currency-machines.yml</code>。</p>
+    <p>当前配置复用服务器 PostgreSQL 服务，默认数据库为 <code>xicemc_audit</code>，默认用户为 <code>xicemc_audit</code>，密码通过环境变量 <code>XICE_AUDIT_DB_PASSWORD</code> 提供。</p>
+  </article>
+</section>
+{{end}}
+
+{{define "pluginXiceHUD"}}{{template "pageStart" .}}{{template "pluginXiceHUDContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceHUDContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  <article class="markdown-doc">
+    <p class="public-kicker">HUD Plugin</p>
+    <h1>XiceHUD 显示插件</h1>
+    <div class="actions"><a class="button secondary" href="/plugins">返回插件列表</a></div>
+    <p class="public-lead">XiceHUD 是服务器的通用 HUD 显示层，统一管理 action bar、侧边栏 scoreboard 和 BossBar，避免多个业务插件直接写同一个显示位置造成互相覆盖。</p>
+    <h2>功能概述</h2>
+    <p>插件本身不保存业务数据，也不直接连接数据库。它通过 Bukkit <code>ServicesManager</code> 暴露 <code>HudService</code>，业务插件可以提交 action bar 文本、侧边栏内容或创建由 XiceHUD 托管的 BossBar。</p>
+    <p>当前经济余额仍通过 action bar 显示：XiceHUD 会检测 <code>XiceEconomy</code> 是否可用，并调用经济插件公开的余额查询接口，周期性刷新玩家自己的余额显示。</p>
+    <p>自定义状态效果侧边栏、RPG 副本波次 BossBar 和简易工业亡灵潮 BossBar 都已迁移到 XiceHUD 统一渲染。业务插件只负责计算要显示的内容，不再直接创建 sidebar scoreboard 或 Bukkit BossBar。</p>
+    <h3>命令入口</h3>
+    <ul>
+      <li><code>/hud on</code>：开启自己的 HUD。</li>
+      <li><code>/hud off</code>：关闭自己的 HUD。</li>
+      <li><code>/hud reload</code>：重新加载 HUD 配置，需要管理员权限。</li>
+    </ul>
+    <h2>部署方式</h2>
+    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceHUD.jar</code>。</p>
+    <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceHUD/config.yml</code>，主要字段包括默认开关状态、经济模块开关、余额刷新间隔和 action bar 文本格式。</p>
+    <p>插件声明了 <code>XiceEconomy</code> 软依赖：没有经济插件时 HUD 插件仍可加载，但经济余额模块会显示暂不可用。<code>XiceMorePotionEffects</code>、<code>XiceRPG</code> 和 <code>XiceSimpleIndustry</code> 会依赖或调用 XiceHUD 的显示服务。</p>
+  </article>
+</section>
+{{end}}
+
 {{define "pluginXiceMorePotionEffects"}}{{template "pageStart" .}}{{template "pluginXiceMorePotionEffectsContent" .}}{{template "pageEnd" .}}{{end}}
 {{define "pluginXiceMorePotionEffectsContent"}}
 {{template "publicHeader" .}}
@@ -2072,13 +2177,58 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     <div class="actions"><a class="button secondary" href="/plugins">返回插件列表</a></div>
     <p class="public-lead">XiceMorePotionEffects 用于承载服务器自定义状态效果。当前版本重点实现“跃迁抑制”，让传送类能力可以被短时间冷却约束。</p>
     <h2>功能概述</h2>
-    <p>插件目前提供一个自定义效果：<code>warp_suppression</code>，显示名称为“跃迁抑制”。玩家处于该效果期间再次触发传送会被拦截，并收到对应提示。插件会在玩家完成部分传送后自动施加短时跃迁抑制，例如领地图腾传送、传送门/末地折跃门传送，以及末影珍珠或消耗品类传送。</p>
-    <p>自定义效果不是原版药水效果，插件会自行记录到期时间。在线玩家身上存在自定义效果时，插件会显示侧边栏，按配置格式展示效果名称和剩余秒数；效果结束、玩家离线或插件关闭时会清理或恢复侧边栏状态。</p>
-    <p>插件提供 <code>/morepotioneffects</code> 主命令，别名为 <code>/mpe</code> 和 <code>/xicemorepotioneffects</code>。管理员可使用 <code>give</code>、<code>clear</code>、<code>check</code> 和 <code>reload</code> 管理自定义效果，时长参数支持纯秒数以及 <code>s</code>、<code>m</code>、<code>h</code> 后缀。</p>
+    <p>插件提供三类自定义状态效果：<code>warp_suppression</code> 跃迁抑制会阻止玩家再次传送；<code>strong_ban</code> 强效封禁会让牛奶无法清除自定义负面效果；<code>swordsman_memory</code> 剑士的记忆会限制远程攻击并提高近战伤害，用于 RPG 副本祝福。</p>
+    <p>自定义效果不是原版药水效果，插件会自行记录到期时间。在线玩家身上存在自定义效果时，插件会通过 <code>XiceHUD</code> 显示侧边栏，按配置格式展示效果名称和剩余秒数；效果结束、玩家离线或插件关闭时会清理侧边栏内容。</p>
+    <p>插件还实现了自定义附魔：凋亡之刃、苦痛之刃、自生、饱腹活力、延伸之手和沉稳。它们通过物品持久化标记和 lore 展示，不注册为原版附魔；同一件物品当前只允许携带一种插件自定义附魔，避免效果叠加失控。</p>
+    <p>插件提供 <code>/morepotioneffects</code> 主命令，别名为 <code>/mpe</code> 和 <code>/xicemorepotioneffects</code>。管理员可使用 <code>give</code>、<code>clear</code>、<code>check</code>、<code>enchant</code> 和 <code>reload</code> 管理自定义效果与附魔，时长参数支持纯秒数以及 <code>s</code>、<code>m</code>、<code>h</code> 后缀。</p>
     <h2>部署方式</h2>
-    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceMorePotionEffects.jar</code>。</p>
-    <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceMorePotionEffects/config.yml</code>。配置中包含 <code>access</code> 权限分配、侧边栏标题与行格式，以及命令提示文案。当前 <code>give</code> 动作可通过配置授权给指定玩家，完整管理权限仍由 <code>xicemorepotioneffects.admin</code> 控制。</p>
-    <p>XiceClaim 会以软依赖方式检测该插件。两者同时安装时，领地图腾传送完成后会调用 XiceMorePotionEffects 施加 30 秒跃迁抑制；缺少该插件时，领地图腾传送只跳过这一额外冷却，不影响领地插件加载。</p>
+    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。它依赖 <code>XiceHUD</code> 提供侧边栏显示服务。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceMorePotionEffects.jar</code>。</p>
+    <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceMorePotionEffects/config.yml</code>。配置中包含 <code>access</code> 权限分配、侧边栏标题与行格式，以及命令提示文案。当前 <code>give</code> 和 <code>enchant</code> 动作可通过配置授权给指定玩家，完整管理权限仍由 <code>xicemorepotioneffects.admin</code> 控制。</p>
+    <p>XiceClaim 和 XiceRPG 会以软依赖方式检测该插件。两者同时安装时，领地图腾传送、魔塔祝福和副本状态可以调用 XiceMorePotionEffects；缺少该插件时，对应额外效果会跳过，不影响主体插件加载。</p>
+  </article>
+</section>
+{{end}}
+
+{{define "pluginXiceRPG"}}{{template "pageStart" .}}{{template "pluginXiceRPGContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceRPGContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  <article class="markdown-doc">
+    <p class="public-kicker">RPG Dungeon</p>
+    <h1>XiceRPG 副本插件</h1>
+    <div class="actions"><a class="button secondary" href="/plugins">返回插件列表</a></div>
+    <p class="public-lead">XiceRPG 用于管理 RPG 模板世界、魔塔临时副本、自定义怪物和魔法装备交互，是服务器副本玩法的基础层。</p>
+    <h2>功能概述</h2>
+    <p>插件通过 <code>/module</code> 管理模板世界。模板世界使用虚空生成器，不生成地形、结构或自然生物，适合手动搭建副本场景；创建 UI 可配置边界距离、重生点、副本展示名和“挣脱诅咒”死亡次数。</p>
+    <p>玩家手持魔塔密钥右键可以打开魔塔副本页面。选择模板后，插件会复制模板世界，生成玩家专属临时副本实例，经过准备、复制、加载和区块预热后倒计时传送。玩家离开、下线、强制退出或在副本内使用密钥返回时，临时世界会卸载并删除。</p>
+    <p>副本启动仪用于在模板世界中配置试炼：可设置启动位置、怪物波次、波次休整、通关奖励和准入条件。临时副本内启动后，插件按波次刷新怪物，通过 <code>XiceHUD</code> 托管的 BossBar 展示当前进度，并在通关后发放奖励和记录完成状态。</p>
+    <p>插件当前接入朽败的卫兵、脓包虫和测试木桩等自定义怪物。自定义怪物使用原版实体承载逻辑，外观由展示实体和资源包模型渲染，并带有悬浮血条、特殊死亡/掉落/经验处理和副本内伤害结算规则。</p>
+    <p>魔法粉末、魔法砧和魔法砂轮构成当前的魔法装备交互：魔法砧用于给装备写入插件自定义附魔，魔法砂轮用于移除自定义附魔并回收材料。获得魔法粉末后还会解锁附魔金苹果配方，使用 8 个金苹果围绕 1 个魔法粉末，产出 8 个附魔金苹果。实际附魔效果由 XiceMorePotionEffects 承载。</p>
+    <h2>部署方式</h2>
+    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。它依赖 <code>XiceCustomItem</code> 注册魔法粉末、魔法砧、魔法砂轮、魔塔密钥和副本启动仪，依赖 <code>XiceHUD</code> 托管副本波次 BossBar；安装 <code>XiceMorePotionEffects</code> 时会启用魔塔祝福和附魔效果联动。</p>
+    <p>构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceRPG.jar</code>。运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceRPG/config.yml</code>，模板数据、魔法砧/砂轮位置和附魔列表分别保存到插件运行时目录下的 <code>modules.yml</code>、<code>magic-anvils.yml</code>、<code>magic-grindstones.yml</code> 和 <code>magic-anvil-enchants.yml</code>。</p>
+    <p>运行时世界目录使用 <code>xicerpg_module_</code>、<code>xicerpg_snapshot_</code> 和 <code>xicerpg_instance_</code> 前缀区分模板、快照和临时实例。插件只删除已登记且匹配前缀的世界目录，避免误删普通世界。</p>
+  </article>
+</section>
+{{end}}
+
+{{define "pluginXiceSimpleIndustry"}}{{template "pageStart" .}}{{template "pluginXiceSimpleIndustryContent" .}}{{template "pageEnd" .}}{{end}}
+{{define "pluginXiceSimpleIndustryContent"}}
+{{template "publicHeader" .}}
+<section class="public-page">
+  <article class="markdown-doc">
+    <p class="public-kicker">Simple Industry</p>
+    <h1>XiceSimpleIndustry 简易工业插件</h1>
+    <div class="actions"><a class="button secondary" href="/plugins">返回插件列表</a></div>
+    <p class="public-lead">XiceSimpleIndustry 用于提供轻量自定义机器和事件物品，当前包含简易刷石机、亡灵粉尘、亡灵核心和亡灵潮事件。</p>
+    <h2>功能概述</h2>
+    <p>简易刷石机是插件侧模拟的机器方块。玩家放置后由屏障方块承载位置，外观通过资源包模型和展示实体显示；右键可打开 GUI，向输入槽注入水桶和熔岩桶后，机器会按水量与熔岩量计算效率并周期性产出圆石。</p>
+    <p>机器支持红石控制、漏斗输入/抽取和容器优先输出。被红石充能时暂停产出，收到红石脉冲时执行一次确认注入；如果正面有容器，圆石会优先进容器，剩余部分才喷出。生存玩家破坏机器时会模拟投掷器硬度，并受镐子材质和效率附魔影响。</p>
+    <p>亡灵粉尘是僵尸类怪物掉落的自定义材料，亡灵核心由亡灵粉尘和腐肉合成。右键使用亡灵核心会在当前位置开启亡灵潮事件，刷新带装备和发光效果的事件僵尸，通过 <code>XiceHUD</code> 托管的 BossBar 展示进度，完成后生成村民奖励；如果事件位于领地内，会检查 XiceClaim 的“开启事件”权限。</p>
+    <h2>部署方式</h2>
+    <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。它依赖 <code>XiceCustomItem</code> 注册简易刷石机、亡灵粉尘和亡灵核心，依赖 <code>XiceHUD</code> 托管亡灵潮 BossBar，并软依赖 <code>XiceClaim</code> 检查领地内事件开启权限。</p>
+    <p>构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceSimpleIndustry.jar</code>。运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceSimpleIndustry/config.yml</code>，当前主要配置简易刷石机产出间隔和发放权限示例。</p>
+    <p>自定义物品发放由 <code>/xicecustomitem give</code> 统一处理，权限来自 <code>XiceCustomItem/config.yml</code> 的 <code>access</code> 授权；插件自己的 <code>/simpleindustry reload</code> 由 <code>xicesimpleindustry.admin</code> 控制。</p>
   </article>
 </section>
 {{end}}

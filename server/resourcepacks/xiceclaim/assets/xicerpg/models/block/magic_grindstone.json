@@ -1,0 +1,69 @@
+{
+  "textures": {
+    "body": "xicerpg:block/magic_grindstone_body",
+    "top": "xicerpg:block/magic_grindstone_top",
+    "particle": "xicerpg:block/magic_grindstone_body"
+  },
+  "elements": [
+    {
+      "from": [3, 0, 3],
+      "to": [13, 2, 13],
+      "faces": {
+        "down": { "texture": "#body" },
+        "up": { "texture": "#top" },
+        "north": { "texture": "#body" },
+        "south": { "texture": "#body" },
+        "west": { "texture": "#body" },
+        "east": { "texture": "#body" }
+      }
+    },
+    {
+      "from": [4, 2, 5],
+      "to": [6, 9, 7],
+      "faces": {
+        "down": { "texture": "#body" },
+        "up": { "texture": "#top" },
+        "north": { "texture": "#body" },
+        "south": { "texture": "#body" },
+        "west": { "texture": "#body" },
+        "east": { "texture": "#body" }
+      }
+    },
+    {
+      "from": [10, 2, 5],
+      "to": [12, 9, 7],
+      "faces": {
+        "down": { "texture": "#body" },
+        "up": { "texture": "#top" },
+        "north": { "texture": "#body" },
+        "south": { "texture": "#body" },
+        "west": { "texture": "#body" },
+        "east": { "texture": "#body" }
+      }
+    },
+    {
+      "from": [6, 7, 6],
+      "to": [10, 10, 10],
+      "faces": {
+        "down": { "texture": "#body" },
+        "up": { "texture": "#top" },
+        "north": { "texture": "#top" },
+        "south": { "texture": "#top" },
+        "west": { "texture": "#body" },
+        "east": { "texture": "#body" }
+      }
+    },
+    {
+      "from": [2, 5, 7],
+      "to": [14, 13, 9],
+      "faces": {
+        "down": { "texture": "#body" },
+        "up": { "texture": "#top" },
+        "north": { "texture": "#top" },
+        "south": { "texture": "#top" },
+        "west": { "texture": "#body" },
+        "east": { "texture": "#body" }
+      }
+    }
+  ]
+}

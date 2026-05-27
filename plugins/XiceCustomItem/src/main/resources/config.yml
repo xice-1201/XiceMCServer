@@ -1,0 +1,9 @@
+# XiceCustomItem runtime configuration.
+
+access:
+  default-allowed-actions: []
+  players:
+    00000000-0000-0000-0000-000000000000:
+      name: ExamplePlayer
+      actions:
+        - give

@@ -1,6 +1,6 @@
 # XiceMCServer
 
-当前版本：`0.0.40`
+当前版本：`0.0.44`
 
 XiceMCServer 是一个 Java 版 Minecraft 服务器项目仓库，用于记录和维护服务器插件、Web 后台、部署脚本、配置模板与运维文档。
 
@@ -38,6 +38,12 @@ docs/                 运维、备案、插件和规则文档
 | XiceAuditLog | 记录关键玩家行为和容器变化，用于审计与争议处理。 |
 | XiceClaim | 提供领地创建、范围展示、权限控制和领地保护。 |
 | XiceCommandControl | 管理指定玩家可使用的服务器指令权限。 |
+| XiceCustomItem | 提供自定义物品、展示方块、资源包检查和统一发放能力。 |
+| XiceEconomy | 提供虚拟货币账户、实体货币物品、余额查询、玩家转账和流水记录。 |
+| XiceHUD | 提供 action bar、侧边栏和 BossBar 的统一 HUD 显示服务。 |
+| XiceMorePotionEffects | 提供自定义状态效果、自定义附魔、跃迁抑制和侧边栏显示。 |
+| XiceRPG | 提供 RPG 模板世界、魔塔副本、自定义怪物和魔法装备交互。 |
+| XiceSimpleIndustry | 提供简易刷石机、亡灵粉尘、亡灵核心和亡灵潮事件。 |
 | XiceTextArranger | 管理文本整理、验证码和黑名单相关数据。 |
 
 插件的详细说明见 `docs/plugins/`。

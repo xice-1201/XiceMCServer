@@ -1,0 +1,15 @@
+name: XiceCustomItem
+version: 0.0.1
+main: com.xice.xicemc.customitem.XiceCustomItemPlugin
+api-version: '1.21'
+author: Xice
+description: Shared custom item and display-block utilities for XiceMCServer.
+commands:
+  xicecustomitem:
+    description: Inspect registered XiceMC custom items.
+    usage: /xicecustomitem <give|list|checkpack|reload>
+    aliases: [customitem]
+permissions:
+  xicecustomitem.admin:
+    description: Inspect custom item registrations.
+    default: op

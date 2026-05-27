@@ -1,0 +1,59 @@
+storage:
+  type: postgresql
+  postgresql:
+    host: 127.0.0.1
+    port: 5432
+    database: xicemc_audit
+    username: xicemc_audit
+    password-env: XICE_AUDIT_DB_PASSWORD
+
+currency:
+  code: money
+  display-name: 货币
+  symbol: 货币
+  initial-balance: 0
+  allow-negative: false
+
+physical-currency:
+  enabled: true
+  display-name: 货币
+
+access:
+  default-allowed-actions: []
+  players:
+    00000000-0000-0000-0000-000000000000:
+      name: ExamplePlayer
+      actions:
+        - give
+
+queries:
+  default-history-limit: 10
+  max-history-limit: 30
+  default-top-limit: 10
+  max-top-limit: 30
+
+messages:
+  prefix: '&6[XiceEconomy] &f'
+  player-only: '&c该指令只能由玩家执行。'
+  no-permission: '&c你没有权限执行该操作。'
+  storage-error: '&c经济数据库暂时不可用，请稍后再试。'
+  invalid-amount: '&c金额必须是正整数。'
+  invalid-limit: '&c数量必须是 1 到 {max} 之间的整数。'
+  player-not-found: '&c没有找到玩家：{player}'
+  balance-self: '&a你的余额：&e{balance} {currency}'
+  balance-other: '&a{player} 的余额：&e{balance} {currency}'
+  paid: '&a已向 {player} 支付 &e{amount} {currency}&a。当前余额：&e{balance} {currency}'
+  received: '&a收到 {player} 支付的 &e{amount} {currency}&a。当前余额：&e{balance} {currency}'
+  cannot-pay-self: '&c不能给自己转账。'
+  insufficient-funds: '&c余额不足。当前余额：{balance} {currency}'
+  admin-adjusted: '&a已更新 {player} 的余额：&e{balance} {currency}'
+  top-header: '&a余额排行榜：'
+  top-line: '&e#{rank} &f{player} &7- &a{balance} {currency}'
+  history-header: '&a{player} 的最近流水：'
+  history-empty: '&7暂无流水记录。'
+  history-line: '&7#{id} &f{type} &e{amount} {currency} &7余额 {balance} &8{reason}'
+  reload-complete: '&aXiceEconomy 配置已重新加载。'
+  give-usage: '&c用法：/xicecustomitem give xiceeconomy:physical_currency [玩家|选择器] [数量]'
+  give-summary: '&a已向 {count} 名玩家发放实体货币。'
+  physical-currency-given: '&a已获得实体货币。'
+  invalid-item-amount: '&c数量必须是 1 到 64 之间的整数。'

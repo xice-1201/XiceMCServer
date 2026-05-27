@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "front": "xiceeconomy:block/virtual_currency_machine_front",
+    "side": "xiceeconomy:block/virtual_currency_machine_side",
+    "top": "xiceeconomy:block/virtual_currency_machine_top"
+  }
+}
