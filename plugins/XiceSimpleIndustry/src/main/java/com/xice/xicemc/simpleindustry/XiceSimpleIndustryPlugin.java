@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -55,6 +56,7 @@ import org.bukkit.entity.Item;
 import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
+import org.bukkit.entity.Villager;
 import org.bukkit.entity.Zombie;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -85,6 +87,8 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.Merchant;
+import org.bukkit.inventory.MerchantRecipe;
 import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.ShapelessRecipe;
@@ -105,6 +109,12 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     private static final int BREEDER_SWITCH_SLOT = 11;
     private static final int BREEDER_OUTPUT_SLOT = 13;
     private static final int BREEDER_STATUS_SLOT = 15;
+    private static final int TRADING_STATION_JOB_INPUT_SLOT = 11;
+    private static final int TRADING_STATION_JOB_CONFIRM_SLOT = 15;
+    private static final int TRADING_STATION_OPEN_TRADE_SLOT = 49;
+    private static final int TRADING_STATION_CLEAR_SLOT = 53;
+    private static final List<Integer> TRADING_STATION_LEVEL_SLOTS = List.of(10, 11, 12, 13, 14);
+    private static final List<Integer> TRADING_STATION_CANDIDATE_SLOTS = List.of(19, 20, 21, 22, 23, 24, 25, 28, 29, 30, 31, 32, 33, 34);
     private static final int WATER_LIMIT = 16;
     private static final int LAVA_LIMIT = 64;
     private static final int VILLAGER_BREEDER_INTERVAL_TICKS = 5 * 60 * 20;
@@ -176,6 +186,47 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     private static final List<Material> VILLAGER_BREEDER_BASE_RECIPE_MATERIALS = List.of(
             Material.DIRT
     );
+    private static final List<Material> PLANK_RECIPE_MATERIALS = materialsOf(
+            "OAK_PLANKS",
+            "SPRUCE_PLANKS",
+            "BIRCH_PLANKS",
+            "JUNGLE_PLANKS",
+            "ACACIA_PLANKS",
+            "DARK_OAK_PLANKS",
+            "MANGROVE_PLANKS",
+            "CHERRY_PLANKS",
+            "BAMBOO_PLANKS",
+            "CRIMSON_PLANKS",
+            "WARPED_PLANKS"
+    );
+    private static final List<Material> FENCE_RECIPE_MATERIALS = materialsOf(
+            "OAK_FENCE",
+            "SPRUCE_FENCE",
+            "BIRCH_FENCE",
+            "JUNGLE_FENCE",
+            "ACACIA_FENCE",
+            "DARK_OAK_FENCE",
+            "MANGROVE_FENCE",
+            "CHERRY_FENCE",
+            "BAMBOO_FENCE",
+            "CRIMSON_FENCE",
+            "WARPED_FENCE"
+    );
+    private static final Map<Material, Villager.Profession> WORKSTATION_PROFESSIONS = Map.ofEntries(
+            Map.entry(Material.BLAST_FURNACE, Villager.Profession.ARMORER),
+            Map.entry(Material.SMOKER, Villager.Profession.BUTCHER),
+            Map.entry(Material.CARTOGRAPHY_TABLE, Villager.Profession.CARTOGRAPHER),
+            Map.entry(Material.BREWING_STAND, Villager.Profession.CLERIC),
+            Map.entry(Material.COMPOSTER, Villager.Profession.FARMER),
+            Map.entry(Material.BARREL, Villager.Profession.FISHERMAN),
+            Map.entry(Material.FLETCHING_TABLE, Villager.Profession.FLETCHER),
+            Map.entry(Material.CAULDRON, Villager.Profession.LEATHERWORKER),
+            Map.entry(Material.LECTERN, Villager.Profession.LIBRARIAN),
+            Map.entry(Material.STONECUTTER, Villager.Profession.MASON),
+            Map.entry(Material.LOOM, Villager.Profession.SHEPHERD),
+            Map.entry(Material.SMITHING_TABLE, Villager.Profession.TOOLSMITH),
+            Map.entry(Material.GRINDSTONE, Villager.Profession.WEAPONSMITH)
+    );
     private static final List<BlockFace> MACHINE_FACES = List.of(
             BlockFace.UP,
             BlockFace.DOWN,
@@ -209,6 +260,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             "IRON_AXE",
             "GOLDEN_AXE"
     );
+    private static final Map<Villager.Profession, List<TradeSpec>> VANILLA_TRADE_CATALOG = buildVanillaTradeCatalog();
 
     private final Map<String, MachineState> machines = new HashMap<>();
     private final Map<String, Long> lastRedstonePulseTicks = new HashMap<>();
@@ -224,6 +276,11 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     private NamespacedKey villagerBreederItemModelKey;
     private NamespacedKey villagerBreederRecipeKey;
     private NamespacedKey villagerEggKnowledgeKey;
+    private NamespacedKey villagerTradingStationItemKey;
+    private NamespacedKey villagerTradingStationItemModelKey;
+    private NamespacedKey villagerTradingStationRecipeKey;
+    private NamespacedKey villagerTradingStationProfessionKey;
+    private NamespacedKey villagerTradingStationTradesKey;
     private NamespacedKey zombieVillagerEggRecipeKey;
     private NamespacedKey undeadDustKey;
     private NamespacedKey undeadDustItemModelKey;
@@ -237,6 +294,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     private NamespacedKey displayKey;
     private CustomBlockDefinition generatorBlockDefinition;
     private CustomBlockDefinition villagerBreederBlockDefinition;
+    private CustomBlockDefinition villagerTradingStationBlockDefinition;
     private File machinesFile;
     private YamlConfiguration machinesConfig;
     private int outputIntervalTicks;
@@ -258,6 +316,11 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         villagerBreederItemModelKey = NamespacedKey.minecraft("composter");
         villagerBreederRecipeKey = new NamespacedKey(this, "simple_villager_breeder");
         villagerEggKnowledgeKey = new NamespacedKey(this, "knows_villager_spawn_egg");
+        villagerTradingStationItemKey = new NamespacedKey(this, "simple_villager_trading_station_item");
+        villagerTradingStationItemModelKey = NamespacedKey.minecraft("lectern");
+        villagerTradingStationRecipeKey = new NamespacedKey(this, "simple_villager_trading_station");
+        villagerTradingStationProfessionKey = new NamespacedKey(this, "simple_villager_trading_station_profession");
+        villagerTradingStationTradesKey = new NamespacedKey(this, "simple_villager_trading_station_trades");
         zombieVillagerEggRecipeKey = new NamespacedKey(this, "zombie_villager_spawn_egg");
         undeadDustKey = new NamespacedKey(this, "undead_dust");
         undeadDustItemModelKey = new NamespacedKey(this, "undead_dust");
@@ -299,6 +362,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         Objects.requireNonNull(getCommand("simpleindustry")).setTabCompleter(this);
         registerGeneratorRecipe();
         registerVillagerBreederRecipe();
+        registerVillagerTradingStationRecipe();
         registerZombieVillagerEggRecipe();
         registerUndeadCoreRecipe();
         customItemService.allowCustomIngredientRecipe(zombieVillagerEggRecipeKey);
@@ -335,17 +399,20 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (customItemService != null) {
             customItemService.unregisterRecipe(generatorRecipeKey);
             customItemService.unregisterRecipe(villagerBreederRecipeKey);
+            customItemService.unregisterRecipe(villagerTradingStationRecipeKey);
             customItemService.unregisterRecipe(zombieVillagerEggRecipeKey);
             customItemService.unregisterRecipe(undeadCoreRecipeKey);
         } else {
             Bukkit.removeRecipe(generatorRecipeKey);
             Bukkit.removeRecipe(villagerBreederRecipeKey);
+            Bukkit.removeRecipe(villagerTradingStationRecipeKey);
             Bukkit.removeRecipe(zombieVillagerEggRecipeKey);
             Bukkit.removeRecipe(undeadCoreRecipeKey);
         }
         if (customBlockService != null) {
             customBlockService.unregisterBlock(generatorItemKey);
             customBlockService.unregisterBlock(villagerBreederItemKey);
+            customBlockService.unregisterBlock(villagerTradingStationItemKey);
         }
         saveMachines();
     }
@@ -391,6 +458,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         block.setType(MACHINE_CARRIER, false);
 
         MachineState state = new MachineState(type, block.getWorld().getName(), block.getX(), block.getY(), block.getZ(), front);
+        restoreMachineDataFromItem(state, event.getItemInHand());
         machines.put(key, state);
         saveMachines();
         refreshMachineDisplay(state);
@@ -431,10 +499,10 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             return;
         }
         clearBreakSessionsFor(block);
-        removeMachineDisplays(block, state.key());
+        removeMachineDisplays(block, state);
         Location dropLocation = block.getLocation().add(0.5, 0.5, 0.5);
         if (dropMachineItem) {
-            block.getWorld().dropItemNaturally(dropLocation, createMachineItem(state.type, 1));
+            block.getWorld().dropItemNaturally(dropLocation, createMachineDropItem(state));
         }
         if (!isAir(state.input)) {
             block.getWorld().dropItemNaturally(dropLocation, state.input.clone());
@@ -705,6 +773,14 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (event.getWhoClicked() instanceof Player player && clickMayGrantUndeadDust(event)) {
             Bukkit.getScheduler().runTask(this, () -> rememberUndeadDustAndUnlockCoreRecipe(player));
         }
+        if (event.getView().getTopInventory().getHolder() instanceof TradingStationJobMenu menu) {
+            handleTradingStationJobInventoryClick(event, menu);
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder() instanceof TradingStationTradeMenu menu) {
+            handleTradingStationTradeInventoryClick(event, menu);
+            return;
+        }
         if (event.getView().getTopInventory().getHolder() instanceof BreederMenu menu) {
             handleBreederInventoryClick(event, menu);
             return;
@@ -752,6 +828,30 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (event.getWhoClicked() instanceof Player player && isUndeadDust(event.getOldCursor())) {
             Bukkit.getScheduler().runTask(this, () -> rememberUndeadDustAndUnlockCoreRecipe(player));
         }
+        if (event.getView().getTopInventory().getHolder() instanceof TradingStationJobMenu) {
+            int topSize = event.getView().getTopInventory().getSize();
+            for (int rawSlot : event.getRawSlots()) {
+                if (rawSlot < topSize && rawSlot != TRADING_STATION_JOB_INPUT_SLOT) {
+                    event.setCancelled(true);
+                    return;
+                }
+            }
+            if (!isAir(event.getOldCursor())
+                    && (!isTradingStationWorkstation(event.getOldCursor()) || event.getOldCursor().getAmount() != 1)) {
+                event.setCancelled(true);
+            }
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder() instanceof TradingStationTradeMenu) {
+            int topSize = event.getView().getTopInventory().getSize();
+            for (int rawSlot : event.getRawSlots()) {
+                if (rawSlot < topSize) {
+                    event.setCancelled(true);
+                    return;
+                }
+            }
+            return;
+        }
         if (event.getView().getTopInventory().getHolder() instanceof BreederMenu) {
             int topSize = event.getView().getTopInventory().getSize();
             for (int rawSlot : event.getRawSlots()) {
@@ -794,6 +894,9 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (event.getInventory().getHolder() instanceof BreederMenu menu) {
             saveBreederOutputFromMenu(menu, event.getInventory());
         }
+        if (event.getInventory().getHolder() instanceof TradingStationJobMenu menu) {
+            returnTradingStationJobInput(menu, event.getInventory(), event.getPlayer() instanceof Player player ? player : null);
+        }
     }
 
     @EventHandler
@@ -817,7 +920,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         for (Block block : blocks) {
             MachineState state = machines.remove(blockKey(block));
             if (state != null) {
-                removeMachineDisplays(block, state.key());
+                removeMachineDisplays(block, state);
                 if (!isAir(state.input)) {
                     block.getWorld().dropItemNaturally(block.getLocation().add(0.5, 0.5, 0.5), state.input.clone());
                 }
@@ -833,6 +936,10 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
     }
 
     private void openMachineMenu(Player player, MachineState state) {
+        if (state.type == MachineType.VILLAGER_TRADING_STATION) {
+            openTradingStationMenu(player, state);
+            return;
+        }
         if (state.type == MachineType.VILLAGER_BREEDER) {
             openBreederMenu(player, state);
             return;
@@ -849,6 +956,82 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         menu.inventory = inventory;
         renderMenu(menu, inventory, false);
         player.openInventory(inventory);
+    }
+
+    private void openTradingStationMenu(Player player, MachineState state) {
+        if (state.tradingProfession == null) {
+            openTradingStationJobMenu(player, state);
+            return;
+        }
+        openTradingStationTradeMenu(player, state, 1);
+    }
+
+    private void openTradingStationJobMenu(Player player, MachineState state) {
+        if (!machines.containsKey(state.key())) {
+            return;
+        }
+        TradingStationJobMenu menu = new TradingStationJobMenu(state.key());
+        Inventory inventory = Bukkit.createInventory(menu, MENU_SIZE, "简易村民交易站 - 求职");
+        menu.inventory = inventory;
+        renderTradingStationJobMenu(menu, inventory);
+        player.openInventory(inventory);
+    }
+
+    private void openTradingStationTradeMenu(Player player, MachineState state, int level) {
+        if (!machines.containsKey(state.key())) {
+            return;
+        }
+        TradingStationTradeMenu menu = new TradingStationTradeMenu(state.key(), clamp(level, 1, 5));
+        Inventory inventory = Bukkit.createInventory(menu, 54, "简易村民交易站 - 交易配置");
+        menu.inventory = inventory;
+        renderTradingStationTradeMenu(menu, inventory);
+        player.openInventory(inventory);
+    }
+
+    private void renderTradingStationJobMenu(TradingStationJobMenu menu, Inventory inventory) {
+        MachineState state = machines.get(menu.machineKey);
+        if (state == null) {
+            inventory.clear();
+            return;
+        }
+        ItemStack input = inventory.getItem(TRADING_STATION_JOB_INPUT_SLOT);
+        inventory.clear();
+        ItemStack filler = menuItem(Material.BLACK_STAINED_GLASS_PANE, " ", List.of());
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            inventory.setItem(slot, filler);
+        }
+        inventory.setItem(4, menuItem(Material.LECTERN, "简易村民交易站", List.of("放入 1 个村民工作方块来决定职业。")));
+        inventory.setItem(TRADING_STATION_JOB_INPUT_SLOT, sanitizeTradingStationJobInput(input));
+        inventory.setItem(TRADING_STATION_JOB_CONFIRM_SLOT, menuItem(Material.LIME_CONCRETE, "确认职业", List.of("职业确定后会随方块掉落保存。")));
+    }
+
+    private void renderTradingStationTradeMenu(TradingStationTradeMenu menu, Inventory inventory) {
+        MachineState state = machines.get(menu.machineKey);
+        if (state == null || state.tradingProfession == null) {
+            inventory.clear();
+            return;
+        }
+        inventory.clear();
+        ItemStack filler = menuItem(Material.BLACK_STAINED_GLASS_PANE, " ", List.of());
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            inventory.setItem(slot, filler);
+        }
+        inventory.setItem(4, menuItem(Material.LECTERN, professionDisplayName(state.tradingProfession), List.of("选择原版可能出现的交易项。")));
+        for (int i = 0; i < TRADING_STATION_LEVEL_SLOTS.size(); i++) {
+            int level = i + 1;
+            inventory.setItem(TRADING_STATION_LEVEL_SLOTS.get(i), menuItem(
+                    level == menu.level ? Material.EMERALD_BLOCK : Material.EMERALD,
+                    villagerLevelName(level),
+                    List.of("点击查看该等级交易。")));
+        }
+        List<TradeSpec> candidates = tradeCandidates(state.tradingProfession, menu.level);
+        for (int i = 0; i < TRADING_STATION_CANDIDATE_SLOTS.size() && i < candidates.size(); i++) {
+            TradeSpec trade = candidates.get(i);
+            boolean selected = state.selectedTradeIds.contains(trade.id());
+            inventory.setItem(TRADING_STATION_CANDIDATE_SLOTS.get(i), tradeMenuItem(trade, selected));
+        }
+        inventory.setItem(TRADING_STATION_OPEN_TRADE_SLOT, menuItem(Material.EMERALD, "打开交易", List.of("使用已选交易创建临时商人界面。")));
+        inventory.setItem(TRADING_STATION_CLEAR_SLOT, menuItem(Material.BARRIER, "清空当前等级", List.of("只清空当前等级已选交易。")));
     }
 
     private void openBreederMenu(Player player, MachineState state) {
@@ -1008,6 +1191,145 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         }
         if (event.isShiftClick()) {
             event.setCancelled(true);
+        }
+    }
+
+    private void handleTradingStationJobInventoryClick(InventoryClickEvent event, TradingStationJobMenu menu) {
+        Inventory top = event.getView().getTopInventory();
+        int rawSlot = event.getRawSlot();
+        boolean topClick = rawSlot >= 0 && rawSlot < top.getSize();
+        if (topClick && rawSlot == TRADING_STATION_JOB_CONFIRM_SLOT) {
+            event.setCancelled(true);
+            confirmTradingStationProfession(event, menu, top);
+            return;
+        }
+        if (topClick && rawSlot == TRADING_STATION_JOB_INPUT_SLOT) {
+            if (!isTradingStationJobInputClick(event)) {
+                event.setCancelled(true);
+                return;
+            }
+            Bukkit.getScheduler().runTask(this, () -> renderTradingStationJobMenu(menu, top));
+            return;
+        }
+        if (topClick) {
+            event.setCancelled(true);
+            return;
+        }
+        if (event.isShiftClick()) {
+            event.setCancelled(true);
+            moveWorkstationIntoTradingStationJobInput(top, event.getClickedInventory(), event.getSlot(), event.getCurrentItem());
+            renderTradingStationJobMenu(menu, top);
+        }
+    }
+
+    private void handleTradingStationTradeInventoryClick(InventoryClickEvent event, TradingStationTradeMenu menu) {
+        Inventory top = event.getView().getTopInventory();
+        int rawSlot = event.getRawSlot();
+        boolean topClick = rawSlot >= 0 && rawSlot < top.getSize();
+        if (!topClick) {
+            if (event.isShiftClick()) {
+                event.setCancelled(true);
+            }
+            return;
+        }
+        event.setCancelled(true);
+        MachineState state = machines.get(menu.machineKey);
+        if (state == null || state.tradingProfession == null) {
+            return;
+        }
+        int levelIndex = TRADING_STATION_LEVEL_SLOTS.indexOf(rawSlot);
+        if (levelIndex >= 0) {
+            openTradingStationTradeMenu((Player) event.getWhoClicked(), state, levelIndex + 1);
+            return;
+        }
+        if (rawSlot == TRADING_STATION_OPEN_TRADE_SLOT) {
+            openTradingStationMerchant((Player) event.getWhoClicked(), state);
+            return;
+        }
+        if (rawSlot == TRADING_STATION_CLEAR_SLOT) {
+            clearTradesForLevel(state, menu.level);
+            saveMachines();
+            renderTradingStationTradeMenu(menu, top);
+            return;
+        }
+        int candidateIndex = TRADING_STATION_CANDIDATE_SLOTS.indexOf(rawSlot);
+        if (candidateIndex < 0) {
+            return;
+        }
+        List<TradeSpec> candidates = tradeCandidates(state.tradingProfession, menu.level);
+        if (candidateIndex >= candidates.size()) {
+            return;
+        }
+        TradeSpec trade = candidates.get(candidateIndex);
+        if (!state.selectedTradeIds.add(trade.id())) {
+            state.selectedTradeIds.remove(trade.id());
+        }
+        saveMachines();
+        renderTradingStationTradeMenu(menu, top);
+    }
+
+    private void confirmTradingStationProfession(InventoryClickEvent event, TradingStationJobMenu menu, Inventory inventory) {
+        MachineState state = machines.get(menu.machineKey);
+        if (state == null) {
+            return;
+        }
+        ItemStack input = sanitizeTradingStationJobInput(inventory.getItem(TRADING_STATION_JOB_INPUT_SLOT));
+        if (isAir(input)) {
+            event.getWhoClicked().sendMessage("请先放入一个村民工作方块。");
+            return;
+        }
+        Villager.Profession profession = WORKSTATION_PROFESSIONS.get(input.getType());
+        if (profession == null) {
+            event.getWhoClicked().sendMessage("该方块不能决定村民职业。");
+            return;
+        }
+        state.tradingProfession = profession;
+        state.selectedTradeIds.clear();
+        saveMachines();
+        inventory.setItem(TRADING_STATION_JOB_INPUT_SLOT, null);
+        openTradingStationTradeMenu((Player) event.getWhoClicked(), state, 1);
+    }
+
+    private boolean isTradingStationJobInputClick(InventoryClickEvent event) {
+        if (event.getHotbarButton() >= 0 && event.getWhoClicked() instanceof Player player) {
+            ItemStack hotbar = player.getInventory().getItem(event.getHotbarButton());
+            return isAir(hotbar) || (isTradingStationWorkstation(hotbar) && hotbar.getAmount() == 1);
+        }
+        ItemStack cursor = event.getCursor();
+        return isAir(cursor) || (isTradingStationWorkstation(cursor) && cursor.getAmount() == 1);
+    }
+
+    private void moveWorkstationIntoTradingStationJobInput(Inventory top, Inventory sourceInventory, int sourceSlot, ItemStack source) {
+        if (sourceInventory == null || isAir(source) || !isTradingStationWorkstation(source) || !isAir(top.getItem(TRADING_STATION_JOB_INPUT_SLOT))) {
+            return;
+        }
+        ItemStack moved = source.clone();
+        moved.setAmount(1);
+        top.setItem(TRADING_STATION_JOB_INPUT_SLOT, moved);
+        source.setAmount(source.getAmount() - 1);
+        sourceInventory.setItem(sourceSlot, source.getAmount() <= 0 ? null : source);
+    }
+
+    private void returnTradingStationJobInput(TradingStationJobMenu menu, Inventory inventory, Player player) {
+        MachineState state = machines.get(menu.machineKey);
+        if (state == null || state.tradingProfession != null) {
+            return;
+        }
+        ItemStack input = sanitizeTradingStationJobInput(inventory.getItem(TRADING_STATION_JOB_INPUT_SLOT));
+        if (isAir(input)) {
+            return;
+        }
+        inventory.setItem(TRADING_STATION_JOB_INPUT_SLOT, null);
+        Map<Integer, ItemStack> leftovers = player == null ? Map.of(0, input) : player.getInventory().addItem(input);
+        if (!leftovers.isEmpty()) {
+            Block block = blockFor(state);
+            Location drop = block == null ? state.centerLocation() : block.getLocation().add(0.5D, 0.5D, 0.5D);
+            if (drop == null || drop.getWorld() == null) {
+                return;
+            }
+            for (ItemStack leftover : leftovers.values()) {
+                drop.getWorld().dropItemNaturally(drop, leftover);
+            }
         }
     }
 
@@ -1344,6 +1666,9 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
                         ? inventory.getItem(BREEDER_OUTPUT_SLOT).clone()
                         : null;
             }
+            if (inventory.getHolder() instanceof TradingStationJobMenu menu && machineKey.equals(menu.machineKey) && state.tradingProfession == null) {
+                returnTradingStationJobInput(menu, inventory, player);
+            }
         }
     }
 
@@ -1356,6 +1681,9 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             }
             if (inventory.getHolder() instanceof BreederMenu menu && state.key().equals(menu.machineKey)) {
                 renderBreederMenu(menu, inventory);
+            }
+            if (inventory.getHolder() instanceof TradingStationTradeMenu menu && state.key().equals(menu.machineKey)) {
+                renderTradingStationTradeMenu(menu, inventory);
             }
         }
     }
@@ -1417,6 +1745,18 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         recipe.setIngredient('F', new RecipeChoice.MaterialChoice(VILLAGER_FOOD_RECIPE_MATERIALS));
         recipe.setIngredient('D', new RecipeChoice.MaterialChoice(VILLAGER_BREEDER_BASE_RECIPE_MATERIALS));
         recipe.setIngredient('W', Material.WATER_BUCKET);
+        customItemService.registerRecipe(recipe);
+    }
+
+    private void registerVillagerTradingStationRecipe() {
+        customItemService.unregisterRecipe(villagerTradingStationRecipeKey);
+        ShapedRecipe recipe = new ShapedRecipe(villagerTradingStationRecipeKey, createVillagerTradingStationItem(1));
+        recipe.setCategory(CraftingBookCategory.MISC);
+        recipe.shape("PPP", "PV ", "PMF");
+        recipe.setIngredient('P', new RecipeChoice.MaterialChoice(PLANK_RECIPE_MATERIALS));
+        recipe.setIngredient('V', Material.VILLAGER_SPAWN_EGG);
+        recipe.setIngredient('M', Material.MINECART);
+        recipe.setIngredient('F', new RecipeChoice.MaterialChoice(FENCE_RECIPE_MATERIALS));
         customItemService.registerRecipe(recipe);
     }
 
@@ -2040,7 +2380,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
 
     private void rememberVillagerEggAndUnlockBreederRecipe(Player player) {
         customItemService.rememberRecipeKnowledge(player, villagerEggKnowledgeKey);
-        customItemService.discoverRecipes(player, List.of(villagerBreederRecipeKey, zombieVillagerEggRecipeKey));
+        customItemService.discoverRecipes(player, List.of(villagerBreederRecipeKey, villagerTradingStationRecipeKey, zombieVillagerEggRecipeKey));
     }
 
     private void unlockUndeadCoreRecipeIfKnowsDust(Player player) {
@@ -2061,6 +2401,255 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             }
         }
         return false;
+    }
+
+    private ItemStack sanitizeTradingStationJobInput(ItemStack item) {
+        if (isAir(item) || !isTradingStationWorkstation(item)) {
+            return null;
+        }
+        ItemStack result = item.clone();
+        result.setAmount(1);
+        return result;
+    }
+
+    private boolean isTradingStationWorkstation(ItemStack item) {
+        return item != null
+                && item.getAmount() > 0
+                && !isVillagerTradingStationItem(item)
+                && WORKSTATION_PROFESSIONS.containsKey(item.getType());
+    }
+
+    private List<TradeSpec> tradeCandidates(Villager.Profession profession, int level) {
+        return VANILLA_TRADE_CATALOG.getOrDefault(profession, List.of()).stream()
+                .filter(trade -> trade.level() == level)
+                .toList();
+    }
+
+    private TradeSpec tradeById(String id) {
+        for (List<TradeSpec> trades : VANILLA_TRADE_CATALOG.values()) {
+            for (TradeSpec trade : trades) {
+                if (trade.id().equals(id)) {
+                    return trade;
+                }
+            }
+        }
+        return null;
+    }
+
+    private List<TradeSpec> selectedTradesFor(MachineState state) {
+        if (state.tradingProfession == null) {
+            return List.of();
+        }
+        return VANILLA_TRADE_CATALOG.getOrDefault(state.tradingProfession, List.of()).stream()
+                .filter(trade -> state.selectedTradeIds.contains(trade.id()))
+                .toList();
+    }
+
+    private List<String> selectedTradeIdsForStorage(MachineState state) {
+        return selectedTradesFor(state).stream()
+                .map(TradeSpec::id)
+                .toList();
+    }
+
+    private ItemStack tradeMenuItem(TradeSpec trade, boolean selected) {
+        ItemStack item = trade.result().clone();
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text((selected ? "已选择 " : "") + trade.label(), selected ? NamedTextColor.GREEN : NamedTextColor.WHITE)
+                .decoration(TextDecoration.ITALIC, false));
+        List<Component> lore = new ArrayList<>();
+        lore.add(Component.text("等级: " + villagerLevelName(trade.level()), NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
+        lore.add(Component.text("花费: " + ingredientText(trade.firstIngredient())
+                + (trade.secondIngredient() == null ? "" : " + " + ingredientText(trade.secondIngredient())), NamedTextColor.GRAY)
+                .decoration(TextDecoration.ITALIC, false));
+        lore.add(Component.text(selected ? "点击移除" : "点击加入", selected ? NamedTextColor.RED : NamedTextColor.GREEN)
+                .decoration(TextDecoration.ITALIC, false));
+        meta.lore(lore);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private String ingredientText(ItemStack item) {
+        return item.getAmount() + "x " + item.getType().translationKey();
+    }
+
+    private String villagerLevelName(int level) {
+        return switch (level) {
+            case 1 -> "新手";
+            case 2 -> "学徒";
+            case 3 -> "老手";
+            case 4 -> "专家";
+            case 5 -> "大师";
+            default -> "等级 " + level;
+        };
+    }
+
+    private String professionDisplayName(Villager.Profession profession) {
+        if (Villager.Profession.ARMORER.equals(profession)) {
+            return "盔甲匠";
+        }
+        if (Villager.Profession.BUTCHER.equals(profession)) {
+            return "屠夫";
+        }
+        if (Villager.Profession.CARTOGRAPHER.equals(profession)) {
+            return "制图师";
+        }
+        if (Villager.Profession.CLERIC.equals(profession)) {
+            return "牧师";
+        }
+        if (Villager.Profession.FARMER.equals(profession)) {
+            return "农民";
+        }
+        if (Villager.Profession.FISHERMAN.equals(profession)) {
+            return "渔夫";
+        }
+        if (Villager.Profession.FLETCHER.equals(profession)) {
+            return "制箭师";
+        }
+        if (Villager.Profession.LEATHERWORKER.equals(profession)) {
+            return "皮匠";
+        }
+        if (Villager.Profession.LIBRARIAN.equals(profession)) {
+            return "图书管理员";
+        }
+        if (Villager.Profession.MASON.equals(profession)) {
+            return "石匠";
+        }
+        if (Villager.Profession.SHEPHERD.equals(profession)) {
+            return "牧羊人";
+        }
+        if (Villager.Profession.TOOLSMITH.equals(profession)) {
+            return "工具匠";
+        }
+        if (Villager.Profession.WEAPONSMITH.equals(profession)) {
+            return "武器匠";
+        }
+        return profession == null ? "无职业" : profession.toString();
+    }
+
+    private void clearTradesForLevel(MachineState state, int level) {
+        state.selectedTradeIds.removeIf(id -> {
+            TradeSpec trade = tradeById(id);
+            return trade == null || trade.level() == level;
+        });
+    }
+
+    private void openTradingStationMerchant(Player player, MachineState state) {
+        if (state.tradingProfession == null || state.selectedTradeIds.isEmpty()) {
+            player.sendMessage("请先为交易站选择职业和交易项。");
+            return;
+        }
+        List<MerchantRecipe> recipes = new ArrayList<>();
+        for (TradeSpec trade : selectedTradesFor(state)) {
+            recipes.add(trade.toRecipe());
+        }
+        if (recipes.isEmpty()) {
+            player.sendMessage("当前职业没有可用交易项。");
+            return;
+        }
+        Merchant merchant = Bukkit.createMerchant(Component.text("简易村民交易站 - " + professionDisplayName(state.tradingProfession)));
+        merchant.setRecipes(recipes);
+        player.openMerchant(merchant, true);
+    }
+
+    private void writeTradingStationDataToItem(ItemStack item, MachineState state) {
+        if (!item.hasItemMeta()) {
+            return;
+        }
+        ItemMeta meta = item.getItemMeta();
+        PersistentDataContainer data = meta.getPersistentDataContainer();
+        if (state.tradingProfession != null) {
+            String professionId = professionId(state.tradingProfession);
+            if (professionId != null) {
+                data.set(villagerTradingStationProfessionKey, PersistentDataType.STRING, professionId);
+            }
+        }
+        if (!state.selectedTradeIds.isEmpty()) {
+            data.set(villagerTradingStationTradesKey, PersistentDataType.STRING, String.join(",", selectedTradeIdsForStorage(state)));
+        }
+        item.setItemMeta(meta);
+    }
+
+    private void restoreMachineDataFromItem(MachineState state, ItemStack item) {
+        if (state.type != MachineType.VILLAGER_TRADING_STATION || item == null || !item.hasItemMeta()) {
+            return;
+        }
+        PersistentDataContainer data = item.getItemMeta().getPersistentDataContainer();
+        String professionName = data.get(villagerTradingStationProfessionKey, PersistentDataType.STRING);
+        state.tradingProfession = parseProfession(professionName);
+        String trades = data.get(villagerTradingStationTradesKey, PersistentDataType.STRING);
+        if (trades != null && state.tradingProfession != null) {
+            for (String id : trades.split(",")) {
+                TradeSpec trade = tradeById(id);
+                if (trade != null && trade.profession().equals(state.tradingProfession)) {
+                    state.selectedTradeIds.add(id);
+                }
+            }
+        }
+    }
+
+    private Villager.Profession parseProfession(String professionName) {
+        if (professionName == null || professionName.isBlank()) {
+            return null;
+        }
+        return switch (professionName.toUpperCase(Locale.ROOT)) {
+            case "ARMORER" -> Villager.Profession.ARMORER;
+            case "BUTCHER" -> Villager.Profession.BUTCHER;
+            case "CARTOGRAPHER" -> Villager.Profession.CARTOGRAPHER;
+            case "CLERIC" -> Villager.Profession.CLERIC;
+            case "FARMER" -> Villager.Profession.FARMER;
+            case "FISHERMAN" -> Villager.Profession.FISHERMAN;
+            case "FLETCHER" -> Villager.Profession.FLETCHER;
+            case "LEATHERWORKER" -> Villager.Profession.LEATHERWORKER;
+            case "LIBRARIAN" -> Villager.Profession.LIBRARIAN;
+            case "MASON" -> Villager.Profession.MASON;
+            case "SHEPHERD" -> Villager.Profession.SHEPHERD;
+            case "TOOLSMITH" -> Villager.Profession.TOOLSMITH;
+            case "WEAPONSMITH" -> Villager.Profession.WEAPONSMITH;
+            default -> null;
+        };
+    }
+
+    private String professionId(Villager.Profession profession) {
+        if (Villager.Profession.ARMORER.equals(profession)) {
+            return "ARMORER";
+        }
+        if (Villager.Profession.BUTCHER.equals(profession)) {
+            return "BUTCHER";
+        }
+        if (Villager.Profession.CARTOGRAPHER.equals(profession)) {
+            return "CARTOGRAPHER";
+        }
+        if (Villager.Profession.CLERIC.equals(profession)) {
+            return "CLERIC";
+        }
+        if (Villager.Profession.FARMER.equals(profession)) {
+            return "FARMER";
+        }
+        if (Villager.Profession.FISHERMAN.equals(profession)) {
+            return "FISHERMAN";
+        }
+        if (Villager.Profession.FLETCHER.equals(profession)) {
+            return "FLETCHER";
+        }
+        if (Villager.Profession.LEATHERWORKER.equals(profession)) {
+            return "LEATHERWORKER";
+        }
+        if (Villager.Profession.LIBRARIAN.equals(profession)) {
+            return "LIBRARIAN";
+        }
+        if (Villager.Profession.MASON.equals(profession)) {
+            return "MASON";
+        }
+        if (Villager.Profession.SHEPHERD.equals(profession)) {
+            return "SHEPHERD";
+        }
+        if (Villager.Profession.TOOLSMITH.equals(profession)) {
+            return "TOOLSMITH";
+        }
+        if (Villager.Profession.WEAPONSMITH.equals(profession)) {
+            return "WEAPONSMITH";
+        }
+        return null;
     }
 
     private void refreshLoadedMachines() {
@@ -2095,17 +2684,21 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         customBlockService.spawnOrReplaceDisplay(block, blockDefinitionFor(state.type), state.front);
     }
 
-    private void removeMachineDisplays(Block block, String key) {
+    private void removeMachineDisplays(Block block, MachineState state) {
         customBlockService.removeDisplays(
                 block.getWorld(),
                 block.getLocation().add(0.5, 0.5, 0.5),
-                generatorBlockDefinition,
-                key,
+                blockDefinitionFor(state.type),
+                state.key(),
                 1.2D);
     }
 
     private CustomBlockDefinition blockDefinitionFor(MachineType type) {
-        return type == MachineType.VILLAGER_BREEDER ? villagerBreederBlockDefinition : generatorBlockDefinition;
+        return switch (type) {
+            case VILLAGER_BREEDER -> villagerBreederBlockDefinition;
+            case VILLAGER_TRADING_STATION -> villagerTradingStationBlockDefinition;
+            case GENERATOR -> generatorBlockDefinition;
+        };
     }
 
     private void registerCustomBlocks() {
@@ -2129,8 +2722,19 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
                 1.0F,
                 1.0F,
                 DROPPER_HARDNESS);
+        villagerTradingStationBlockDefinition = new CustomBlockDefinition(
+                villagerTradingStationItemKey,
+                MACHINE_CARRIER,
+                Material.LECTERN,
+                villagerTradingStationItemModelKey,
+                displayKey,
+                Component.text("Simple Villager Trading Station"),
+                1.0F,
+                1.0F,
+                DROPPER_HARDNESS);
         customBlockService.registerBlock(generatorBlockDefinition);
         customBlockService.registerBlock(villagerBreederBlockDefinition);
+        customBlockService.registerBlock(villagerTradingStationBlockDefinition);
     }
 
     private void registerCustomItems() {
@@ -2153,6 +2757,16 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
                 List.of(
                         Component.text("右键放置后打开机器界面。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
                         Component.text("开机后会定期产出村民刷怪蛋。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)),
+                null));
+        customItemService.register(new CustomItemDefinition(
+                villagerTradingStationItemKey,
+                Material.LECTERN,
+                villagerTradingStationItemKey,
+                villagerTradingStationItemModelKey,
+                Component.text("简易村民交易站", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false),
+                List.of(
+                        Component.text("设置职业后选择原版候选交易。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                        Component.text("职业与交易配置会随方块掉落保存。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)),
                 null));
         customItemService.register(new CustomItemDefinition(
                 undeadDustKey,
@@ -2183,8 +2797,24 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         return customItemService.create(villagerBreederItemKey, amount);
     }
 
+    private ItemStack createVillagerTradingStationItem(int amount) {
+        return customItemService.create(villagerTradingStationItemKey, amount);
+    }
+
     private ItemStack createMachineItem(MachineType type, int amount) {
-        return type == MachineType.VILLAGER_BREEDER ? createVillagerBreederItem(amount) : createGeneratorItem(amount);
+        return switch (type) {
+            case VILLAGER_BREEDER -> createVillagerBreederItem(amount);
+            case VILLAGER_TRADING_STATION -> createVillagerTradingStationItem(amount);
+            case GENERATOR -> createGeneratorItem(amount);
+        };
+    }
+
+    private ItemStack createMachineDropItem(MachineState state) {
+        ItemStack item = createMachineItem(state.type, 1);
+        if (state.type == MachineType.VILLAGER_TRADING_STATION) {
+            writeTradingStationDataToItem(item, state);
+        }
+        return item;
     }
 
     private boolean isGeneratorItem(ItemStack item) {
@@ -2195,12 +2825,19 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         return customItemService != null && customItemService.isCustomItem(item, villagerBreederItemKey);
     }
 
+    private boolean isVillagerTradingStationItem(ItemStack item) {
+        return customItemService != null && customItemService.isCustomItem(item, villagerTradingStationItemKey);
+    }
+
     private MachineType machineTypeForItem(ItemStack item) {
         if (isGeneratorItem(item)) {
             return MachineType.GENERATOR;
         }
         if (isVillagerBreederItem(item)) {
             return MachineType.VILLAGER_BREEDER;
+        }
+        if (isVillagerTradingStationItem(item)) {
+            return MachineType.VILLAGER_TRADING_STATION;
         }
         return null;
     }
@@ -2226,7 +2863,7 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             return false;
         }
         for (ItemStack item : matrix) {
-            if (isUndeadDust(item) || isUndeadCore(item) || isGeneratorItem(item) || isVillagerBreederItem(item)) {
+            if (isUndeadDust(item) || isUndeadCore(item) || isGeneratorItem(item) || isVillagerBreederItem(item) || isVillagerTradingStationItem(item)) {
                 return true;
             }
         }
@@ -2372,6 +3009,14 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             state.breederTicks = clamp(section.getInt("breeder.ticks"), 0, VILLAGER_BREEDER_INTERVAL_TICKS);
             ItemStack breederOutput = section.getItemStack("breeder.output");
             state.breederOutput = isVillagerSpawnEgg(breederOutput) ? breederOutput : null;
+            state.tradingProfession = parseProfession(section.getString("trading.profession"));
+            state.selectedTradeIds.clear();
+            for (String tradeId : section.getStringList("trading.trades")) {
+                TradeSpec trade = tradeById(tradeId);
+                if (trade != null && state.tradingProfession != null && trade.profession().equals(state.tradingProfession)) {
+                    state.selectedTradeIds.add(tradeId);
+                }
+            }
             machines.put(state.key(), state);
         }
     }
@@ -2399,6 +3044,13 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
             section.set("breeder.ticks", state.breederTicks);
             if (!isAir(state.breederOutput)) {
                 section.set("breeder.output", state.breederOutput);
+            }
+            if (state.tradingProfession != null) {
+                String professionId = professionId(state.tradingProfession);
+                if (professionId != null) {
+                    section.set("trading.profession", professionId);
+                    section.set("trading.trades", selectedTradeIdsForStorage(state));
+                }
             }
         }
         try {
@@ -2431,6 +3083,130 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         return values.get(ThreadLocalRandom.current().nextInt(values.size()));
     }
 
+    private static Map<Villager.Profession, List<TradeSpec>> buildVanillaTradeCatalog() {
+        Map<Villager.Profession, List<TradeSpec>> catalog = new HashMap<>();
+        addTrade(catalog, Villager.Profession.ARMORER, 1, "armorer_1_coal", "煤炭换绿宝石", item(Material.EMERALD, 1), item(Material.COAL, 15), null);
+        addTrade(catalog, Villager.Profession.ARMORER, 2, "armorer_2_iron_leggings", "铁护腿", item(Material.IRON_LEGGINGS, 1), item(Material.EMERALD, 7), null);
+        addTrade(catalog, Villager.Profession.ARMORER, 3, "armorer_3_lava_bucket", "熔岩桶换绿宝石", item(Material.EMERALD, 1), item(Material.LAVA_BUCKET, 1), null);
+        addTrade(catalog, Villager.Profession.ARMORER, 4, "armorer_4_diamond", "钻石换绿宝石", item(Material.EMERALD, 1), item(Material.DIAMOND, 1), null);
+        addTrade(catalog, Villager.Profession.ARMORER, 5, "armorer_5_diamond_chestplate", "钻石胸甲", item(Material.DIAMOND_CHESTPLATE, 1), item(Material.EMERALD, 21), null);
+
+        addTrade(catalog, Villager.Profession.BUTCHER, 1, "butcher_1_chicken", "生鸡肉换绿宝石", item(Material.EMERALD, 1), item(Material.CHICKEN, 14), null);
+        addTrade(catalog, Villager.Profession.BUTCHER, 2, "butcher_2_porkchop", "生猪排换绿宝石", item(Material.EMERALD, 1), item(Material.PORKCHOP, 7), null);
+        addTrade(catalog, Villager.Profession.BUTCHER, 3, "butcher_3_mutton", "生羊肉换绿宝石", item(Material.EMERALD, 1), item(Material.MUTTON, 7), null);
+        addTrade(catalog, Villager.Profession.BUTCHER, 4, "butcher_4_sweet_berries", "甜浆果换绿宝石", item(Material.EMERALD, 1), item(Material.SWEET_BERRIES, 10), null);
+        addTrade(catalog, Villager.Profession.BUTCHER, 5, "butcher_5_rabbit_stew", "兔肉煲", item(Material.RABBIT_STEW, 1), item(Material.EMERALD, 1), null);
+
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 1, "cartographer_1_paper", "纸换绿宝石", item(Material.EMERALD, 1), item(Material.PAPER, 24), null);
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 2, "cartographer_2_map", "空地图", item(Material.MAP, 1), item(Material.EMERALD, 7), null);
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 3, "cartographer_3_glass_pane", "玻璃板换绿宝石", item(Material.EMERALD, 1), item(Material.GLASS_PANE, 11), null);
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 4, "cartographer_4_compass", "指南针换绿宝石", item(Material.EMERALD, 1), item(Material.COMPASS, 1), null);
+        addTrade(catalog, Villager.Profession.CARTOGRAPHER, 5, "cartographer_5_banner", "旗帜图案", item(Material.FLOWER_BANNER_PATTERN, 1), item(Material.EMERALD, 8), null);
+
+        addTrade(catalog, Villager.Profession.CLERIC, 1, "cleric_1_rotten_flesh", "腐肉换绿宝石", item(Material.EMERALD, 1), item(Material.ROTTEN_FLESH, 32), null);
+        addTrade(catalog, Villager.Profession.CLERIC, 2, "cleric_2_redstone", "红石粉", item(Material.REDSTONE, 2), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.CLERIC, 3, "cleric_3_gold_ingot", "金锭换绿宝石", item(Material.EMERALD, 1), item(Material.GOLD_INGOT, 3), null);
+        addTrade(catalog, Villager.Profession.CLERIC, 4, "cleric_4_ender_pearl", "末影珍珠", item(Material.ENDER_PEARL, 1), item(Material.EMERALD, 5), null);
+        addTrade(catalog, Villager.Profession.CLERIC, 5, "cleric_5_bottle_o_enchanting", "附魔之瓶", item(Material.EXPERIENCE_BOTTLE, 1), item(Material.EMERALD, 3), null);
+
+        addTrade(catalog, Villager.Profession.FARMER, 1, "farmer_1_wheat", "小麦换绿宝石", item(Material.EMERALD, 1), item(Material.WHEAT, 20), null);
+        addTrade(catalog, Villager.Profession.FARMER, 2, "farmer_2_carrot", "胡萝卜换绿宝石", item(Material.EMERALD, 1), item(Material.CARROT, 22), null);
+        addTrade(catalog, Villager.Profession.FARMER, 3, "farmer_3_pumpkin", "南瓜换绿宝石", item(Material.EMERALD, 1), item(Material.PUMPKIN, 6), null);
+        addTrade(catalog, Villager.Profession.FARMER, 4, "farmer_4_melon", "西瓜换绿宝石", item(Material.EMERALD, 1), item(Material.MELON, 4), null);
+        addTrade(catalog, Villager.Profession.FARMER, 5, "farmer_5_golden_carrot", "金胡萝卜", item(Material.GOLDEN_CARROT, 3), item(Material.EMERALD, 3), null);
+
+        addTrade(catalog, Villager.Profession.FISHERMAN, 1, "fisherman_1_string", "线换绿宝石", item(Material.EMERALD, 1), item(Material.STRING, 20), null);
+        addTrade(catalog, Villager.Profession.FISHERMAN, 2, "fisherman_2_cod", "生鳕鱼换绿宝石", item(Material.EMERALD, 1), item(Material.COD, 15), null);
+        addTrade(catalog, Villager.Profession.FISHERMAN, 3, "fisherman_3_campfire", "营火", item(Material.CAMPFIRE, 1), item(Material.EMERALD, 2), null);
+        addTrade(catalog, Villager.Profession.FISHERMAN, 4, "fisherman_4_salmon", "生鲑鱼换绿宝石", item(Material.EMERALD, 1), item(Material.SALMON, 13), null);
+        addTrade(catalog, Villager.Profession.FISHERMAN, 5, "fisherman_5_pufferfish", "河豚换绿宝石", item(Material.EMERALD, 1), item(Material.PUFFERFISH, 4), null);
+
+        addTrade(catalog, Villager.Profession.FLETCHER, 1, "fletcher_1_stick", "木棍换绿宝石", item(Material.EMERALD, 1), item(Material.STICK, 32), null);
+        addTrade(catalog, Villager.Profession.FLETCHER, 2, "fletcher_2_arrow", "箭", item(Material.ARROW, 16), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.FLETCHER, 3, "fletcher_3_flint", "燧石换绿宝石", item(Material.EMERALD, 1), item(Material.FLINT, 26), null);
+        addTrade(catalog, Villager.Profession.FLETCHER, 4, "fletcher_4_string", "线换绿宝石", item(Material.EMERALD, 1), item(Material.STRING, 14), null);
+        addTrade(catalog, Villager.Profession.FLETCHER, 5, "fletcher_5_crossbow", "弩", item(Material.CROSSBOW, 1), item(Material.EMERALD, 8), null);
+
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 1, "leatherworker_1_leather", "皮革换绿宝石", item(Material.EMERALD, 1), item(Material.LEATHER, 6), null);
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 2, "leatherworker_2_leather_pants", "皮革裤子", item(Material.LEATHER_LEGGINGS, 1), item(Material.EMERALD, 3), null);
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 3, "leatherworker_3_flint", "燧石换绿宝石", item(Material.EMERALD, 1), item(Material.FLINT, 26), null);
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 4, "leatherworker_4_rabbit_hide", "兔子皮换绿宝石", item(Material.EMERALD, 1), item(Material.RABBIT_HIDE, 9), null);
+        addTrade(catalog, Villager.Profession.LEATHERWORKER, 5, "leatherworker_5_saddle", "鞍", item(Material.SADDLE, 1), item(Material.EMERALD, 6), null);
+
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 1, "librarian_1_paper", "纸换绿宝石", item(Material.EMERALD, 1), item(Material.PAPER, 24), null);
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 2, "librarian_2_bookshelf", "书架", item(Material.BOOKSHELF, 1), item(Material.EMERALD, 9), null);
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 3, "librarian_3_glass", "玻璃", item(Material.GLASS, 4), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 4, "librarian_4_compass", "指南针", item(Material.COMPASS, 1), item(Material.EMERALD, 4), null);
+        addTrade(catalog, Villager.Profession.LIBRARIAN, 5, "librarian_5_name_tag", "命名牌", item(Material.NAME_TAG, 1), item(Material.EMERALD, 20), null);
+
+        addTrade(catalog, Villager.Profession.MASON, 1, "mason_1_clay_ball", "黏土球换绿宝石", item(Material.EMERALD, 1), item(Material.CLAY_BALL, 10), null);
+        addTrade(catalog, Villager.Profession.MASON, 2, "mason_2_bricks", "红砖", item(Material.BRICK, 10), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.MASON, 3, "mason_3_stone", "石头换绿宝石", item(Material.EMERALD, 1), item(Material.STONE, 20), null);
+        addTrade(catalog, Villager.Profession.MASON, 4, "mason_4_quartz", "石英块", item(Material.QUARTZ_BLOCK, 1), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.MASON, 5, "mason_5_glazed_terracotta", "带釉陶瓦", item(Material.WHITE_GLAZED_TERRACOTTA, 1), item(Material.EMERALD, 1), null);
+
+        addTrade(catalog, Villager.Profession.SHEPHERD, 1, "shepherd_1_wool", "白色羊毛换绿宝石", item(Material.EMERALD, 1), item(Material.WHITE_WOOL, 18), null);
+        addTrade(catalog, Villager.Profession.SHEPHERD, 2, "shepherd_2_shears", "剪刀", item(Material.SHEARS, 1), item(Material.EMERALD, 2), null);
+        addTrade(catalog, Villager.Profession.SHEPHERD, 3, "shepherd_3_dye", "黑色染料换绿宝石", item(Material.EMERALD, 1), item(Material.BLACK_DYE, 12), null);
+        addTrade(catalog, Villager.Profession.SHEPHERD, 4, "shepherd_4_banner", "白色旗帜", item(Material.WHITE_BANNER, 1), item(Material.EMERALD, 3), null);
+        addTrade(catalog, Villager.Profession.SHEPHERD, 5, "shepherd_5_painting", "画", item(Material.PAINTING, 3), item(Material.EMERALD, 2), null);
+
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 1, "toolsmith_1_coal", "煤炭换绿宝石", item(Material.EMERALD, 1), item(Material.COAL, 15), null);
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 2, "toolsmith_2_stone_axe", "石斧", item(Material.STONE_AXE, 1), item(Material.EMERALD, 1), null);
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 3, "toolsmith_3_iron_ingot", "铁锭换绿宝石", item(Material.EMERALD, 1), item(Material.IRON_INGOT, 4), null);
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 4, "toolsmith_4_flint", "燧石换绿宝石", item(Material.EMERALD, 1), item(Material.FLINT, 30), null);
+        addTrade(catalog, Villager.Profession.TOOLSMITH, 5, "toolsmith_5_diamond_pickaxe", "钻石镐", item(Material.DIAMOND_PICKAXE, 1), item(Material.EMERALD, 18), null);
+
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 1, "weaponsmith_1_coal", "煤炭换绿宝石", item(Material.EMERALD, 1), item(Material.COAL, 15), null);
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 2, "weaponsmith_2_iron_axe", "铁斧", item(Material.IRON_AXE, 1), item(Material.EMERALD, 3), null);
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 3, "weaponsmith_3_flint", "燧石换绿宝石", item(Material.EMERALD, 1), item(Material.FLINT, 24), null);
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 4, "weaponsmith_4_diamond", "钻石换绿宝石", item(Material.EMERALD, 1), item(Material.DIAMOND, 1), null);
+        addTrade(catalog, Villager.Profession.WEAPONSMITH, 5, "weaponsmith_5_diamond_sword", "钻石剑", item(Material.DIAMOND_SWORD, 1), item(Material.EMERALD, 16), null);
+
+        catalog.replaceAll((profession, trades) -> List.copyOf(trades));
+        return Map.copyOf(catalog);
+    }
+
+    private static void addTrade(Map<Villager.Profession, List<TradeSpec>> catalog, Villager.Profession profession, int level,
+                                 String id, String label, ItemStack result, ItemStack firstIngredient, ItemStack secondIngredient) {
+        catalog.computeIfAbsent(profession, ignored -> new ArrayList<>()).add(new TradeSpec(
+                id,
+                profession,
+                level,
+                label,
+                result,
+                firstIngredient,
+                secondIngredient,
+                12,
+                level,
+                0.05F));
+    }
+
+    private static ItemStack item(Material material, int amount) {
+        return new ItemStack(material, amount);
+    }
+
+    private record TradeSpec(
+            String id,
+            Villager.Profession profession,
+            int level,
+            String label,
+            ItemStack result,
+            ItemStack firstIngredient,
+            ItemStack secondIngredient,
+            int maxUses,
+            int villagerExperience,
+            float priceMultiplier) {
+        private MerchantRecipe toRecipe() {
+            MerchantRecipe recipe = new MerchantRecipe(result.clone(), 0, maxUses, true, villagerExperience, priceMultiplier);
+            recipe.addIngredient(firstIngredient.clone());
+            if (secondIngredient != null) {
+                recipe.addIngredient(secondIngredient.clone());
+            }
+            return recipe;
+        }
+    }
+
     private static final class UndeadTideState {
         private final UUID id;
         private final Location center;
@@ -2454,7 +3230,8 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
 
     private enum MachineType {
         GENERATOR,
-        VILLAGER_BREEDER
+        VILLAGER_BREEDER,
+        VILLAGER_TRADING_STATION
     }
 
     private static final class MachineState {
@@ -2470,6 +3247,8 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         private boolean breederEnabled;
         private int breederTicks;
         private ItemStack breederOutput;
+        private Villager.Profession tradingProfession;
+        private final Set<String> selectedTradeIds = new LinkedHashSet<>();
 
         private MachineState(MachineType type, String world, int x, int y, int z, BlockFace front) {
             this.type = type;
@@ -2486,6 +3265,44 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
 
         private int efficiency() {
             return Math.min(lava, water * 4);
+        }
+
+        private Location centerLocation() {
+            World loadedWorld = Bukkit.getWorld(world);
+            if (loadedWorld == null) {
+                return null;
+            }
+            return new Location(loadedWorld, x + 0.5D, y + 0.5D, z + 0.5D);
+        }
+    }
+
+    private static final class TradingStationJobMenu implements InventoryHolder {
+        private final String machineKey;
+        private Inventory inventory;
+
+        private TradingStationJobMenu(String machineKey) {
+            this.machineKey = machineKey;
+        }
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
+        }
+    }
+
+    private static final class TradingStationTradeMenu implements InventoryHolder {
+        private final String machineKey;
+        private final int level;
+        private Inventory inventory;
+
+        private TradingStationTradeMenu(String machineKey, int level) {
+            this.machineKey = machineKey;
+            this.level = level;
+        }
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
         }
     }
 
