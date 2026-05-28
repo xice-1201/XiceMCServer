@@ -148,9 +148,12 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final double GULPER_SATURATION_DRAIN = 4.0D;
     private static final int GULPER_FOOD_DRAIN = 4;
     private static final double GULPER_HEALTH_DRAIN = 1.0D;
+    private static final double BOSS_ENTITY_MAX_HEALTH = 1024.0D;
     private static final String FERRYMAN_TYPE = "ferryman";
     private static final float FERRYMAN_DISPLAY_PICK_SIZE = 0.0F;
-    private static final double FERRYMAN_MAX_HEALTH = 5800.0D;
+    private static final double FERRYMAN_DESIGNED_EFFECTIVE_HEALTH = 5800.0D;
+    private static final double FERRYMAN_MAX_HEALTH = BOSS_ENTITY_MAX_HEALTH;
+    private static final double FERRYMAN_ALL_DAMAGE_REDUCTION = 1.0D - BOSS_ENTITY_MAX_HEALTH / FERRYMAN_DESIGNED_EFFECTIVE_HEALTH;
     private static final double FERRYMAN_ARMOR = 20.0D;
     private static final double FERRYMAN_ATTACK_DAMAGE = 30.0D;
     private static final double FERRYMAN_FOLLOW_RANGE = 64.0D;
@@ -266,6 +269,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final double DEFAULT_DUNGEON_BOSS_ARMOR = FERRYMAN_ARMOR;
     private static final double DEFAULT_DUNGEON_BOSS_MOVEMENT_SPEED = FERRYMAN_MOVEMENT_SPEED;
     private static final double DEFAULT_DUNGEON_BOSS_FOLLOW_RANGE = FERRYMAN_FOLLOW_RANGE;
+    private static final double DEFAULT_DUNGEON_BOSS_ALL_DAMAGE_REDUCTION = FERRYMAN_ALL_DAMAGE_REDUCTION;
     private static final double DUNGEON_BOSS_FALL_RESET_Y_OFFSET = 8.0D;
     private static final double DUNGEON_BOSS_PLATFORM_RESET_RADIUS = 24.0D;
     private static final int SLOT_ADD_DUNGEON_WAVE = 21;
@@ -847,6 +851,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     public void onCustomMonsterDamage(EntityDamageEvent event) {
         if (event.getFinalDamage() <= 0.0D) {
             return;
+        }
+        if (event.getEntity() instanceof LivingEntity living) {
+            DungeonRun bossRun = dungeonRunByBoss(living.getUniqueId());
+            if (bossRun != null) {
+                applyBossAllDamageReduction(event, bossRun);
+                if (event.getFinalDamage() <= 0.0D) {
+                    return;
+                }
+            }
         }
         if (isRottenGuard(event.getEntity())) {
             Zombie zombie = (Zombie) event.getEntity();
@@ -1630,6 +1643,12 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             player.sendMessage("当前模板世界已不存在。");
             return;
         }
+        if (module.dungeonType() == DungeonType.BOSS) {
+            if (slot == SLOT_DUNGEON_REWARDS) {
+                openDungeonRewardMenu(player, module);
+            }
+            return;
+        }
         List<DungeonWaveConfig> waves = new ArrayList<>(module.dungeonWaves());
         if (slot >= 10 && slot < 10 + waves.size()) {
             int index = slot - 10;
@@ -1917,11 +1936,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private void openEnemyDetailMenu(Player player, String moduleKey, EnemyEntry enemy) {
         EnemyDetailMenu menu = new EnemyDetailMenu(moduleKey, enemy.type());
         Inventory inventory = Bukkit.createInventory(menu, ENEMY_DETAIL_SIZE, Component.text(enemy.displayName(), NamedTextColor.DARK_GREEN));
+        BossConfig bossConfig = bossConfigForEnemy(moduleKey, enemy.type());
+        double maxHealth = bossConfig == null ? enemy.maxHealth() : bossConfig.maxHealth();
+        double attackDamage = bossConfig == null ? enemy.attackDamage() : bossConfig.attackDamage();
+        double armor = bossConfig == null ? enemy.armor() : bossConfig.armor();
+        double allDamageReduction = bossConfig == null ? enemy.allDamageReduction() : bossConfig.allDamageReduction();
+        double movementSpeed = bossConfig == null ? enemy.movementSpeed() : bossConfig.movementSpeed();
         List<String> lore = new ArrayList<>();
-        lore.add("生命值: " + formatStat(enemy.maxHealth()));
-        lore.add("攻击力: " + formatStat(enemy.attackDamage()));
-        lore.add("护甲值: " + formatStat(enemy.armor()));
-        lore.add("移速: " + formatStat(enemy.movementSpeed()));
+        lore.add("生命值: " + formatStat(maxHealth));
+        lore.add("攻击力: " + formatStat(attackDamage));
+        lore.add("护甲值: " + formatStat(armor));
+        if (allDamageReduction > 0.0D) {
+            lore.add("全类型伤害减免: " + formatPercent(allDamageReduction * 100.0D));
+        }
+        lore.add("移速: " + formatStat(movementSpeed));
         if (enemy.undead()) {
             lore.add("亡灵生物");
         }
@@ -1954,6 +1982,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private void openDungeonStarterMenu(Player player, ModuleRecord module) {
         DungeonStarterMenu menu = new DungeonStarterMenu(module.key());
         Inventory inventory = Bukkit.createInventory(menu, DUNGEON_STARTER_CONFIG_SIZE, Component.text("副本启动仪: " + module.displayName(), NamedTextColor.DARK_PURPLE));
+        if (module.dungeonType() == DungeonType.BOSS) {
+            BossConfig boss = module.bossConfig();
+            EnemyEntry entry = enemyEntryByType(boss.type());
+            Material icon = entry == null ? Material.SOUL_LANTERN : entry.icon();
+            inventory.setItem(13, menuItem(icon, "Boss模式: " + boss.displayName(), NamedTextColor.LIGHT_PURPLE,
+                    List.of("生命值: " + formatStat(boss.maxHealth()),
+                            "全类型伤害减免: " + formatPercent(boss.allDamageReduction() * 100.0D),
+                            "护甲值: " + formatStat(boss.armor()),
+                            "攻击力: " + formatStat(boss.attackDamage()))));
+            inventory.setItem(SLOT_DUNGEON_REWARDS, menuItem(Material.CHEST, "通关奖励", NamedTextColor.GOLD,
+                    List.of("点击配置当前副本的通关奖励。", "当前奖励: " + module.dungeonRewards().size() + " 件物品")));
+            player.openInventory(inventory);
+            return;
+        }
         List<DungeonWaveConfig> waves = module.dungeonWaves();
         for (int i = 0; i < waves.size(); i++) {
             DungeonWaveConfig wave = waves.get(i);
@@ -2043,6 +2085,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         Set<String> types = new java.util.LinkedHashSet<>();
         if (module.dungeonType() == DungeonType.BOSS) {
             types.add(normalizeCustomMonsterType(module.bossConfig().type()));
+            return types.stream()
+                    .map(this::enemyEntryByType)
+                    .filter(Objects::nonNull)
+                    .toList();
         }
         for (DungeonWaveConfig wave : module.dungeonWaves()) {
             for (DungeonWaveEnemyConfig enemy : wave.enemies()) {
@@ -2066,6 +2112,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private EnemyEntry enemyEntryByType(String type) {
         return enemyEntryByStaticType(normalizeCustomMonsterType(type));
+    }
+
+    private BossConfig bossConfigForEnemy(String moduleKey, String type) {
+        ModuleRecord module = modules.get(moduleKey);
+        if (module == null || module.dungeonType() != DungeonType.BOSS) {
+            return null;
+        }
+        BossConfig boss = module.bossConfig();
+        return normalizeCustomMonsterType(boss.type()).equals(normalizeCustomMonsterType(type)) ? boss : null;
     }
 
     private String formatStat(double value) {
@@ -4323,6 +4378,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 && "direct_physical".equals(damageImmunityChannel(event));
     }
 
+    private void applyBossAllDamageReduction(EntityDamageEvent event, DungeonRun run) {
+        double reduction = run.bossConfig.allDamageReduction();
+        if (reduction <= 0.0D) {
+            return;
+        }
+        double reducedFinalDamage = event.getFinalDamage() * (1.0D - reduction);
+        scaleEventToFinalDamage(event, reducedFinalDamage);
+    }
+
     private double safeTrainingDummyVanillaDamage(LivingEntity target) {
         return Math.max(0.001D, Math.min(0.25D, target.getHealth() - 0.001D));
     }
@@ -4816,6 +4880,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             out.set(path + ".boss.armor", module.bossConfig().armor());
             out.set(path + ".boss.movement-speed", module.bossConfig().movementSpeed());
             out.set(path + ".boss.follow-range", module.bossConfig().followRange());
+            out.set(path + ".boss.all-damage-reduction", module.bossConfig().allDamageReduction());
             out.set(path + ".dungeon-rewards", copyRewardItems(module.dungeonRewards()));
         }
         try {
@@ -4851,6 +4916,24 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (tower5 != null && !modulesConfig.contains("modules.tower_5.dungeon-type")) {
             modules.put(tower5.key(), tower5.withDungeonType(DungeonType.BOSS));
             changed = true;
+        }
+        for (ModuleRecord module : List.copyOf(modules.values())) {
+            if (module.dungeonType() != DungeonType.BOSS) {
+                continue;
+            }
+            String bossPath = "modules." + module.key() + ".boss";
+            BossConfig boss = module.bossConfig();
+            BossConfig normalizedBoss = boss.withMaxHealth(Math.min(BOSS_ENTITY_MAX_HEALTH, boss.maxHealth()));
+            if (!modulesConfig.contains(bossPath + ".all-damage-reduction")
+                    || Math.abs(boss.maxHealth() - normalizedBoss.maxHealth()) > 0.0001D) {
+                module = module.withBossConfig(normalizedBoss);
+                modules.put(module.key(), module);
+                changed = true;
+            }
+            if (!module.dungeonWaves().isEmpty()) {
+                modules.put(module.key(), module.withDungeonWaves(List.of()));
+                changed = true;
+            }
         }
         for (ModuleRecord module : List.copyOf(modules.values())) {
             String path = "modules." + module.key() + ".curse-escape-deaths";
@@ -5056,14 +5139,31 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private BossConfig loadBossConfig(String path) {
+        String type = modulesConfig.getString(path + ".type", DEFAULT_DUNGEON_BOSS_TYPE);
+        double configuredMaxHealth = modulesConfig.getDouble(path + ".max-health", DEFAULT_DUNGEON_BOSS_MAX_HEALTH);
+        boolean hasDamageReduction = modulesConfig.contains(path + ".all-damage-reduction");
+        double allDamageReduction = hasDamageReduction
+                ? modulesConfig.getDouble(path + ".all-damage-reduction", 0.0D)
+                : inferredBossDamageReduction(type, configuredMaxHealth);
         return new BossConfig(
-                modulesConfig.getString(path + ".type", DEFAULT_DUNGEON_BOSS_TYPE),
+                type,
                 modulesConfig.getString(path + ".display-name", DEFAULT_DUNGEON_BOSS_DISPLAY_NAME),
-                modulesConfig.getDouble(path + ".max-health", DEFAULT_DUNGEON_BOSS_MAX_HEALTH),
+                Math.min(configuredMaxHealth, BOSS_ENTITY_MAX_HEALTH),
                 modulesConfig.getDouble(path + ".attack-damage", DEFAULT_DUNGEON_BOSS_ATTACK_DAMAGE),
                 modulesConfig.getDouble(path + ".armor", DEFAULT_DUNGEON_BOSS_ARMOR),
                 modulesConfig.getDouble(path + ".movement-speed", DEFAULT_DUNGEON_BOSS_MOVEMENT_SPEED),
-                modulesConfig.getDouble(path + ".follow-range", DEFAULT_DUNGEON_BOSS_FOLLOW_RANGE));
+                modulesConfig.getDouble(path + ".follow-range", DEFAULT_DUNGEON_BOSS_FOLLOW_RANGE),
+                allDamageReduction);
+    }
+
+    private double inferredBossDamageReduction(String type, double configuredMaxHealth) {
+        if (configuredMaxHealth > BOSS_ENTITY_MAX_HEALTH) {
+            return 1.0D - BOSS_ENTITY_MAX_HEALTH / configuredMaxHealth;
+        }
+        if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(type))) {
+            return DEFAULT_DUNGEON_BOSS_ALL_DAMAGE_REDUCTION;
+        }
+        return 0.0D;
     }
 
     private List<ItemStack> loadDungeonRewards(String path) {
@@ -7789,6 +7889,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                     spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions);
         }
 
+        private ModuleRecord withBossConfig(BossConfig bossConfig) {
+            return new ModuleRecord(key, displayName, dungeonName, iconMaterial, worldName, borderDistance,
+                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions);
+        }
+
         private ModuleRecord withRequiredCompletions(List<String> requiredCompletions) {
             return new ModuleRecord(key, displayName, dungeonName, iconMaterial, worldName, borderDistance,
                     spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions);
@@ -7829,22 +7934,27 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private record BossConfig(String type, String displayName, double maxHealth, double attackDamage,
-                              double armor, double movementSpeed, double followRange) {
+                              double armor, double movementSpeed, double followRange, double allDamageReduction) {
         private BossConfig {
             type = type == null || type.isBlank() ? DEFAULT_DUNGEON_BOSS_TYPE : type;
             displayName = displayName == null || displayName.isBlank() ? DEFAULT_DUNGEON_BOSS_DISPLAY_NAME : displayName;
-            maxHealth = Math.max(1.0D, Math.min(100000.0D, maxHealth));
+            maxHealth = Math.max(1.0D, Math.min(BOSS_ENTITY_MAX_HEALTH, maxHealth));
             attackDamage = Math.max(0.0D, Math.min(10000.0D, attackDamage));
             armor = Math.max(0.0D, Math.min(30.0D, armor));
             movementSpeed = Math.max(0.0D, Math.min(1.0D, movementSpeed));
             followRange = Math.max(1.0D, Math.min(256.0D, followRange));
+            allDamageReduction = Math.max(0.0D, Math.min(0.99D, allDamageReduction));
         }
 
         private static BossConfig defaultConfig() {
             return new BossConfig(DEFAULT_DUNGEON_BOSS_TYPE, DEFAULT_DUNGEON_BOSS_DISPLAY_NAME,
                     DEFAULT_DUNGEON_BOSS_MAX_HEALTH, DEFAULT_DUNGEON_BOSS_ATTACK_DAMAGE,
                     DEFAULT_DUNGEON_BOSS_ARMOR, DEFAULT_DUNGEON_BOSS_MOVEMENT_SPEED,
-                    DEFAULT_DUNGEON_BOSS_FOLLOW_RANGE);
+                    DEFAULT_DUNGEON_BOSS_FOLLOW_RANGE, DEFAULT_DUNGEON_BOSS_ALL_DAMAGE_REDUCTION);
+        }
+
+        private BossConfig withMaxHealth(double maxHealth) {
+            return new BossConfig(type, displayName, maxHealth, attackDamage, armor, movementSpeed, followRange, allDamageReduction);
         }
     }
 
@@ -8308,15 +8418,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private enum EnemyEntry {
         ROTTEN_GUARD(ROTTEN_GUARD_TYPE, "朽败卫兵", Material.ROTTEN_FLESH,
-                ROTTEN_GUARD_MAX_HEALTH, ROTTEN_GUARD_ATTACK_DAMAGE, ROTTEN_GUARD_ARMOR, ROTTEN_GUARD_MOVEMENT_SPEED, true, false),
+                ROTTEN_GUARD_MAX_HEALTH, ROTTEN_GUARD_ATTACK_DAMAGE, ROTTEN_GUARD_ARMOR, 0.0D, ROTTEN_GUARD_MOVEMENT_SPEED, true, false),
         GULPER(GULPER_TYPE, "啜食者", Material.SCULK_SHRIEKER,
-                GULPER_MAX_HEALTH, GULPER_ATTACK_DAMAGE, GULPER_ARMOR, GULPER_MOVEMENT_SPEED, true, false),
+                GULPER_MAX_HEALTH, GULPER_ATTACK_DAMAGE, GULPER_ARMOR, 0.0D, GULPER_MOVEMENT_SPEED, true, false),
         FERRYMAN(FERRYMAN_TYPE, "引渡人", Material.SOUL_LANTERN,
-                FERRYMAN_MAX_HEALTH, FERRYMAN_ATTACK_DAMAGE, FERRYMAN_ARMOR, FERRYMAN_MOVEMENT_SPEED, true, false),
+                FERRYMAN_MAX_HEALTH, FERRYMAN_ATTACK_DAMAGE, FERRYMAN_ARMOR, FERRYMAN_ALL_DAMAGE_REDUCTION, FERRYMAN_MOVEMENT_SPEED, true, false),
         PUS_BUG(PUS_BUG_TYPE, "脓包虫", Material.SPIDER_EYE,
-                PUS_BUG_MAX_HEALTH, PUS_BUG_ATTACK_DAMAGE, PUS_BUG_ARMOR, PUS_BUG_MOVEMENT_SPEED, false, true),
+                PUS_BUG_MAX_HEALTH, PUS_BUG_ATTACK_DAMAGE, PUS_BUG_ARMOR, 0.0D, PUS_BUG_MOVEMENT_SPEED, false, true),
         TRAINING_DUMMY(TRAINING_DUMMY_TYPE, "测试木桩", Material.PLAYER_HEAD,
-                TRAINING_DUMMY_DEFAULT_MAX_HEALTH, 0.0D, TRAINING_DUMMY_DEFAULT_ARMOR, 0.0D, false, false);
+                TRAINING_DUMMY_DEFAULT_MAX_HEALTH, 0.0D, TRAINING_DUMMY_DEFAULT_ARMOR, 0.0D, 0.0D, false, false);
 
         private final String type;
         private final String displayName;
@@ -8324,17 +8434,19 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         private final double maxHealth;
         private final double attackDamage;
         private final double armor;
+        private final double allDamageReduction;
         private final double movementSpeed;
         private final boolean undead;
         private final boolean arthropod;
 
-        EnemyEntry(String type, String displayName, Material icon, double maxHealth, double attackDamage, double armor, double movementSpeed, boolean undead, boolean arthropod) {
+        EnemyEntry(String type, String displayName, Material icon, double maxHealth, double attackDamage, double armor, double allDamageReduction, double movementSpeed, boolean undead, boolean arthropod) {
             this.type = type;
             this.displayName = displayName;
             this.icon = icon;
             this.maxHealth = maxHealth;
             this.attackDamage = attackDamage;
             this.armor = armor;
+            this.allDamageReduction = allDamageReduction;
             this.movementSpeed = movementSpeed;
             this.undead = undead;
             this.arthropod = arthropod;
@@ -8362,6 +8474,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
         private double armor() {
             return armor;
+        }
+
+        private double allDamageReduction() {
+            return allDamageReduction;
         }
 
         private double movementSpeed() {
