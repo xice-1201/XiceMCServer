@@ -437,7 +437,7 @@ func (a *app) handleHome(w http.ResponseWriter, r *http.Request, user *userSessi
 
 func (a *app) handlePasswordPage(w http.ResponseWriter, r *http.Request, user *userSession) {
 	a.render(w, http.StatusOK, "password", pageData{
-		Title:  "修改密码",
+		Title:  "修改邀请码",
 		User:   user,
 		Active: "home",
 		Public: a.publicData(),
@@ -453,36 +453,36 @@ func (a *app) handlePasswordUpdate(w http.ResponseWriter, r *http.Request, user 
 	newPassword := strings.TrimSpace(r.FormValue("new_password"))
 	confirmPassword := strings.TrimSpace(r.FormValue("confirm_password"))
 	if !passwordRE.MatchString(oldPassword) {
-		a.renderPassword(w, user, "原密码格式不正确。", http.StatusBadRequest)
+		a.renderPassword(w, user, "原邀请码格式不正确。", http.StatusBadRequest)
 		return
 	}
 	if !passwordRE.MatchString(newPassword) {
-		a.renderPassword(w, user, "新密码长度不得低于 6 位，且只能包含英文、数字和下划线。", http.StatusBadRequest)
+		a.renderPassword(w, user, "新邀请码长度不得低于 6 位，且只能包含英文、数字和下划线。", http.StatusBadRequest)
 		return
 	}
 	if newPassword != confirmPassword {
-		a.renderPassword(w, user, "两次输入的新密码不一致。", http.StatusBadRequest)
+		a.renderPassword(w, user, "两次输入的新邀请码不一致。", http.StatusBadRequest)
 		return
 	}
 	player, err := a.webPlayerByUUID(r.Context(), user.UUID)
 	if err != nil {
-		a.renderPassword(w, user, "密码服务暂时不可用。", http.StatusInternalServerError)
+		a.renderPassword(w, user, "邀请码服务暂时不可用。", http.StatusInternalServerError)
 		return
 	}
 	if !hmac.Equal([]byte(player.PasswordHash), []byte(passwordHash(oldPassword))) {
-		a.renderPassword(w, user, "原密码不正确。", http.StatusForbidden)
+		a.renderPassword(w, user, "原邀请码不正确。", http.StatusForbidden)
 		return
 	}
 	if err := a.updatePlayerPassword(r.Context(), user.UUID, newPassword); err != nil {
-		a.renderPassword(w, user, "密码更新失败。", http.StatusInternalServerError)
+		a.renderPassword(w, user, "邀请码更新失败。", http.StatusInternalServerError)
 		return
 	}
-	a.renderPassword(w, user, "密码已更新。", http.StatusOK)
+	a.renderPassword(w, user, "邀请码已更新。", http.StatusOK)
 }
 
 func (a *app) renderPassword(w http.ResponseWriter, user *userSession, message string, status int) {
 	a.render(w, status, "password", pageData{
-		Title:   "修改密码",
+		Title:   "修改邀请码",
 		User:    user,
 		Active:  "home",
 		Public:  a.publicData(),
@@ -548,34 +548,77 @@ func (a *app) handleDocs(w http.ResponseWriter, r *http.Request, user *userSessi
 }
 
 func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
+	a.handleTestEntry(w, r)
+}
+
+func (a *app) handleRegister(w http.ResponseWriter, r *http.Request) {
+	a.handleTestEntry(w, r)
+}
+
+func (a *app) handleTestEntry(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		a.renderPublicError(w, "请求格式不正确。", false)
 		return
 	}
 	username := strings.TrimSpace(r.FormValue("username"))
-	password := strings.TrimSpace(r.FormValue("password"))
+	invitation := strings.TrimSpace(r.FormValue("invitation"))
+	if invitation == "" {
+		invitation = strings.TrimSpace(r.FormValue("password"))
+	}
+	if invitation == "" {
+		invitation = strings.TrimSpace(r.FormValue("verification_code"))
+	}
 	if !usernameRE.MatchString(username) {
-		a.renderPublicError(w, "Minecraft ID 格式不正确。", false)
+		a.renderPublicError(w, "玩家ID格式不正确。", false)
 		return
 	}
-	if !passwordRE.MatchString(password) {
-		a.renderPublicError(w, "密码格式不正确。", false)
+	if !passwordRE.MatchString(invitation) {
+		a.renderPublicError(w, "邀请码格式不正确。", false)
 		return
 	}
 	entry, ok := a.whitelistEntry(username)
 	if !ok {
-		a.renderPublicError(w, "该 ID 暂无后台权限，请使用注册入口完成登记。", false)
+		a.handleInvitationRegister(w, r, username, invitation)
 		return
 	}
+
+	a.handleInvitationLogin(w, r, entry, invitation)
+}
+
+func (a *app) handleInvitationLogin(w http.ResponseWriter, r *http.Request, entry whitelistEntry, invitation string) {
 	player, err := a.webPlayerByEntry(r.Context(), entry)
 	if err != nil {
 		a.renderPublicError(w, "登录服务暂时不可用。", false)
 		return
 	}
-	if !hmac.Equal([]byte(player.PasswordHash), []byte(passwordHash(password))) {
-		a.renderPublicError(w, "Minecraft ID 或密码不正确。", false)
+	if !hmac.Equal([]byte(player.PasswordHash), []byte(passwordHash(invitation))) {
+		a.renderPublicError(w, "玩家ID或邀请码不正确。", false)
 		return
 	}
+	a.startSession(w, r, entry)
+}
+
+func (a *app) handleInvitationRegister(w http.ResponseWriter, r *http.Request, username string, invitation string) {
+	entry, ok := a.findVerificationCode(username, invitation)
+	if !ok {
+		a.renderPublicError(w, "邀请码不正确或已过期。请重新进入服务器获取新的邀请码。", true)
+		return
+	}
+	_, err := a.addWhitelistEntry(whitelistEntry{UUID: entry.UUID, Name: entry.Name})
+	if err != nil {
+		a.renderPublicError(w, "白名单写入失败。", true)
+		return
+	}
+	if _, err := a.rcon("whitelist reload"); err != nil {
+		a.renderPublicError(w, "白名单已写入，但刷新服务暂时失败，请稍后重试。", true)
+		return
+	}
+	_ = a.ensureWebPlayer(r.Context(), whitelistEntry{UUID: entry.UUID, Name: entry.Name})
+	_ = a.consumeVerificationCode(username, invitation)
+	a.startSession(w, r, whitelistEntry{UUID: entry.UUID, Name: entry.Name})
+}
+
+func (a *app) startSession(w http.ResponseWriter, r *http.Request, entry whitelistEntry) {
 	sessionValue, err := a.makeSession(entry)
 	if err != nil {
 		a.renderPublicError(w, "登录服务暂时不可用。", false)
@@ -592,45 +635,6 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/home", http.StatusSeeOther)
 }
 
-func (a *app) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		a.renderPublicError(w, "请求格式不正确。", true)
-		return
-	}
-	username := strings.TrimSpace(r.FormValue("username"))
-	code := strings.TrimSpace(r.FormValue("verification_code"))
-	if !usernameRE.MatchString(username) {
-		a.renderPublicError(w, "Minecraft ID 格式不正确。", true)
-		return
-	}
-	entry, ok := a.findVerificationCode(username, code)
-	if !ok {
-		a.renderPublicError(w, "验证码不正确或已过期。请重新进入服务器获取新的验证码。", true)
-		return
-	}
-	added, err := a.addWhitelistEntry(whitelistEntry{UUID: entry.UUID, Name: entry.Name})
-	if err != nil {
-		a.renderPublicError(w, "白名单写入失败。", true)
-		return
-	}
-	if _, err := a.rcon("whitelist reload"); err != nil {
-		a.renderPublicError(w, "白名单已写入，但刷新服务暂时失败，请稍后重试。", true)
-		return
-	}
-	_ = a.ensureWebPlayer(r.Context(), whitelistEntry{UUID: entry.UUID, Name: entry.Name})
-	_ = a.consumeVerificationCode(username, code)
-	message := "白名单已提交。Web 默认登录密码为 123456，登录后请修改密码。"
-	if !added {
-		message = "该玩家已在白名单内，白名单已刷新。Web 默认登录密码为 123456。"
-	}
-	a.render(w, http.StatusOK, "public", pageData{
-		Title:        "个人技术开发随记",
-		Public:       a.publicData(),
-		RegisterOpen: true,
-		Message:      message,
-	})
-}
-
 func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: 0, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -638,11 +642,7 @@ func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) renderPublicError(w http.ResponseWriter, message string, register bool) {
 	data := pageData{Title: "个人技术开发随记", Public: a.publicData(), Active: "public-home", Error: message}
-	if register {
-		data.RegisterOpen = true
-	} else {
-		data.LoginOpen = true
-	}
+	data.LoginOpen = true
 	a.render(w, http.StatusBadRequest, "public", data)
 }
 
@@ -1895,31 +1895,18 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     <a class="{{if eq .Active "public-changelog"}}active{{end}}" href="/changelog">更新日志</a>
   </nav>
   <div class="public-auth">
-    <details class="auth-popover" {{if .LoginOpen}}open{{end}}>
-      <summary>后台登录</summary>
-      <div class="auth-popover-panel">
-        {{if and .Error .LoginOpen}}<p class="error">{{.Error}}</p>{{end}}
-        <form method="post" action="/login">
-          <label for="login-username">角色 ID</label>
-          <input id="login-username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
-          <label for="login-password">登录密码</label>
-          <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
-          <div class="actions"><button type="submit">进入后台</button></div>
-        </form>
-      </div>
-    </details>
-    <details class="auth-popover" {{if .RegisterOpen}}open{{end}}>
-      <summary>注册入口</summary>
+    <details class="auth-popover" {{if or .LoginOpen .RegisterOpen}}open{{end}}>
+      <summary>测试入口</summary>
       <div class="auth-popover-panel">
         {{if .Message}}<p class="message">{{.Message}}</p>{{end}}
-        {{if and .Error .RegisterOpen}}<p class="error">{{.Error}}</p>{{end}}
-        <form method="post" action="/register">
-          <label for="register-username">角色 ID</label>
-          <input id="register-username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
-          <label for="verification_code">验证码</label>
-          <input id="verification_code" name="verification_code" autocomplete="off" required minlength="4" maxlength="16">
-          <p class="field-hint">该入口仅用于非公开项目成员登记。</p>
-          <div class="actions"><button type="submit">提交登记</button></div>
+        {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+        <form method="post" action="/login">
+          <label for="login-username">玩家ID</label>
+          <input id="login-username" name="username" autocomplete="username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+">
+          <label for="login-invitation">邀请码</label>
+          <input id="login-invitation" name="invitation" type="password" autocomplete="off" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
+          <p class="field-hint">已在白名单的玩家使用自己的邀请码；未加入白名单的玩家使用进服拒绝提示中的临时邀请码。</p>
+          <div class="actions"><button type="submit">进入测试</button></div>
         </form>
       </div>
     </details>
@@ -2243,11 +2230,11 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     <div class="actions"><a class="button secondary" href="/plugins">返回插件列表</a></div>
     <p class="public-lead">XiceTextArranger 用于整理玩家在服务器内外看到的文本提示和验证流程，让白名单注册、黑名单拒绝和维护广播的文案集中管理。</p>
     <h2>功能概述</h2>
-    <p>XiceTextArranger 在服务器上主要影响玩家看到的系统文本。未加入白名单的玩家连接服务器时，插件会把拒绝提示改写为更清楚的说明，并生成一次性验证码；插件本身负责生成、保存和展示验证码，不负责处理后续注册提交。</p>
+    <p>XiceTextArranger 在服务器上主要影响玩家看到的系统文本。未加入白名单的玩家连接服务器时，插件会把拒绝提示改写为更清楚的说明，并生成一次性临时邀请码；插件本身负责生成、保存和展示邀请码，不负责处理后续登记提交。</p>
     <p>插件还会处理正版验证失败提示、黑名单拒绝提示、玩家加入/离开消息，以及维护脚本通过 RCON 触发的系统广播。它不改变白名单、正版验证和封禁判断本身，只负责把玩家最终看到的文字整理成更准确的格式。</p>
     <h3>当前管理的文本</h3>
     <ul>
-      <li>白名单拒绝提示和注册验证码。</li>
+      <li>白名单拒绝提示和临时邀请码。</li>
       <li>正版验证失败提示。</li>
       <li>黑名单拒绝登录提示。</li>
       <li>玩家加入与退出消息，可选择保留、删除、重写或追加。</li>
@@ -2255,8 +2242,8 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     </ul>
     <h2>部署方式</h2>
     <p>插件基于 Paper API 运行，当前项目按 Paper 1.21.11 和 Java 21 构建。构建产物安装为 <code>/opt/xicemc/runtime/plugins/XiceTextArranger.jar</code>。</p>
-    <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceTextArranger/config.yml</code>。配置中包含白名单拒绝提示、验证码生成规则、黑名单提示、正版验证失败匹配文本、进退服消息模式和广播模板。</p>
-    <p>插件使用两个运行时数据文件：验证码文件 <code>/opt/xicemc/runtime/plugins/XiceTextArranger/verification-codes.tsv</code>，黑名单文件 <code>/opt/xicemc/runtime/plugins/XiceTextArranger/blacklist.tsv</code>。文件路径由 <code>config.yml</code> 中的 <code>verification-codes.path</code> 和 <code>blacklist.path</code> 配置。</p>
+    <p>运行时配置文件位于 <code>/opt/xicemc/runtime/plugins/XiceTextArranger/config.yml</code>。配置中包含白名单拒绝提示、邀请码生成规则、黑名单提示、正版验证失败匹配文本、进退服消息模式和广播模板。</p>
+    <p>插件使用两个运行时数据文件：邀请码文件 <code>/opt/xicemc/runtime/plugins/XiceTextArranger/verification-codes.tsv</code>，黑名单文件 <code>/opt/xicemc/runtime/plugins/XiceTextArranger/blacklist.tsv</code>。文件路径由 <code>config.yml</code> 中的 <code>verification-codes.path</code> 和 <code>blacklist.path</code> 配置。</p>
     <p><code>xicebroadcast</code> 命令权限为 <code>xicetextarranger.broadcast</code>，默认仅 OP 或控制台可执行；每日维护脚本通过 RCON 以控制台身份发送维护提醒。</p>
   </article>
 </section>
@@ -2294,7 +2281,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   </div>
 </section>
 <div class="actions">
-  <a class="button secondary" href="/password">修改密码</a>
+  <a class="button secondary" href="/password">修改邀请码</a>
   <button class="secondary" type="button" id="open-profile-dialog">编辑简介</button>
 </div>
 <section class="panel">
@@ -2332,7 +2319,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
   });
   document.getElementById("close-profile-dialog").addEventListener("click", () => profileDialog.close());
 </script>
-<section class="panel"><h2>Go 迁移状态</h2><p>当前 Go 版本已接管公开首页、登录会话、注册入口、个人首页、修改密码、编辑简介、领地列表和文档访问控制；复杂后台页面仍在迁移中。</p></section>
+<section class="panel"><h2>Go 迁移状态</h2><p>当前 Go 版本已接管公开首页、测试入口、个人首页、修改邀请码、编辑简介、领地列表和文档访问控制；复杂后台页面仍在迁移中。</p></section>
 {{end}}
 
 {{define "claimCard"}}
@@ -2348,18 +2335,18 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 
 {{define "password"}}{{template "pageStart" .}}{{template "passwordContent" .}}{{template "pageEnd" .}}{{end}}
 {{define "passwordContent"}}
-<h1>修改密码</h1>
+<h1>修改邀请码</h1>
 <section class="panel">
   {{if .Message}}<p class="message">{{.Message}}</p>{{end}}
   <form method="post" action="/password">
-    <label for="old_password">原密码</label>
+    <label for="old_password">原邀请码</label>
     <input id="old_password" name="old_password" type="password" autocomplete="current-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
-    <label for="new_password">新密码</label>
+    <label for="new_password">新邀请码</label>
     <input id="new_password" name="new_password" type="password" autocomplete="new-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
-    <label for="confirm_password">再次输入新密码</label>
+    <label for="confirm_password">再次输入新邀请码</label>
     <input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" required minlength="6" maxlength="64" pattern="[A-Za-z0-9_]+">
     <div class="actions">
-      <button type="submit">保存密码</button>
+      <button type="submit">保存邀请码</button>
       <a class="button secondary" href="/home">返回首页</a>
     </div>
   </form>

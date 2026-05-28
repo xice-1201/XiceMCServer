@@ -191,10 +191,10 @@ func (a *app) handlePlayerRole(w http.ResponseWriter, r *http.Request, user *use
 
 func (a *app) handlePlayerPasswordReset(w http.ResponseWriter, r *http.Request, user *userSession) {
 	_ = r.ParseForm()
-	message := "密码已重置为 123456。"
+	message := "邀请码已重置为 123456。"
 	status := http.StatusOK
 	if err := a.resetPlayerPassword(r.Context(), r.FormValue("player_uuid")); err != nil {
-		message = "重置密码失败：" + err.Error()
+		message = "重置邀请码失败：" + err.Error()
 		status = http.StatusBadRequest
 	}
 	a.renderPlayers(w, r, user, message, status)

@@ -30,7 +30,7 @@ var adminTemplatesHTML = `
             </form>
             <form method="post" action="/players/reset-password" class="inline-form">
               <input type="hidden" name="player_uuid" value="{{.UUID}}">
-              <button class="secondary" type="submit">重置密码</button>
+              <button class="secondary" type="submit">重置邀请码</button>
             </form>
             {{else}}<span class="message">-</span>{{end}}
           </td>
