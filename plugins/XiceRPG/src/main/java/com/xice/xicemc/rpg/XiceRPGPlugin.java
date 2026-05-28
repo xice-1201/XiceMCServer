@@ -133,6 +133,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final double ROTTEN_GUARD_MOVEMENT_SPEED = 0.3D;
     private static final double ROTTEN_GUARD_HITBOX_EXPANSION = 0.18D;
     private static final double ROTTEN_GUARD_WALK_SPEED_SQUARED = 0.0036D;
+    private static final String GULPER_TYPE = "gulper";
+    private static final float GULPER_DISPLAY_PICK_SIZE = 0.0F;
+    private static final double GULPER_MAX_HEALTH = 200.0D;
+    private static final double GULPER_HEALTH_DECAY_PER_SECOND = GULPER_MAX_HEALTH * 0.02D;
+    private static final double GULPER_ATTACK_HEAL = 1.0D;
+    private static final double GULPER_ARMOR = 10.0D;
+    private static final double GULPER_ATTACK_DAMAGE = 15.0D;
+    private static final double GULPER_FOLLOW_RANGE = 64.0D;
+    private static final double GULPER_MOVEMENT_SPEED = 0.34D;
+    private static final double GULPER_KNOCKBACK_RESISTANCE = 0.0D;
+    private static final double GULPER_HITBOX_EXPANSION = 0.28D;
+    private static final double GULPER_SATURATION_DRAIN = 4.0D;
+    private static final int GULPER_FOOD_DRAIN = 4;
+    private static final double GULPER_HEALTH_DRAIN = 1.0D;
     private static final String PUS_BUG_TYPE = "pus_bug";
     private static final float PUS_BUG_DISPLAY_PICK_SIZE = 0.0F;
     private static final double PUS_BUG_MAX_HEALTH = 40.0D;
@@ -148,6 +162,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final double PUS_BUG_HITBOX_EXPANSION = 0.46D;
     private static final double PUS_BUG_VERTICAL_HITBOX_EXPANSION = 0.42D;
     private static final double ROTTEN_GUARD_HEALTH_DISPLAY_HEIGHT = 2.35D;
+    private static final double GULPER_HEALTH_DISPLAY_HEIGHT = 2.55D;
     private static final double PUS_BUG_HEALTH_DISPLAY_HEIGHT = 1.45D;
     private static final String TRAINING_DUMMY_TYPE = "training_dummy";
     private static final float TRAINING_DUMMY_DISPLAY_PICK_SIZE = 0.9F;
@@ -346,6 +361,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private NamespacedKey monsterDisplayOwnerKey;
     private NamespacedKey monsterHealthDisplayKey;
     private NamespacedKey monsterHealthDisplayOwnerKey;
+    private NamespacedKey gulperModelKey;
+    private NamespacedKey gulperDisplayKey;
+    private NamespacedKey gulperDisplayOwnerKey;
     private NamespacedKey pusBugModelKey;
     private NamespacedKey pusBugDisplayKey;
     private NamespacedKey pusBugDisplayOwnerKey;
@@ -365,6 +383,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private final Map<UUID, Long> rottenGuardAttackTicks = new HashMap<>();
     private final Map<UUID, Long> rottenGuardHurtTicks = new HashMap<>();
     private final Map<UUID, Float> rottenGuardBodyYaws = new HashMap<>();
+    private final Map<UUID, UUID> gulperDisplays = new HashMap<>();
     private final Map<UUID, UUID> pusBugDisplays = new HashMap<>();
     private final Map<UUID, EnumMap<TrainingDummyPart, UUID>> trainingDummyDisplays = new HashMap<>();
     private final Map<UUID, List<TrainingDummyDamageSample>> trainingDummyDamageSamples = new HashMap<>();
@@ -406,6 +425,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         monsterDisplayOwnerKey = new NamespacedKey(this, "monster_display_owner");
         monsterHealthDisplayKey = new NamespacedKey(this, "monster_health_display");
         monsterHealthDisplayOwnerKey = new NamespacedKey(this, "monster_health_display_owner");
+        gulperModelKey = new NamespacedKey(this, "gulper_model");
+        gulperDisplayKey = new NamespacedKey(this, "gulper_display");
+        gulperDisplayOwnerKey = new NamespacedKey(this, "gulper_display_owner");
         pusBugModelKey = new NamespacedKey(this, "pus_bug_model");
         pusBugDisplayKey = new NamespacedKey(this, "pus_bug_display");
         pusBugDisplayOwnerKey = new NamespacedKey(this, "pus_bug_display_owner");
@@ -500,6 +522,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         dungeonRunsByWorld.clear();
         pusPools.clear();
         removeAllRottenGuardDisplays();
+        removeAllGulperDisplays();
         removeAllPusBugDisplays();
         removeAllTrainingDummyDisplays();
         removeAllCustomMonsterHealthDisplays();
@@ -683,6 +706,16 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             event.setDroppedExp(10);
             return;
         }
+        if (isGulper(event.getEntity())) {
+            removeGulperDisplay(event.getEntity().getUniqueId());
+            event.getEntity().setSilent(true);
+            event.setShouldPlayDeathSound(false);
+            event.setDeathSound(null);
+            event.setDeathSoundVolume(0.0F);
+            event.getDrops().clear();
+            event.setDroppedExp(15);
+            return;
+        }
         if (isPusBug(event.getEntity())) {
             removePusBugDisplay(event.getEntity().getUniqueId());
             event.getEntity().setSilent(true);
@@ -740,6 +773,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             }
             rottenGuardHurtTicks.put(event.getEntity().getUniqueId(), customMonsterTick);
         }
+        if (isGulper(event.getEntity())) {
+            Zombie zombie = (Zombie) event.getEntity();
+            zombie.setSilent(true);
+            if (event.getFinalDamage() >= zombie.getHealth()) {
+                event.setCancelled(true);
+                killCustomMonsterSilently(zombie);
+                return;
+            }
+        }
         if (isPusBug(event.getEntity())) {
             Endermite endermite = (Endermite) event.getEntity();
             endermite.setSilent(true);
@@ -751,6 +793,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         if (event instanceof EntityDamageByEntityEvent byEntity && isRottenGuard(byEntity.getDamager())) {
             rottenGuardAttackTicks.put(byEntity.getDamager().getUniqueId(), customMonsterTick);
+        }
+        if (event instanceof EntityDamageByEntityEvent byEntity && isGulper(byEntity.getDamager()) && event.getEntity() instanceof Player player) {
+            applyGulperDrain((Zombie) byEntity.getDamager(), player);
         }
     }
 
@@ -5192,6 +5237,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private Entity spawnCustomMonster(String type, Location location) {
+        if (GULPER_TYPE.equals(type)) {
+            return spawnGulper(location);
+        }
         if (PUS_BUG_TYPE.equals(type)) {
             return spawnPusBug(location);
         }
@@ -5199,6 +5247,24 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return spawnTrainingDummy(location);
         }
         return spawnRottenGuard(location);
+    }
+
+    private Zombie spawnGulper(Location location) {
+        Zombie zombie = location.getWorld().spawn(location, Zombie.class, spawned -> {
+            spawned.getPersistentDataContainer().set(monsterTypeKey, PersistentDataType.STRING, GULPER_TYPE);
+            spawned.customName(Component.text("啜食者", NamedTextColor.DARK_AQUA).decoration(TextDecoration.ITALIC, false));
+            spawned.setCustomNameVisible(true);
+            spawned.setCanPickupItems(false);
+            spawned.setRemoveWhenFarAway(false);
+            spawned.setBaby(false);
+            spawned.setSilent(true);
+            applyGulperStats(spawned, true);
+            applyGulperVisualBase(spawned);
+            syncGulperDisplay(spawned);
+        });
+        removeRottenGuardChickenJockeyMount(zombie);
+        Bukkit.getScheduler().runTask(this, () -> removeRottenGuardChickenJockeyMount(zombie));
+        return zombie;
     }
 
     private Endermite spawnPusBug(Location location) {
@@ -5240,12 +5306,33 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private void tickCustomMonsters() {
         boolean updateCombatLogic = customMonsterTick++ % 20L == 0L;
         Set<UUID> liveRottenGuards = new HashSet<>();
+        Set<UUID> liveGulpers = new HashSet<>();
         Set<UUID> livePusBugs = new HashSet<>();
         Set<UUID> liveTrainingDummies = new HashSet<>();
         Set<UUID> liveCustomMonsters = new HashSet<>();
         Set<UUID> liveSplitDamageTargets = tickDungeonDamageRules();
         for (World world : Bukkit.getWorlds()) {
             for (Zombie zombie : world.getEntitiesByClass(Zombie.class)) {
+                if (isGulper(zombie) && !zombie.isDead() && zombie.isValid()) {
+                    liveGulpers.add(zombie.getUniqueId());
+                    liveCustomMonsters.add(zombie.getUniqueId());
+                    removeRottenGuardChickenJockeyMount(zombie);
+                    applyGulperVisualBase(zombie);
+                    syncGulperDisplay(zombie);
+                    syncCustomMonsterHealthDisplay(zombie);
+                    if (updateCombatLogic) {
+                        applyGulperStats(zombie, false);
+                        decayGulperHealth(zombie);
+                        if (zombie.isDead() || !zombie.isValid()) {
+                            continue;
+                        }
+                        if (zombie.getTarget() instanceof Player target && isValidMonsterTarget(zombie, target)) {
+                            continue;
+                        }
+                        zombie.setTarget(nearestMonsterTarget(zombie));
+                    }
+                    continue;
+                }
                 if (!isRottenGuard(zombie) || zombie.isDead() || !zombie.isValid()) {
                     continue;
                 }
@@ -5302,6 +5389,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         tickPusPools();
         removeMissingRottenGuardDisplays(liveRottenGuards);
+        removeMissingGulperDisplays(liveGulpers);
         removeMissingPusBugDisplays(livePusBugs);
         removeMissingTrainingDummyDisplays(liveTrainingDummies);
         removeMissingCustomMonsterHealthDisplays(liveCustomMonsters);
@@ -5316,6 +5404,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         zombie.setInvisible(true);
         zombie.setSilent(true);
         zombie.setCanPickupItems(false);
+        clearRottenGuardEquipment(zombie);
+        zombie.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, PotionEffect.INFINITE_DURATION, 0, false, false, false));
+    }
+
+    private void applyGulperVisualBase(Zombie zombie) {
+        zombie.setInvisible(true);
+        zombie.setSilent(true);
+        zombie.setCanPickupItems(false);
+        zombie.setFireTicks(0);
         clearRottenGuardEquipment(zombie);
         zombie.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, PotionEffect.INFINITE_DURATION, 0, false, false, false));
     }
@@ -5576,6 +5673,126 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         for (World world : Bukkit.getWorlds()) {
             for (ItemDisplay display : world.getEntitiesByClass(ItemDisplay.class)) {
                 if (display.getPersistentDataContainer().has(monsterDisplayKey, PersistentDataType.BYTE)) {
+                    display.remove();
+                }
+            }
+        }
+    }
+
+    private void syncGulperDisplay(Zombie zombie) {
+        ItemDisplay display = gulperDisplay(zombie);
+        Location location = gulperDisplayLocation(zombie);
+        configureGulperDisplayBounds(display);
+        display.setInterpolationDelay(0);
+        display.setInterpolationDuration(2);
+        display.setTeleportDuration(2);
+        display.teleport(location);
+    }
+
+    private Location gulperDisplayLocation(Zombie zombie) {
+        Location location = zombie.getLocation().clone();
+        location.add(0.0D, 1.0D, 0.0D);
+        location.setYaw(zombie.getBodyYaw());
+        location.setPitch(0.0F);
+        return location;
+    }
+
+    private ItemDisplay gulperDisplay(Zombie zombie) {
+        UUID displayUuid = gulperDisplays.get(zombie.getUniqueId());
+        Entity existing = displayUuid == null ? null : Bukkit.getEntity(displayUuid);
+        if (existing instanceof ItemDisplay display && display.isValid() && display.getWorld().equals(zombie.getWorld())) {
+            return display;
+        }
+        if (existing != null) {
+            existing.remove();
+        }
+        ItemDisplay display = zombie.getWorld().spawn(gulperDisplayLocation(zombie), ItemDisplay.class, spawned -> {
+            spawned.setItemStack(createGulperDisplayItem());
+            spawned.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.FIXED);
+            spawned.setPersistent(false);
+            spawned.customName(Component.text("啜食者", NamedTextColor.DARK_AQUA).decoration(TextDecoration.ITALIC, false));
+            spawned.setCustomNameVisible(false);
+            configureGulperDisplayBounds(spawned);
+            spawned.setBrightness(new Display.Brightness(15, 15));
+            spawned.setInterpolationDelay(0);
+            spawned.setInterpolationDuration(2);
+            spawned.setTeleportDuration(2);
+            spawned.getPersistentDataContainer().set(gulperDisplayKey, PersistentDataType.BYTE, (byte) 1);
+            spawned.getPersistentDataContainer().set(gulperDisplayOwnerKey, PersistentDataType.STRING, zombie.getUniqueId().toString());
+        });
+        gulperDisplays.put(zombie.getUniqueId(), display.getUniqueId());
+        return display;
+    }
+
+    private void configureGulperDisplayBounds(ItemDisplay display) {
+        display.setDisplayWidth(GULPER_DISPLAY_PICK_SIZE);
+        display.setDisplayHeight(GULPER_DISPLAY_PICK_SIZE);
+        display.setShadowRadius(0.0F);
+        display.setShadowStrength(0.0F);
+    }
+
+    private ItemStack createGulperDisplayItem() {
+        ItemStack item = new ItemStack(Material.PAPER);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text("啜食者", NamedTextColor.DARK_AQUA).decoration(TextDecoration.ITALIC, false));
+        meta.setItemModel(gulperModelKey);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private void removeGulperDisplay(UUID zombieUuid) {
+        removeCustomMonsterHealthDisplay(zombieUuid);
+        UUID displayUuid = gulperDisplays.remove(zombieUuid);
+        Entity display = displayUuid == null ? null : Bukkit.getEntity(displayUuid);
+        if (display != null) {
+            display.remove();
+        }
+        for (World world : Bukkit.getWorlds()) {
+            for (ItemDisplay candidate : world.getEntitiesByClass(ItemDisplay.class)) {
+                if (zombieUuid.toString().equals(candidate.getPersistentDataContainer().get(gulperDisplayOwnerKey, PersistentDataType.STRING))) {
+                    candidate.remove();
+                }
+            }
+        }
+    }
+
+    private void removeMissingGulperDisplays(Set<UUID> liveGulpers) {
+        for (UUID zombieUuid : new HashSet<>(gulperDisplays.keySet())) {
+            if (!liveGulpers.contains(zombieUuid)) {
+                removeGulperDisplay(zombieUuid);
+                continue;
+            }
+            Entity display = Bukkit.getEntity(gulperDisplays.get(zombieUuid));
+            if (display == null || !display.isValid()) {
+                gulperDisplays.remove(zombieUuid);
+            }
+        }
+        for (World world : Bukkit.getWorlds()) {
+            for (ItemDisplay display : world.getEntitiesByClass(ItemDisplay.class)) {
+                if (!display.getPersistentDataContainer().has(gulperDisplayKey, PersistentDataType.BYTE)) {
+                    continue;
+                }
+                String owner = display.getPersistentDataContainer().get(gulperDisplayOwnerKey, PersistentDataType.STRING);
+                if (owner == null) {
+                    display.remove();
+                    continue;
+                }
+                try {
+                    if (!liveGulpers.contains(UUID.fromString(owner))) {
+                        display.remove();
+                    }
+                } catch (IllegalArgumentException ignored) {
+                    display.remove();
+                }
+            }
+        }
+    }
+
+    private void removeAllGulperDisplays() {
+        gulperDisplays.clear();
+        for (World world : Bukkit.getWorlds()) {
+            for (ItemDisplay display : world.getEntitiesByClass(ItemDisplay.class)) {
+                if (display.getPersistentDataContainer().has(gulperDisplayKey, PersistentDataType.BYTE)) {
                     display.remove();
                 }
             }
@@ -5905,7 +6122,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private Location customMonsterHealthDisplayLocation(LivingEntity monster) {
         double height = isTrainingDummy(monster)
                 ? TRAINING_DUMMY_HEALTH_DISPLAY_HEIGHT
-                : (isPusBug(monster) ? PUS_BUG_HEALTH_DISPLAY_HEIGHT : ROTTEN_GUARD_HEALTH_DISPLAY_HEIGHT);
+                : (isPusBug(monster) ? PUS_BUG_HEALTH_DISPLAY_HEIGHT : (isGulper(monster) ? GULPER_HEALTH_DISPLAY_HEIGHT : ROTTEN_GUARD_HEALTH_DISPLAY_HEIGHT));
         Location location = monster.getLocation().clone().add(0.0D, height, 0.0D);
         location.setPitch(0.0F);
         return location;
@@ -6143,12 +6360,58 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
+    private void applyGulperStats(Zombie zombie, boolean heal) {
+        zombie.setAI(true);
+        zombie.setSilent(true);
+        zombie.setAdult();
+        setAttribute(zombie, Attribute.MAX_HEALTH, GULPER_MAX_HEALTH);
+        setAttribute(zombie, Attribute.ARMOR, GULPER_ARMOR);
+        setAttribute(zombie, Attribute.ATTACK_DAMAGE, GULPER_ATTACK_DAMAGE);
+        setAttribute(zombie, Attribute.FOLLOW_RANGE, GULPER_FOLLOW_RANGE);
+        setAttribute(zombie, Attribute.MOVEMENT_SPEED, GULPER_MOVEMENT_SPEED);
+        setAttribute(zombie, Attribute.KNOCKBACK_RESISTANCE, GULPER_KNOCKBACK_RESISTANCE);
+        if (heal) {
+            zombie.setHealth(GULPER_MAX_HEALTH);
+        }
+    }
+
+    private void decayGulperHealth(Zombie zombie) {
+        if (zombie.isDead() || !zombie.isValid()) {
+            return;
+        }
+        if (zombie.getHealth() <= GULPER_HEALTH_DECAY_PER_SECOND) {
+            killCustomMonsterSilently(zombie);
+            return;
+        }
+        zombie.setHealth(Math.max(0.0D, zombie.getHealth() - GULPER_HEALTH_DECAY_PER_SECOND));
+    }
+
+    private void applyGulperDrain(Zombie gulper, Player target) {
+        if (!target.isOnline() || target.isDead()) {
+            return;
+        }
+        float saturation = target.getSaturation();
+        if (saturation > 0.0F) {
+            target.setSaturation((float) Math.max(0.0D, saturation - GULPER_SATURATION_DRAIN));
+        } else if (target.getFoodLevel() > 0) {
+            target.setFoodLevel(Math.max(0, target.getFoodLevel() - GULPER_FOOD_DRAIN));
+        } else if (target.getHealth() > 0.0D) {
+            target.setHealth(Math.max(0.0D, target.getHealth() - GULPER_HEALTH_DRAIN));
+        }
+        AttributeInstance maxHealth = gulper.getAttribute(Attribute.MAX_HEALTH);
+        double cap = maxHealth == null ? GULPER_MAX_HEALTH : maxHealth.getValue();
+        gulper.setHealth(Math.min(cap, gulper.getHealth() + GULPER_ATTACK_HEAL));
+    }
+
     private void killCustomMonsterSilently(LivingEntity entity) {
         UUID uuid = entity.getUniqueId();
         entity.setSilent(true);
         if (isRottenGuard(entity)) {
             removeRottenGuardDisplay(uuid);
             spawnExperience(entity.getLocation(), 10);
+        } else if (isGulper(entity)) {
+            removeGulperDisplay(uuid);
+            spawnExperience(entity.getLocation(), 15);
         } else if (isPusBug(entity)) {
             removePusBugDisplay(uuid);
             triggerPusBugDeath(entity);
@@ -6295,17 +6558,17 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         Vector origin = eye.toVector();
         LivingEntity best = null;
         double bestDistance = Double.MAX_VALUE;
-        double searchRadius = range + Math.max(TRAINING_DUMMY_HITBOX_EXPANSION, Math.max(ROTTEN_GUARD_HITBOX_EXPANSION, PUS_BUG_HITBOX_EXPANSION)) + 1.0D;
+        double searchRadius = range + Math.max(TRAINING_DUMMY_HITBOX_EXPANSION, Math.max(GULPER_HITBOX_EXPANSION, Math.max(ROTTEN_GUARD_HITBOX_EXPANSION, PUS_BUG_HITBOX_EXPANSION))) + 1.0D;
         for (Entity entity : player.getWorld().getNearbyEntities(eye, searchRadius, searchRadius, searchRadius, this::isCustomMonster)) {
             if (!(entity instanceof LivingEntity monster) || monster.isDead() || !monster.isValid()) {
                 continue;
             }
             double horizontalExpansion = isTrainingDummy(monster)
                     ? TRAINING_DUMMY_HITBOX_EXPANSION
-                    : (isPusBug(monster) ? PUS_BUG_HITBOX_EXPANSION : ROTTEN_GUARD_HITBOX_EXPANSION);
+                    : (isPusBug(monster) ? PUS_BUG_HITBOX_EXPANSION : (isGulper(monster) ? GULPER_HITBOX_EXPANSION : ROTTEN_GUARD_HITBOX_EXPANSION));
             double verticalExpansion = isTrainingDummy(monster)
                     ? 0.9D
-                    : (isPusBug(monster) ? PUS_BUG_VERTICAL_HITBOX_EXPANSION : 0.08D);
+                    : (isPusBug(monster) ? PUS_BUG_VERTICAL_HITBOX_EXPANSION : (isGulper(monster) ? 0.55D : 0.08D));
             BoundingBox expandedBox = monster.getBoundingBox().expand(horizontalExpansion, verticalExpansion, horizontalExpansion);
             RayTraceResult hit = expandedBox.rayTrace(origin, direction, range);
             if (hit == null) {
@@ -6346,6 +6609,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 && entity.getPersistentDataContainer().has(pusBugDisplayKey, PersistentDataType.BYTE);
     }
 
+    private boolean isGulperDisplay(Entity entity) {
+        return entity instanceof ItemDisplay
+                && entity.getPersistentDataContainer().has(gulperDisplayKey, PersistentDataType.BYTE);
+    }
+
     private boolean isTrainingDummyDisplay(Entity entity) {
         return entity instanceof ItemDisplay
                 && entity.getPersistentDataContainer().has(trainingDummyDisplayKey, PersistentDataType.BYTE);
@@ -6357,7 +6625,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private boolean isCustomMonsterDisplay(Entity entity) {
-        return isRottenGuardDisplay(entity) || isPusBugDisplay(entity) || isTrainingDummyDisplay(entity) || isCustomMonsterHealthDisplay(entity);
+        return isRottenGuardDisplay(entity) || isGulperDisplay(entity) || isPusBugDisplay(entity) || isTrainingDummyDisplay(entity) || isCustomMonsterHealthDisplay(entity);
     }
 
     private void setAttribute(LivingEntity entity, Attribute attribute, double value) {
@@ -6407,6 +6675,12 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 && PUS_BUG_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
     }
 
+    private boolean isGulper(Entity entity) {
+        return entity instanceof Zombie
+                && entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)
+                && GULPER_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
+    }
+
     private boolean isTrainingDummy(Entity entity) {
         return entity instanceof Slime
                 && entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)
@@ -6414,7 +6688,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private boolean isCustomMonster(Entity entity) {
-        return isRottenGuard(entity) || isPusBug(entity) || isTrainingDummy(entity);
+        return isRottenGuard(entity) || isGulper(entity) || isPusBug(entity) || isTrainingDummy(entity);
     }
 
     private boolean isRottenGuardInput(String input) {
@@ -6431,6 +6705,14 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 || "脓包虫".equals(input);
     }
 
+    private boolean isGulperInput(String input) {
+        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+        return GULPER_TYPE.equals(normalized)
+                || "sipper".equals(normalized)
+                || "drinker".equals(normalized)
+                || "啜食者".equals(input);
+    }
+
     private boolean isTrainingDummyInput(String input) {
         String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace('-', '_');
         return TRAINING_DUMMY_TYPE.equals(normalized)
@@ -6441,12 +6723,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private boolean isCustomMonsterInput(String input) {
-        return isRottenGuardInput(input) || isPusBugInput(input) || isTrainingDummyInput(input);
+        return isRottenGuardInput(input) || isGulperInput(input) || isPusBugInput(input) || isTrainingDummyInput(input);
     }
 
     private String normalizeCustomMonsterType(String input) {
         if (isTrainingDummyInput(input)) {
             return TRAINING_DUMMY_TYPE;
+        }
+        if (isGulperInput(input)) {
+            return GULPER_TYPE;
         }
         if (isPusBugInput(input)) {
             return PUS_BUG_TYPE;
@@ -6468,7 +6753,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             }
             if (args.length == 2 && "spawn".equalsIgnoreCase(args[0])) {
                 String prefix = args[1].toLowerCase(Locale.ROOT);
-                return List.of(ROTTEN_GUARD_TYPE, PUS_BUG_TYPE, TRAINING_DUMMY_TYPE).stream()
+                return List.of(ROTTEN_GUARD_TYPE, GULPER_TYPE, PUS_BUG_TYPE, TRAINING_DUMMY_TYPE).stream()
                         .filter(value -> value.startsWith(prefix))
                         .toList();
             }
@@ -6925,6 +7210,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private enum EnemyEntry {
         ROTTEN_GUARD(ROTTEN_GUARD_TYPE, "朽败卫兵", Material.ROTTEN_FLESH,
                 ROTTEN_GUARD_MAX_HEALTH, ROTTEN_GUARD_ATTACK_DAMAGE, ROTTEN_GUARD_ARMOR, ROTTEN_GUARD_MOVEMENT_SPEED, true, false),
+        GULPER(GULPER_TYPE, "啜食者", Material.SCULK_SHRIEKER,
+                GULPER_MAX_HEALTH, GULPER_ATTACK_DAMAGE, GULPER_ARMOR, GULPER_MOVEMENT_SPEED, true, false),
         PUS_BUG(PUS_BUG_TYPE, "脓包虫", Material.SPIDER_EYE,
                 PUS_BUG_MAX_HEALTH, PUS_BUG_ATTACK_DAMAGE, PUS_BUG_ARMOR, PUS_BUG_MOVEMENT_SPEED, false, true),
         TRAINING_DUMMY(TRAINING_DUMMY_TYPE, "测试木桩", Material.PLAYER_HEAD,

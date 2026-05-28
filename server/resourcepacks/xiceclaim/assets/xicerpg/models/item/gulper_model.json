@@ -1,0 +1,107 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "xicerpg:item/gulper_model",
+    "gulper": "xicerpg:item/gulper_model"
+  },
+  "elements": [
+    {
+      "name": "hunched_body",
+      "from": [4.0, 4.0, 4.5],
+      "to": [12.0, 13.0, 11.5],
+      "faces": {
+        "down": { "uv": [6, 9, 10, 12], "texture": "#gulper" },
+        "up": { "uv": [6, 0, 10, 4], "texture": "#gulper" },
+        "north": { "uv": [5, 9, 11, 14], "texture": "#gulper" },
+        "south": { "uv": [5, 4, 11, 9], "texture": "#gulper" },
+        "west": { "uv": [0, 4, 4, 10], "texture": "#gulper" },
+        "east": { "uv": [12, 4, 16, 10], "texture": "#gulper" }
+      }
+    },
+    {
+      "name": "maw_head",
+      "from": [3.0, 11.0, 2.0],
+      "to": [13.0, 16.0, 8.0],
+      "faces": {
+        "down": { "uv": [6, 9, 10, 12], "texture": "#gulper" },
+        "up": { "uv": [6, 0, 10, 4], "texture": "#gulper" },
+        "north": { "uv": [0, 0, 8, 8], "texture": "#gulper" },
+        "south": { "uv": [8, 0, 16, 8], "texture": "#gulper" },
+        "west": { "uv": [0, 8, 4, 12], "texture": "#gulper" },
+        "east": { "uv": [12, 8, 16, 12], "texture": "#gulper" }
+      }
+    },
+    {
+      "name": "glowing_chest",
+      "from": [5.0, 6.0, 1.8],
+      "to": [11.0, 12.0, 4.8],
+      "faces": {
+        "down": { "uv": [8, 8, 13, 12], "texture": "#gulper" },
+        "up": { "uv": [8, 8, 13, 12], "texture": "#gulper" },
+        "north": { "uv": [8, 8, 13, 12], "texture": "#gulper" },
+        "south": { "uv": [8, 8, 13, 12], "texture": "#gulper" },
+        "west": { "uv": [8, 8, 13, 12], "texture": "#gulper" },
+        "east": { "uv": [8, 8, 13, 12], "texture": "#gulper" }
+      }
+    },
+    {
+      "name": "right_claw",
+      "from": [1.8, 3.0, 2.0],
+      "to": [4.8, 11.5, 6.0],
+      "faces": {
+        "down": { "uv": [12, 8, 16, 12], "texture": "#gulper" },
+        "up": { "uv": [12, 8, 16, 12], "texture": "#gulper" },
+        "north": { "uv": [12, 0, 16, 8], "texture": "#gulper" },
+        "south": { "uv": [12, 0, 16, 8], "texture": "#gulper" },
+        "west": { "uv": [12, 0, 16, 8], "texture": "#gulper" },
+        "east": { "uv": [12, 0, 16, 8], "texture": "#gulper" }
+      }
+    },
+    {
+      "name": "left_claw",
+      "from": [11.2, 3.0, 2.0],
+      "to": [14.2, 11.5, 6.0],
+      "faces": {
+        "down": { "uv": [12, 8, 16, 12], "texture": "#gulper" },
+        "up": { "uv": [12, 8, 16, 12], "texture": "#gulper" },
+        "north": { "uv": [12, 0, 16, 8], "texture": "#gulper" },
+        "south": { "uv": [12, 0, 16, 8], "texture": "#gulper" },
+        "west": { "uv": [12, 0, 16, 8], "texture": "#gulper" },
+        "east": { "uv": [12, 0, 16, 8], "texture": "#gulper" }
+      }
+    },
+    {
+      "name": "right_leg",
+      "from": [4.5, 0.0, 6.0],
+      "to": [7.0, 5.0, 10.5],
+      "faces": {
+        "down": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "up": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "north": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "south": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "west": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "east": { "uv": [0, 12, 4, 16], "texture": "#gulper" }
+      }
+    },
+    {
+      "name": "left_leg",
+      "from": [9.0, 0.0, 6.0],
+      "to": [11.5, 5.0, 10.5],
+      "faces": {
+        "down": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "up": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "north": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "south": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "west": { "uv": [0, 12, 4, 16], "texture": "#gulper" },
+        "east": { "uv": [0, 12, 4, 16], "texture": "#gulper" }
+      }
+    }
+  ],
+  "display": {
+    "fixed": {
+      "rotation": [0, 0, 0],
+      "translation": [0, 0, 0],
+      "scale": [1.0, 1.65, 1.0]
+    }
+  }
+}
