@@ -9,6 +9,8 @@ modules:
     plugin-name: XiceEconomy
     offset: '                        '
     format: '{offset}&f{coin} &e{balance}'
+    hidden-world-prefixes:
+      - xicerpg_instance_
     unavailable: '&7货币: 暂不可用'
 
   tab-list:

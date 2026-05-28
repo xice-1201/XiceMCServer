@@ -67,6 +67,7 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
     private String economyOffset;
     private String economyFormat;
     private String economyUnavailable;
+    private List<String> economyHiddenWorldPrefixes = List.of();
     private boolean tabListEnabled;
     private String tabListFormat;
     private Map<String, String> tabListWorldNames = Map.of();
@@ -201,6 +202,9 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         getServer().getScheduler().runTask(this, () -> {
             updateDefaultTabListWorld(player);
             renderTabListName(player);
+            if (isEconomyHiddenWorld(player)) {
+                clearActionBar(player.getUniqueId(), ECONOMY_ACTION_BAR_OWNER);
+            }
         });
     }
 
@@ -227,6 +231,10 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         economyPluginName = getConfig().getString("modules.economy.plugin-name", "XiceEconomy");
         economyOffset = getConfig().getString("modules.economy.offset", "");
         economyFormat = getConfig().getString("modules.economy.format", "{offset}&f{coin} &e{balance}");
+        List<String> hiddenPrefixes = getConfig().getStringList("modules.economy.hidden-world-prefixes").stream()
+                .filter(prefix -> prefix != null && !prefix.isBlank())
+                .toList();
+        economyHiddenWorldPrefixes = hiddenPrefixes.isEmpty() ? List.of("xicerpg_instance_") : hiddenPrefixes;
         economyUnavailable = getConfig().getString("modules.economy.unavailable", "&7货币: 暂不可用");
     }
 
@@ -267,6 +275,10 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         if (!economyEnabled) {
             return;
         }
+        if (isEconomyHiddenWorld(player)) {
+            clearActionBar(player.getUniqueId(), ECONOMY_ACTION_BAR_OWNER);
+            return;
+        }
         String cached = cachedEconomyLines.get(player.getUniqueId());
         if (cached == null) {
             requestEconomyBalance(player, false);
@@ -278,6 +290,11 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
     private boolean isHudEnabled(Player player) {
         UUID playerUuid = player.getUniqueId();
         return enabledByDefault ? !disabledPlayers.contains(playerUuid) : enabledPlayers.contains(playerUuid);
+    }
+
+    private boolean isEconomyHiddenWorld(Player player) {
+        String worldName = player.getWorld().getName();
+        return economyHiddenWorldPrefixes.stream().anyMatch(worldName::startsWith);
     }
 
     @Override
@@ -535,6 +552,10 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
     private void requestEconomyBalance(Player player, boolean sendImmediately) {
         UUID playerUuid = player.getUniqueId();
         long now = System.currentTimeMillis();
+        if (isEconomyHiddenWorld(player)) {
+            clearActionBar(playerUuid, ECONOMY_ACTION_BAR_OWNER);
+            return;
+        }
         if (pendingEconomyQueries.contains(playerUuid)) {
             return;
         }
