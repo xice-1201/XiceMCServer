@@ -3697,7 +3697,6 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 return;
             }
             Slime current = (Slime) entity;
-            current.setFireTicks(0);
             current.setNoDamageTicks(0);
             applyTrainingDummyStats(current, false);
             syncCustomMonsterHealthDisplay(current);
@@ -5412,7 +5411,6 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         zombie.setInvisible(true);
         zombie.setSilent(true);
         zombie.setCanPickupItems(false);
-        zombie.setFireTicks(0);
         clearRottenGuardEquipment(zombie);
         zombie.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, PotionEffect.INFINITE_DURATION, 0, false, false, false));
     }
@@ -5686,6 +5684,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         display.setInterpolationDelay(0);
         display.setInterpolationDuration(2);
         display.setTeleportDuration(2);
+        syncDisplayFire(display, zombie);
         display.teleport(location);
     }
 
@@ -5729,6 +5728,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         display.setDisplayHeight(GULPER_DISPLAY_PICK_SIZE);
         display.setShadowRadius(0.0F);
         display.setShadowStrength(0.0F);
+    }
+
+    private void syncDisplayFire(Entity display, Entity owner) {
+        display.setVisualFire(owner.getFireTicks() > 0);
     }
 
     private ItemStack createGulperDisplayItem() {
@@ -5929,6 +5932,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             display.setInterpolationDuration(2);
             display.setTeleportDuration(2);
             display.setTransformation(trainingDummyPartTransformation());
+            syncDisplayFire(display, slime);
             display.teleport(location);
         }
     }
