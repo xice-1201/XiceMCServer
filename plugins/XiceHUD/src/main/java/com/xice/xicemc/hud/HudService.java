@@ -14,5 +14,9 @@ public interface HudService {
 
     void clearSidebar(UUID playerUuid, String owner);
 
+    void setTabListWorld(UUID playerUuid, String owner, String legacyWorldName, int priority);
+
+    void clearTabListWorld(UUID playerUuid, String owner);
+
     HudBossBar createBossBar(String owner, String legacyTitle, BarColor color, BarStyle style);
 }

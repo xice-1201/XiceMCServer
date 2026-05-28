@@ -28,6 +28,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.Plugin;
@@ -41,6 +42,7 @@ import org.bukkit.scoreboard.ScoreboardManager;
 
 public final class XiceHudPlugin extends JavaPlugin implements HudService, Listener, CommandExecutor, TabCompleter {
     private static final String ECONOMY_ACTION_BAR_OWNER = "xicehud:economy";
+    private static final String WORLD_TAB_OWNER = "xicehud:world";
     private static final String SIDEBAR_OBJECTIVE = "xicehud_sidebar";
 
     private final Set<UUID> disabledPlayers = new HashSet<>();
@@ -53,6 +55,8 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
     private final Map<UUID, Map<String, SidebarSection>> sidebars = new HashMap<>();
     private final Map<UUID, Scoreboard> sidebarBoards = new HashMap<>();
     private final Map<UUID, Scoreboard> previousBoards = new HashMap<>();
+    private final Map<UUID, Map<String, TabListWorldEntry>> tabListWorlds = new HashMap<>();
+    private final Map<UUID, String> lastTabListNames = new HashMap<>();
     private final Set<ManagedHudBossBar> bossBars = new HashSet<>();
     private final Consumer<UUID> economyChangeListener = this::handleEconomyBalanceChanged;
     private BukkitTask hudTask;
@@ -63,6 +67,9 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
     private String economyOffset;
     private String economyFormat;
     private String economyUnavailable;
+    private boolean tabListEnabled;
+    private String tabListFormat;
+    private Map<String, String> tabListWorldNames = Map.of();
     private int updateIntervalTicks;
     private int retryAfterErrorTicks;
 
@@ -70,6 +77,7 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
     public void onEnable() {
         saveDefaultConfig();
         loadSettings();
+        loadTabListSettings();
         Bukkit.getServicesManager().register(HudService.class, this, this, ServicePriority.Normal);
         registerCommand();
         getServer().getPluginManager().registerEvents(this, this);
@@ -100,6 +108,8 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         sidebars.clear();
         sidebarBoards.clear();
         previousBoards.clear();
+        tabListWorlds.clear();
+        lastTabListNames.clear();
         bossBars.clear();
     }
 
@@ -149,9 +159,15 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
                 unregisterEconomyListener();
                 reloadConfig();
                 loadSettings();
+                loadTabListSettings();
                 cachedEconomyLines.clear();
+                lastTabListNames.clear();
                 registerEconomyListener();
                 startHudTask();
+                for (Player online : Bukkit.getOnlinePlayers()) {
+                    updateDefaultTabListWorld(online);
+                    renderTabListName(online);
+                }
                 send(sender, "reload-complete");
             }
             default -> send(sender, "usage");
@@ -172,7 +188,20 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        getServer().getScheduler().runTaskLater(this, () -> requestEconomyBalance(player, true), 20L);
+        getServer().getScheduler().runTaskLater(this, () -> {
+            requestEconomyBalance(player, true);
+            updateDefaultTabListWorld(player);
+            renderTabListName(player);
+        }, 20L);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        Player player = event.getPlayer();
+        getServer().getScheduler().runTask(this, () -> {
+            updateDefaultTabListWorld(player);
+            renderTabListName(player);
+        });
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -186,6 +215,8 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         sidebars.remove(playerUuid);
         sidebarBoards.remove(playerUuid);
         previousBoards.remove(playerUuid);
+        tabListWorlds.remove(playerUuid);
+        lastTabListNames.remove(playerUuid);
     }
 
     private void loadSettings() {
@@ -199,6 +230,21 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         economyUnavailable = getConfig().getString("modules.economy.unavailable", "&7货币: 暂不可用");
     }
 
+    private void loadTabListSettings() {
+        tabListEnabled = getConfig().getBoolean("modules.tab-list.enabled", true);
+        tabListFormat = getConfig().getString("modules.tab-list.format", "&7[{world}]&f{player}");
+        Map<String, String> configuredWorldNames = new HashMap<>();
+        configuredWorldNames.put("main", "主服务器");
+        configuredWorldNames.put("main_nether", "主服务器下界");
+        configuredWorldNames.put("main_the_end", "主服务器末地");
+        if (getConfig().isConfigurationSection("modules.tab-list.worlds")) {
+            for (String worldName : Objects.requireNonNull(getConfig().getConfigurationSection("modules.tab-list.worlds")).getKeys(false)) {
+                configuredWorldNames.put(worldName, getConfig().getString("modules.tab-list.worlds." + worldName, worldName));
+            }
+        }
+        tabListWorldNames = Map.copyOf(configuredWorldNames);
+    }
+
     private void startHudTask() {
         if (hudTask != null) {
             hudTask.cancel();
@@ -208,6 +254,8 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
                 sendCachedHud(player);
                 renderActionBar(player);
                 renderSidebar(player);
+                updateDefaultTabListWorld(player);
+                renderTabListName(player);
             }
         }, 20L, 20L);
     }
@@ -301,6 +349,37 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         return bossBar;
     }
 
+    @Override
+    public void setTabListWorld(UUID playerUuid, String owner, String legacyWorldName, int priority) {
+        Objects.requireNonNull(playerUuid, "playerUuid");
+        Objects.requireNonNull(owner, "owner");
+        if (legacyWorldName == null || legacyWorldName.isBlank()) {
+            clearTabListWorld(playerUuid, owner);
+            return;
+        }
+        tabListWorlds.computeIfAbsent(playerUuid, ignored -> new HashMap<>())
+                .put(owner, new TabListWorldEntry(owner, legacyWorldName, priority));
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player != null && player.isOnline()) {
+            renderTabListName(player);
+        }
+    }
+
+    @Override
+    public void clearTabListWorld(UUID playerUuid, String owner) {
+        Map<String, TabListWorldEntry> entries = tabListWorlds.get(playerUuid);
+        if (entries != null) {
+            entries.remove(owner);
+            if (entries.isEmpty()) {
+                tabListWorlds.remove(playerUuid);
+            }
+        }
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player != null && player.isOnline()) {
+            renderTabListName(player);
+        }
+    }
+
     private void renderActionBar(Player player) {
         UUID playerUuid = player.getUniqueId();
         Map<String, ActionBarEntry> entries = actionBars.get(playerUuid);
@@ -383,6 +462,52 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         }
     }
 
+    private void updateDefaultTabListWorld(Player player) {
+        if (!tabListEnabled) {
+            clearTabListWorld(player.getUniqueId(), WORLD_TAB_OWNER);
+            return;
+        }
+        setTabListWorld(player.getUniqueId(), WORLD_TAB_OWNER, displayNameForWorld(player.getWorld().getName()), 0);
+    }
+
+    private String displayNameForWorld(String worldName) {
+        String configured = tabListWorldNames.get(worldName);
+        return configured == null || configured.isBlank() ? worldName : configured;
+    }
+
+    private void renderTabListName(Player player) {
+        if (!tabListEnabled) {
+            restoreTabListName(player);
+            return;
+        }
+        Map<String, TabListWorldEntry> entries = tabListWorlds.get(player.getUniqueId());
+        if (entries == null || entries.isEmpty()) {
+            restoreTabListName(player);
+            return;
+        }
+        TabListWorldEntry selected = entries.values().stream()
+                .max(Comparator.comparingInt(TabListWorldEntry::priority).thenComparing(TabListWorldEntry::owner))
+                .orElse(null);
+        if (selected == null) {
+            restoreTabListName(player);
+            return;
+        }
+        String text = tabListFormat
+                .replace("{world}", selected.legacyWorldName())
+                .replace("{player}", player.getName());
+        if (text.equals(lastTabListNames.get(player.getUniqueId()))) {
+            return;
+        }
+        player.playerListName(LegacyComponentSerializer.legacySection().deserialize(color(text)));
+        lastTabListNames.put(player.getUniqueId(), text);
+    }
+
+    private void restoreTabListName(Player player) {
+        if (lastTabListNames.remove(player.getUniqueId()) != null) {
+            player.playerListName(Component.text(player.getName()));
+        }
+    }
+
     private Scoreboard createSidebarBoard() {
         ScoreboardManager manager = Bukkit.getScoreboardManager();
         if (manager == null) {
@@ -403,6 +528,8 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         player.sendActionBar(Component.empty());
         sidebars.remove(playerUuid);
         restoreSidebar(player);
+        tabListWorlds.remove(playerUuid);
+        restoreTabListName(player);
     }
 
     private void requestEconomyBalance(Player player, boolean sendImmediately) {
@@ -573,6 +700,9 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
     }
 
     private record SidebarSection(String owner, String legacyTitle, List<String> legacyLines, int priority) {
+    }
+
+    private record TabListWorldEntry(String owner, String legacyWorldName, int priority) {
     }
 
     private final class ManagedHudBossBar implements HudBossBar {

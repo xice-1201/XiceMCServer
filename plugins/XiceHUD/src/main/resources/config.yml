@@ -11,6 +11,14 @@ modules:
     format: '{offset}&f{coin} &e{balance}'
     unavailable: '&7货币: 暂不可用'
 
+  tab-list:
+    enabled: true
+    format: '&7[{world}]&f{player}'
+    worlds:
+      main: '主服务器'
+      main_nether: '主服务器下界'
+      main_the_end: '主服务器末地'
+
 messages:
   prefix: '&6[XiceHUD] &f'
   player-only: '&c该指令只能由玩家执行。'

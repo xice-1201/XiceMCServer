@@ -124,6 +124,7 @@ import net.kyori.adventure.text.format.TextDecoration;
 
 public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExecutor {
     private static final Pattern MODULE_NAME_PATTERN = Pattern.compile("^[\\p{L}\\p{N}_-]{1,32}$", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final String RPG_TAB_WORLD_OWNER = "xicerpg:world";
     private static final String ROTTEN_GUARD_TYPE = "rotten_guard";
     private static final float ROTTEN_GUARD_DISPLAY_PICK_SIZE = 0.0F;
     private static final double ROTTEN_GUARD_MAX_HEALTH = 60.0D;
@@ -468,6 +469,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         magicGrindstonesFile = new File(getDataFolder(), "magic-grindstones.yml");
         magicAnvilEnchantListsFile = new File(getDataFolder(), "magic-anvil-enchants.yml");
         loadModules();
+        Bukkit.getScheduler().runTask(this, this::updateAllHudTabListWorlds);
         ensureDefaultModuleSettings();
         loadMagicAnvils();
         loadMagicGrindstones();
@@ -511,6 +513,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             stopCustomBlockBreak(player);
         }
         for (Player player : Bukkit.getOnlinePlayers()) {
+            hudService.clearTabListWorld(player.getUniqueId(), RPG_TAB_WORLD_OWNER);
             restoreDungeonPlayerDamageRules(player);
             restorePlayerViewDistance(player, "disable");
         }
@@ -567,6 +570,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             }
             reloadConfig();
             loadModules();
+            updateAllHudTabListWorlds();
             sender.sendMessage("XiceRPG 配置已重载。");
             return true;
         }
@@ -1097,6 +1101,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     @EventHandler
     public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        Bukkit.getScheduler().runTask(this, () -> updateHudTabListWorld(event.getPlayer()));
         ModuleRecord module = moduleByWorldName(event.getFrom().getName());
         if (module != null) {
             Bukkit.getScheduler().runTask(this, () -> {
@@ -1132,6 +1137,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        hudService.clearTabListWorld(player.getUniqueId(), RPG_TAB_WORLD_OWNER);
         stopCustomBlockBreak(player);
         restorePlayerViewDistance(player, "quit");
         PendingTowerEntry entry = pendingTowerEntries.get(player.getUniqueId());
@@ -1304,6 +1310,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             restoreModuleSessionIfNeeded(event.getPlayer());
             unlockMagicTowerKeyRecipeIfHasDiamond(event.getPlayer());
             unlockMagicDustRecipesIfHasMagicDust(event.getPlayer());
+            updateHudTabListWorld(event.getPlayer());
         });
     }
 
@@ -1827,6 +1834,12 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (PUS_BUG_TYPE.equals(enemy.type())) {
             lore.add("死亡爆裂: " + formatStat(PUS_BUG_EXPLOSION_DAMAGE) + " 物理伤害");
             lore.add("爆裂与脓液会施加中毒 III");
+        }
+        if (GULPER_TYPE.equals(enemy.type())) {
+            lore.add("每秒自然流失 " + formatStat(GULPER_HEALTH_DECAY_PER_SECOND) + " 生命值。");
+            lore.add("攻击会优先扣除 4 点饱和度，再扣除饱食度。");
+            lore.add("若目标饱和度和饱食度均耗尽，则额外扣除 1 点生命。");
+            lore.add("每次命中目标后恢复 " + formatStat(GULPER_ATTACK_HEAL) + " 点生命。");
         }
         inventory.setItem(SLOT_ENEMY_DETAIL_INFO, menuItem(enemy.icon(), enemy.displayName(), NamedTextColor.DARK_GREEN, lore));
         inventory.setItem(SLOT_ENEMY_DETAIL_BACK, menuItem(Material.ARROW, "返回图鉴", NamedTextColor.YELLOW,
@@ -2707,6 +2720,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             player.getPersistentDataContainer().set(moduleReturnLocationKey, PersistentDataType.STRING, encodeLocation(player.getLocation()));
         }
         if (player.teleport(spawn)) {
+            updateHudTabListWorld(player);
             player.sendMessage("已进入模板世界 " + module.displayName() + "。");
             giveDungeonStarterIfMissing(player, module);
         } else {
@@ -3028,6 +3042,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 + " warm=" + formatMillis(entry.warmMillis)
                 + " total=" + formatMillis(elapsedMillis(entry.createdNanos)));
         if (teleported) {
+            updateHudTabListWorld(player);
             rampRestorePlayerViewDistance(player, "tower-entry-success");
             resetDungeonPlayerState(player);
             player.setGameMode(GameMode.ADVENTURE);
@@ -3243,11 +3258,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (instance == null) {
             clearDungeonEffects(player);
             player.teleport(mainWorldSpawn());
+            updateHudTabListWorld(player);
             return;
         }
         clearDungeonEffects(player);
         player.teleport(instance.returnLocation());
         player.setGameMode(instance.returnGameMode());
+        updateHudTabListWorld(player);
         if (message) {
             player.sendMessage("已离开魔塔副本。");
         }
@@ -4026,6 +4043,34 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 .filter(module -> module.worldName().equals(worldName))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private void updateAllHudTabListWorlds() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            updateHudTabListWorld(player);
+        }
+    }
+
+    private void updateHudTabListWorld(Player player) {
+        String displayName = rpgWorldDisplayName(player.getWorld().getName());
+        if (displayName == null) {
+            hudService.clearTabListWorld(player.getUniqueId(), RPG_TAB_WORLD_OWNER);
+            return;
+        }
+        hudService.setTabListWorld(player.getUniqueId(), RPG_TAB_WORLD_OWNER, displayName, 100);
+    }
+
+    private String rpgWorldDisplayName(String worldName) {
+        ModuleRecord module = moduleByWorldName(worldName);
+        if (module != null) {
+            return module.dungeonName();
+        }
+        TowerInstance instance = towerInstancesByWorld.get(worldName);
+        if (instance == null) {
+            return null;
+        }
+        module = modules.get(instance.moduleKey());
+        return module == null ? instance.moduleKey() : module.dungeonName();
     }
 
     private String encodeLocation(Location location) {
