@@ -169,13 +169,16 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final long FERRYMAN_WASTELAND_CAST_TICKS = 200L;
     private static final long FERRYMAN_WASTELAND_ENRAGE_TICKS = 20L * 480L;
     private static final double FERRYMAN_FERRY_RADIUS = 8.0D;
-    private static final double FERRYMAN_FERRY_DAMAGE = 65.0D;
-    private static final double FERRYMAN_SOULFIRE_PATH_DAMAGE = 40.0D;
+    private static final double FERRYMAN_FERRY_DAMAGE = 120.0D;
+    private static final double FERRYMAN_SOULFIRE_PATH_DAMAGE = 60.0D;
+    private static final double FERRYMAN_SOULFIRE_EMPOWERED_PATH_DAMAGE = 120.0D;
+    private static final double FERRYMAN_SOULFIRE_EMPOWER_DISTANCE = 8.0D;
+    private static final double FERRYMAN_SOULFIRE_EMPOWER_KNOCKBACK = 2.4D;
     private static final double FERRYMAN_SOULFIRE_PATH_WIDTH = 1.55D;
     private static final double FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS = 3.0D;
     private static final double FERRYMAN_SOULFIRE_AFTERSHOCK_DAMAGE = 10.0D;
     private static final int FERRYMAN_SOULFIRE_BURN_TICKS = 20 * 10;
-    private static final double FERRYMAN_SHOCK_DAMAGE = 30.0D;
+    private static final double FERRYMAN_SHOCK_DAMAGE = 80.0D;
     private static final BossSkillType[] FERRYMAN_SKILL_SEQUENCE = {
             BossSkillType.FERRY,
             BossSkillType.SOULFIRE,
@@ -3847,7 +3850,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 cast.targetUuid = target == null ? null : target.getUniqueId();
             }
             if (target != null) {
-                playSoulfireLineWarning(boss.getLocation(), target.getLocation());
+                playSoulfireChargeWarning(boss.getLocation(), target.getLocation(), cast.age(customMonsterTick));
             }
             if (cast.age(customMonsterTick) >= FERRYMAN_CAST_TICKS) {
                 if (target == null) {
@@ -3858,7 +3861,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 cast.phaseStartedTick = customMonsterTick;
                 cast.chargeStart = boss.getLocation().clone();
                 cast.chargeEnd = target.getLocation().clone();
+                cast.empoweredSoulfire = horizontalDistanceSquared(cast.chargeStart, cast.chargeEnd)
+                        > FERRYMAN_SOULFIRE_EMPOWER_DISTANCE * FERRYMAN_SOULFIRE_EMPOWER_DISTANCE;
                 cast.hitPlayers.clear();
+                playSoulfireChargeStartEffect(cast.chargeStart, cast.chargeEnd, cast.empoweredSoulfire);
             }
             return;
         }
@@ -3873,10 +3879,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 damageSoulfireImpactTarget(boss, target, cast);
                 cast.phase = BossSkillPhase.AFTERSHOCK;
                 cast.phaseStartedTick = customMonsterTick;
+                playSoulfireSlamWindupStart(boss.getLocation());
             }
             return;
         }
-        playFerrymanAftershockWarning(boss.getLocation());
+        playFerrymanAftershockWarning(boss.getLocation(), cast.phaseAge(customMonsterTick));
         if (cast.phaseAge(customMonsterTick) >= FERRYMAN_SOULFIRE_AFTERSHOCK_TICKS) {
             dealSoulfireAftershock(world, boss.getLocation());
             finishBossSkill(run);
@@ -4004,7 +4011,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 continue;
             }
             cast.hitPlayers.add(player.getUniqueId());
-            dealBossPhysicalDamage(boss, player, FERRYMAN_SOULFIRE_PATH_DAMAGE);
+            dealBossPhysicalDamage(boss, player, cast.soulfirePathDamage());
+            applySoulfireEmpoweredKnockback(player, cast);
         }
     }
 
@@ -4013,7 +4021,26 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return;
         }
         cast.hitPlayers.add(target.getUniqueId());
-        dealBossPhysicalDamage(boss, target, FERRYMAN_SOULFIRE_PATH_DAMAGE);
+        dealBossPhysicalDamage(boss, target, cast.soulfirePathDamage());
+        applySoulfireEmpoweredKnockback(target, cast);
+    }
+
+    private void applySoulfireEmpoweredKnockback(Player player, BossSkillCast cast) {
+        if (!cast.empoweredSoulfire || cast.chargeStart == null || cast.chargeEnd == null) {
+            return;
+        }
+        Vector direction = cast.chargeEnd.toVector().subtract(cast.chargeStart.toVector());
+        direction.setY(0.0D);
+        if (direction.lengthSquared() <= 0.0001D) {
+            direction = player.getLocation().toVector().subtract(cast.chargeStart.toVector());
+            direction.setY(0.0D);
+        }
+        if (direction.lengthSquared() <= 0.0001D) {
+            direction = new Vector(0.0D, 0.0D, 1.0D);
+        }
+        Vector velocity = direction.normalize().multiply(FERRYMAN_SOULFIRE_EMPOWER_KNOCKBACK);
+        velocity.setY(0.65D);
+        player.setVelocity(velocity);
     }
 
     private double distanceSquaredToSegment(Vector point, Vector start, Vector end) {
@@ -4028,6 +4055,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         return point.distanceSquared(projection);
     }
 
+    private double horizontalDistanceSquared(Location first, Location second) {
+        if (first == null || second == null || first.getWorld() != second.getWorld()) {
+            return 0.0D;
+        }
+        double dx = first.getX() - second.getX();
+        double dz = first.getZ() - second.getZ();
+        return dx * dx + dz * dz;
+    }
+
     private void dealSoulfireAftershock(World world, Location center) {
         double radiusSquared = FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS * FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS;
         for (Player player : world.getPlayers()) {
@@ -4038,8 +4074,12 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             player.setVelocity(player.getVelocity().add(new Vector(0.0D, 1.05D, 0.0D)));
             player.setFireTicks(Math.max(player.getFireTicks(), FERRYMAN_SOULFIRE_BURN_TICKS));
         }
-        world.spawnParticle(Particle.SOUL_FIRE_FLAME, center.clone().add(0.0D, 0.25D, 0.0D), 64, 1.4D, 0.25D, 1.4D, 0.08D);
+        Location impact = center.clone().add(0.0D, 0.25D, 0.0D);
+        world.spawnParticle(Particle.EXPLOSION, impact, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, impact, 96, 1.4D, 0.25D, 1.4D, 0.1D);
+        world.spawnParticle(Particle.SOUL, impact.clone().add(0.0D, 0.45D, 0.0D), 72, 1.8D, 0.18D, 1.8D, 0.08D);
         world.playSound(center, Sound.ITEM_FIRECHARGE_USE, 1.0F, 0.65F);
+        world.playSound(center, Sound.ENTITY_GENERIC_EXPLODE, 0.65F, 1.35F);
     }
 
     private Location interpolateLocation(Location start, Location end, double progress) {
@@ -4075,21 +4115,19 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 FERRYMAN_FERRY_RADIUS * 0.38D, 0.18D, FERRYMAN_FERRY_RADIUS * 0.38D, 0.04D);
     }
 
-    private void playFerrymanAftershockWarning(Location center) {
-        playWarningCircle(center, FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS, Color.fromRGB(255, 130, 38), 28, 0.12D);
-    }
-
-    private void playFerrymanShockWarning(World world, Location center) {
-        if (customMonsterTick % 5L != 0L) {
+    private void playFerrymanAftershockWarning(Location center, long age) {
+        double progress = Math.max(0.0D, Math.min(1.0D, (double) age / FERRYMAN_SOULFIRE_AFTERSHOCK_TICKS));
+        double radius = FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS * (1.12D - progress * 0.12D);
+        playFilledWarningCircle(center, radius, Color.fromRGB(255, 130, 38), 0.12D);
+        World world = center.getWorld();
+        if (world == null) {
             return;
         }
-        Particle.DustOptions dust = new Particle.DustOptions(Color.fromRGB(255, 218, 73), 1.25F);
-        for (Player player : world.getPlayers()) {
-            if (isActiveDungeonPlayer(player)) {
-                world.spawnParticle(Particle.DUST, player.getLocation().clone().add(0.0D, 0.15D, 0.0D), 8, 0.65D, 0.04D, 0.65D, 0.0D, dust);
-            }
+        Location column = center.clone().add(0.0D, 2.8D - progress * 2.0D, 0.0D);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, column, 8, 0.22D, 0.18D, 0.22D, 0.035D);
+        if (age % 5L == 0L) {
+            world.playSound(center, Sound.BLOCK_SOUL_SAND_STEP, 0.45F, 0.65F + (float) progress * 0.35F);
         }
-        world.spawnParticle(Particle.DUST, center.clone().add(0.0D, 0.2D, 0.0D), 10, 2.4D, 0.02D, 2.4D, 0.0D, dust);
     }
 
     private void playFerrymanWastelandWarning(World world, Location center, long age) {
@@ -4140,20 +4178,68 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
-    private void playSoulfireLineWarning(Location from, Location to) {
+    private void playSoulfireChargeWarning(Location from, Location to, long age) {
         World world = from.getWorld();
         if (world == null || to.getWorld() != world) {
             return;
         }
         Particle.DustOptions dust = new Particle.DustOptions(Color.fromRGB(255, 225, 86), 1.15F);
+        Particle.DustOptions pulseDust = new Particle.DustOptions(Color.fromRGB(86, 255, 218), 1.35F);
         Vector start = from.clone().add(0.0D, 1.15D, 0.0D).toVector();
         Vector end = to.clone().add(0.0D, 0.55D, 0.0D).toVector();
         Vector delta = end.clone().subtract(start);
+        double length = delta.length();
+        if (length <= 0.0001D) {
+            return;
+        }
+        Vector direction = delta.clone().normalize();
         int points = Math.max(6, (int) Math.ceil(delta.length() * 2.0D));
         for (int i = 0; i <= points; i++) {
             double t = (double) i / points;
             Vector point = start.clone().add(delta.clone().multiply(t));
             world.spawnParticle(Particle.DUST, point.toLocation(world), 1, 0.01D, 0.01D, 0.01D, 0.0D, dust);
+        }
+        double pulsePhase = (age % 10L) / 10.0D;
+        for (double base = pulsePhase * 2.0D; base < length; base += 2.0D) {
+            Vector point = start.clone().add(direction.clone().multiply(base));
+            world.spawnParticle(Particle.DUST, point.toLocation(world), 2, 0.035D, 0.035D, 0.035D, 0.0D, pulseDust);
+            world.spawnParticle(Particle.SOUL_FIRE_FLAME, point.toLocation(world), 1, 0.03D, 0.03D, 0.03D, 0.01D);
+        }
+        playSoulfireArrowHead(world, end, direction, pulseDust);
+        if (age % 20L == 0L) {
+            world.playSound(from, Sound.BLOCK_RESPAWN_ANCHOR_CHARGE, 0.55F, 1.35F);
+        }
+    }
+
+    private void playSoulfireArrowHead(World world, Vector end, Vector direction, Particle.DustOptions dust) {
+        Vector horizontal = direction.clone();
+        horizontal.setY(0.0D);
+        if (horizontal.lengthSquared() <= 0.0001D) {
+            horizontal = direction.clone();
+        }
+        horizontal.normalize();
+        Vector side = new Vector(-horizontal.getZ(), 0.0D, horizontal.getX()).normalize();
+        Vector back = horizontal.clone().multiply(-1.0D);
+        for (int sideSign : new int[] {-1, 1}) {
+            for (double step = 0.0D; step <= 1.6D; step += 0.4D) {
+                Vector point = end.clone()
+                        .add(back.clone().multiply(step))
+                        .add(side.clone().multiply(sideSign * step * 0.55D));
+                world.spawnParticle(Particle.DUST, point.toLocation(world), 1, 0.01D, 0.01D, 0.01D, 0.0D, dust);
+            }
+        }
+    }
+
+    private void playSoulfireChargeStartEffect(Location start, Location end, boolean empowered) {
+        World world = start.getWorld();
+        if (world == null) {
+            return;
+        }
+        Location origin = start.clone().add(0.0D, 0.85D, 0.0D);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, origin, empowered ? 44 : 24, 0.45D, 0.45D, 0.45D, 0.08D);
+        world.playSound(start, empowered ? Sound.ENTITY_BLAZE_SHOOT : Sound.ENTITY_ENDER_DRAGON_FLAP, empowered ? 1.0F : 0.65F, empowered ? 0.75F : 1.25F);
+        if (empowered) {
+            playSoulfireChargeWarning(start, end, FERRYMAN_CAST_TICKS);
         }
     }
 
@@ -4163,7 +4249,18 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return;
         }
         world.spawnParticle(Particle.SOUL_FIRE_FLAME, to.clone().add(0.0D, 0.8D, 0.0D), 10, 0.28D, 0.35D, 0.28D, 0.04D);
-        playSoulfireLineWarning(from, to);
+        playSoulfireChargeWarning(from, to, customMonsterTick);
+    }
+
+    private void playSoulfireSlamWindupStart(Location center) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        Location lifted = center.clone().add(0.0D, 1.7D, 0.0D);
+        world.spawnParticle(Particle.REVERSE_PORTAL, lifted, 48, 0.45D, 0.7D, 0.45D, 0.02D);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, lifted, 28, 0.25D, 0.45D, 0.25D, 0.04D);
+        world.playSound(center, Sound.ENTITY_WITHER_SHOOT, 0.75F, 1.45F);
     }
 
     private DungeonRun dungeonRunByBoss(UUID bossUuid) {
@@ -6773,6 +6870,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             pitch -= 0.18F * progress;
             roll += 0.12F * progress;
         }
+        float lift = 0.0F;
+        DungeonRun run = dungeonRunByBoss(uuid);
+        BossSkillCast cast = run == null ? null : run.activeBossSkill;
+        if (cast != null && cast.type == BossSkillType.SOULFIRE && cast.phase == BossSkillPhase.AFTERSHOCK) {
+            float progress = Math.max(0.0F, Math.min(1.0F, (float) cast.phaseAge(tick) / FERRYMAN_SOULFIRE_AFTERSHOCK_TICKS));
+            lift = (float) Math.sin(progress * Math.PI) * 0.32F;
+            pitch -= 0.34F * (1.0F - progress);
+            roll += (float) Math.sin(progress * Math.PI * 4.0D) * 0.06F;
+        }
         long hurtAge = tick - ferrymanHurtTicks.getOrDefault(uuid, -100L);
         if (hurtAge >= 0L && hurtAge < 7L) {
             roll += (hurtAge % 2L == 0L ? 0.10F : -0.10F) * (1.0F - hurtAge / 7.0F);
@@ -6784,7 +6890,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             ferrymanHurtTicks.remove(uuid);
         }
         return new Transformation(
-                new Vector3f(0.0F, 0.0F, 0.0F),
+                new Vector3f(0.0F, lift, 0.0F),
                 new AxisAngle4f(pitch, 1.0F, 0.0F, 0.0F),
                 new Vector3f(1.0F, 1.0F, 1.0F),
                 new AxisAngle4f(roll, 0.0F, 0.0F, 1.0F));
@@ -8171,6 +8277,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         private UUID targetUuid;
         private Location chargeStart;
         private Location chargeEnd;
+        private boolean empoweredSoulfire;
         private final Set<UUID> hitPlayers = new HashSet<>();
 
         private BossSkillCast(BossSkillType type, long startedTick) {
@@ -8185,6 +8292,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
         private long phaseAge(long now) {
             return now - phaseStartedTick;
+        }
+
+        private double soulfirePathDamage() {
+            return empoweredSoulfire ? FERRYMAN_SOULFIRE_EMPOWERED_PATH_DAMAGE : FERRYMAN_SOULFIRE_PATH_DAMAGE;
         }
     }
 
