@@ -148,6 +148,37 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final double GULPER_SATURATION_DRAIN = 4.0D;
     private static final int GULPER_FOOD_DRAIN = 4;
     private static final double GULPER_HEALTH_DRAIN = 1.0D;
+    private static final String FERRYMAN_TYPE = "ferryman";
+    private static final float FERRYMAN_DISPLAY_PICK_SIZE = 0.0F;
+    private static final double FERRYMAN_MAX_HEALTH = 5800.0D;
+    private static final double FERRYMAN_ARMOR = 20.0D;
+    private static final double FERRYMAN_ATTACK_DAMAGE = 30.0D;
+    private static final double FERRYMAN_FOLLOW_RANGE = 64.0D;
+    private static final double FERRYMAN_MOVEMENT_SPEED = 0.30D;
+    private static final double FERRYMAN_KNOCKBACK_RESISTANCE = 1.0D;
+    private static final double FERRYMAN_HEALTH_DISPLAY_HEIGHT = 3.0D;
+    private static final double FERRYMAN_HITBOX_EXPANSION = 0.38D;
+    private static final double FERRYMAN_DIMENSION_DISORDER_Y = 70.0D;
+    private static final long FERRYMAN_FIRST_SKILL_DELAY_TICKS = 100L;
+    private static final long FERRYMAN_SKILL_INTERVAL_TICKS = 120L;
+    private static final long FERRYMAN_CAST_TICKS = 60L;
+    private static final long FERRYMAN_SOULFIRE_CHARGE_TICKS = 8L;
+    private static final long FERRYMAN_SOULFIRE_AFTERSHOCK_TICKS = 20L;
+    private static final long FERRYMAN_WASTELAND_CAST_TICKS = 200L;
+    private static final long FERRYMAN_WASTELAND_ENRAGE_TICKS = 20L * 180L;
+    private static final double FERRYMAN_FERRY_RADIUS = 5.0D;
+    private static final double FERRYMAN_FERRY_DAMAGE = 65.0D;
+    private static final double FERRYMAN_SOULFIRE_PATH_DAMAGE = 40.0D;
+    private static final double FERRYMAN_SOULFIRE_PATH_WIDTH = 1.55D;
+    private static final double FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS = 3.0D;
+    private static final double FERRYMAN_SOULFIRE_AFTERSHOCK_DAMAGE = 10.0D;
+    private static final int FERRYMAN_SOULFIRE_BURN_TICKS = 20 * 10;
+    private static final double FERRYMAN_SHOCK_DAMAGE = 30.0D;
+    private static final BossSkillType[] FERRYMAN_SKILL_SEQUENCE = {
+            BossSkillType.FERRY,
+            BossSkillType.SOULFIRE,
+            BossSkillType.SHOCK
+    };
     private static final String PUS_BUG_TYPE = "pus_bug";
     private static final float PUS_BUG_DISPLAY_PICK_SIZE = 0.0F;
     private static final double PUS_BUG_MAX_HEALTH = 40.0D;
@@ -206,6 +237,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final int SLOT_TOWER_BLESSING = 53;
     private static final int BLESSING_MENU_SIZE = 27;
     private static final int SLOT_BLESSING_NONE = 11;
+    private static final int SLOT_BLESSING_ARCHER_BLESSING = 13;
     private static final int SLOT_BLESSING_SWORDSMAN_MEMORY = 15;
     private static final int DUNGEON_INFO_SIZE = 27;
     private static final int SLOT_DUNGEON_EXIT = 10;
@@ -227,6 +259,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final int MAX_DUNGEON_WAVE_COUNT = 20;
     private static final int MAX_DUNGEON_WAVE_WAIT_SECONDS = 300;
     private static final int DEFAULT_DUNGEON_WAVE_WAIT_SECONDS = 3;
+    private static final String DEFAULT_DUNGEON_BOSS_TYPE = FERRYMAN_TYPE;
+    private static final String DEFAULT_DUNGEON_BOSS_DISPLAY_NAME = "引渡人";
+    private static final double DEFAULT_DUNGEON_BOSS_MAX_HEALTH = FERRYMAN_MAX_HEALTH;
+    private static final double DEFAULT_DUNGEON_BOSS_ATTACK_DAMAGE = FERRYMAN_ATTACK_DAMAGE;
+    private static final double DEFAULT_DUNGEON_BOSS_ARMOR = FERRYMAN_ARMOR;
+    private static final double DEFAULT_DUNGEON_BOSS_MOVEMENT_SPEED = FERRYMAN_MOVEMENT_SPEED;
+    private static final double DEFAULT_DUNGEON_BOSS_FOLLOW_RANGE = FERRYMAN_FOLLOW_RANGE;
+    private static final double DUNGEON_BOSS_FALL_RESET_Y_OFFSET = 8.0D;
+    private static final double DUNGEON_BOSS_PLATFORM_RESET_RADIUS = 24.0D;
     private static final int SLOT_ADD_DUNGEON_WAVE = 21;
     private static final int SLOT_REMOVE_DUNGEON_WAVE = 23;
     private static final int SLOT_DUNGEON_REWARDS = 25;
@@ -366,6 +407,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private NamespacedKey gulperModelKey;
     private NamespacedKey gulperDisplayKey;
     private NamespacedKey gulperDisplayOwnerKey;
+    private NamespacedKey ferrymanModelKey;
+    private NamespacedKey ferrymanDisplayKey;
+    private NamespacedKey ferrymanDisplayOwnerKey;
     private NamespacedKey pusBugModelKey;
     private NamespacedKey pusBugDisplayKey;
     private NamespacedKey pusBugDisplayOwnerKey;
@@ -386,6 +430,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private final Map<UUID, Long> rottenGuardHurtTicks = new HashMap<>();
     private final Map<UUID, Float> rottenGuardBodyYaws = new HashMap<>();
     private final Map<UUID, UUID> gulperDisplays = new HashMap<>();
+    private final Map<UUID, UUID> ferrymanDisplays = new HashMap<>();
+    private final Map<UUID, Long> ferrymanAttackTicks = new HashMap<>();
+    private final Map<UUID, Long> ferrymanHurtTicks = new HashMap<>();
     private final Map<UUID, UUID> pusBugDisplays = new HashMap<>();
     private final Map<UUID, EnumMap<TrainingDummyPart, UUID>> trainingDummyDisplays = new HashMap<>();
     private final Map<UUID, List<TrainingDummyDamageSample>> trainingDummyDamageSamples = new HashMap<>();
@@ -430,6 +477,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         gulperModelKey = new NamespacedKey(this, "gulper_model");
         gulperDisplayKey = new NamespacedKey(this, "gulper_display");
         gulperDisplayOwnerKey = new NamespacedKey(this, "gulper_display_owner");
+        ferrymanModelKey = new NamespacedKey(this, "ferryman_model");
+        ferrymanDisplayKey = new NamespacedKey(this, "ferryman_display");
+        ferrymanDisplayOwnerKey = new NamespacedKey(this, "ferryman_display_owner");
         pusBugModelKey = new NamespacedKey(this, "pus_bug_model");
         pusBugDisplayKey = new NamespacedKey(this, "pus_bug_display");
         pusBugDisplayOwnerKey = new NamespacedKey(this, "pus_bug_display_owner");
@@ -527,6 +577,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         pusPools.clear();
         removeAllRottenGuardDisplays();
         removeAllGulperDisplays();
+        removeAllFerrymanDisplays();
         removeAllPusBugDisplays();
         removeAllTrainingDummyDisplays();
         removeAllCustomMonsterHealthDisplays();
@@ -670,7 +721,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return true;
         }
         if (args.length < 2 || !"spawn".equalsIgnoreCase(args[0]) || !isCustomMonsterInput(args[1])) {
-            sender.sendMessage("用法: /" + label + " spawn <rotten_guard|pus_bug|training_dummy> [数量]");
+            sender.sendMessage("用法: /" + label + " spawn <rotten_guard|gulper|ferryman|pus_bug|training_dummy> [数量]");
             return true;
         }
         String monsterType = normalizeCustomMonsterType(args[1]);
@@ -694,6 +745,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     @EventHandler(ignoreCancelled = true)
     public void onCustomMonsterTarget(EntityTargetLivingEntityEvent event) {
+        if (dungeonRunByBoss(event.getEntity().getUniqueId()) != null && !(event.getTarget() instanceof Player)) {
+            event.setCancelled(true);
+            return;
+        }
         if (isCustomMonster(event.getEntity()) && !(event.getTarget() instanceof Player)) {
             event.setCancelled(true);
         }
@@ -701,6 +756,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     @EventHandler
     public void onCustomMonsterDeath(EntityDeathEvent event) {
+        DungeonRun bossRun = dungeonRunByBoss(event.getEntity().getUniqueId());
+        if (bossRun != null) {
+            if (isFerryman(event.getEntity())) {
+                removeFerrymanDisplay(event.getEntity().getUniqueId());
+            }
+            event.getEntity().setSilent(true);
+            event.setShouldPlayDeathSound(false);
+            event.setDeathSound(null);
+            event.setDeathSoundVolume(0.0F);
+            event.getDrops().clear();
+            event.setDroppedExp(40);
+            completeDungeonRun(bossRun, event.getEntity().getWorld());
+            return;
+        }
         if (isRottenGuard(event.getEntity())) {
             removeRottenGuardDisplay(event.getEntity().getUniqueId());
             event.getEntity().setSilent(true);
@@ -719,6 +788,16 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             event.setDeathSoundVolume(0.0F);
             event.getDrops().clear();
             event.setDroppedExp(15);
+            return;
+        }
+        if (isFerryman(event.getEntity())) {
+            removeFerrymanDisplay(event.getEntity().getUniqueId());
+            event.getEntity().setSilent(true);
+            event.setShouldPlayDeathSound(false);
+            event.setDeathSound(null);
+            event.setDeathSoundVolume(0.0F);
+            event.getDrops().clear();
+            event.setDroppedExp(80);
             return;
         }
         if (isPusBug(event.getEntity())) {
@@ -787,6 +866,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 return;
             }
         }
+        if (isFerryman(event.getEntity())) {
+            Zombie zombie = (Zombie) event.getEntity();
+            zombie.setSilent(true);
+            ferrymanHurtTicks.put(event.getEntity().getUniqueId(), customMonsterTick);
+        }
         if (isPusBug(event.getEntity())) {
             Endermite endermite = (Endermite) event.getEntity();
             endermite.setSilent(true);
@@ -801,6 +885,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         if (event instanceof EntityDamageByEntityEvent byEntity && isGulper(byEntity.getDamager()) && event.getEntity() instanceof Player player) {
             applyGulperDrain((Zombie) byEntity.getDamager(), player);
+        }
+        if (event instanceof EntityDamageByEntityEvent byEntity && isFerryman(byEntity.getDamager())) {
+            if (isBossSkillLocked(byEntity.getDamager().getUniqueId())) {
+                event.setCancelled(true);
+                return;
+            }
+            ferrymanAttackTicks.put(byEntity.getDamager().getUniqueId(), customMonsterTick);
         }
     }
 
@@ -843,7 +934,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onTrainingDummyKnockback(EntityKnockbackEvent event) {
-        if (isTrainingDummy(event.getEntity())) {
+        if (isTrainingDummy(event.getEntity()) || isFerryman(event.getEntity())) {
             event.setCancelled(true);
         }
     }
@@ -1472,6 +1563,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             openTowerMenu(player);
             return;
         }
+        if (slot == SLOT_BLESSING_ARCHER_BLESSING) {
+            setSelectedBlessing(player, DungeonBlessing.ARCHER_BLESSING);
+            openTowerMenu(player);
+            return;
+        }
         if (slot == SLOT_BLESSING_SWORDSMAN_MEMORY) {
             setSelectedBlessing(player, DungeonBlessing.SWORDSMAN_MEMORY);
             openTowerMenu(player);
@@ -1764,6 +1860,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         Inventory inventory = Bukkit.createInventory(new BlessingMenu(), BLESSING_MENU_SIZE, Component.text("祝福选择", NamedTextColor.DARK_AQUA));
         DungeonBlessing selected = selectedBlessing(player);
         inventory.setItem(SLOT_BLESSING_NONE, blessingItem(DungeonBlessing.NONE, selected));
+        inventory.setItem(SLOT_BLESSING_ARCHER_BLESSING, blessingItem(DungeonBlessing.ARCHER_BLESSING, selected));
         inventory.setItem(SLOT_BLESSING_SWORDSMAN_MEMORY, blessingItem(DungeonBlessing.SWORDSMAN_MEMORY, selected));
         player.openInventory(inventory);
     }
@@ -1840,6 +1937,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             lore.add("攻击会优先扣除 4 点饱和度，再扣除饱食度。");
             lore.add("若目标饱和度和饱食度均耗尽，则额外扣除 1 点生命。");
             lore.add("每次命中目标后恢复 " + formatStat(GULPER_ATTACK_HEAL) + " 点生命。");
+        }
+        if (FERRYMAN_TYPE.equals(enemy.type())) {
+            lore.add("完全免疫击退。");
+            lore.add("使用普通近战追击玩家。");
+            lore.add("斗笠下已无可辨认的面容，只剩留客于塔的执念。");
         }
         inventory.setItem(SLOT_ENEMY_DETAIL_INFO, menuItem(enemy.icon(), enemy.displayName(), NamedTextColor.DARK_GREEN, lore));
         inventory.setItem(SLOT_ENEMY_DETAIL_BACK, menuItem(Material.ARROW, "返回图鉴", NamedTextColor.YELLOW,
@@ -1939,6 +2041,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return List.of();
         }
         Set<String> types = new java.util.LinkedHashSet<>();
+        if (module.dungeonType() == DungeonType.BOSS) {
+            types.add(normalizeCustomMonsterType(module.bossConfig().type()));
+        }
         for (DungeonWaveConfig wave : module.dungeonWaves()) {
             for (DungeonWaveEnemyConfig enemy : wave.enemies()) {
                 types.add(normalizeCustomMonsterType(enemy.type()));
@@ -2567,7 +2672,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return "直接命中主目标时施加凋零 " + romanLevel(level) + "，持续 " + seconds + " 秒；不由横扫触发。";
         }
         if (CUSTOM_ENCHANT_PAIN_BLADE.equals(enchantId)) {
-            return "直接命中已处于负面状态的主目标时，当次直接物理伤害 +" + formatPercent(level * 3.0D)
+            return "直接命中主目标时，目标每有 1 种负面状态，当次直接物理伤害 +" + formatPercent(level * 2.0D)
                     + "；不提升横扫伤害或异常状态伤害。";
         }
         if (CUSTOM_ENCHANT_SELF_GROWING.equals(enchantId)) {
@@ -2694,7 +2799,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         configureWorld(world, spawn, menu.borderDistance);
         ModuleRecord module = new ModuleRecord(menu.key, menu.displayName, menu.dungeonName, menu.iconMaterial, worldName, menu.borderDistance,
                 spawn.getX(), spawn.getY(), spawn.getZ(), spawn.getYaw(), spawn.getPitch(), menu.curseEscapeDeaths,
-                null, defaultDungeonWaves(), List.of(), List.of());
+                null, DungeonType.WAVES, defaultDungeonWaves(), BossConfig.defaultConfig(), List.of(), List.of());
         modules.put(menu.key, module);
         saveModules();
         player.sendMessage("已创建模板世界 " + menu.displayName + "。可使用 /module enter " + menu.displayName + " 进入。");
@@ -3343,15 +3448,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void startDungeonRun(Player player, TowerInstance instance, ModuleRecord module, Location center) {
-        DungeonRun run = new DungeonRun(hudService, instance.worldName(), module.key(), center, module.dungeonWaves());
+        DungeonRun run = new DungeonRun(hudService, instance.worldName(), module.key(), center,
+                module.dungeonType(), module.dungeonWaves(), module.bossConfig(), customMonsterTick);
         dungeonRunsByWorld.put(instance.worldName(), run);
         addDungeonBossBarPlayers(run);
         player.sendMessage(module.dungeonName() + " 已启动。");
         player.playSound(player.getLocation(), Sound.BLOCK_TRIAL_SPAWNER_SPAWN_MOB, 0.8F, 0.9F);
-        spawnDungeonWave(run);
+        if (run.isBossDungeon()) {
+            spawnDungeonBoss(run);
+        } else {
+            spawnDungeonWave(run);
+        }
     }
 
-    private void tickDungeonRuns() {
+    private void tickDungeonRuns(boolean combatTick) {
         for (DungeonRun run : new ArrayList<>(dungeonRunsByWorld.values())) {
             World world = Bukkit.getWorld(run.worldName);
             if (world == null || !towerInstancesByWorld.containsKey(run.worldName)) {
@@ -3360,6 +3470,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 continue;
             }
             addDungeonBossBarPlayers(run);
+            if (run.isBossDungeon()) {
+                tickDungeonBossRun(run, world);
+                continue;
+            }
+            if (!combatTick) {
+                continue;
+            }
             run.liveMobs.removeIf(uuid -> {
                 Entity entity = Bukkit.getEntity(uuid);
                 return entity == null || entity.isDead() || !entity.isValid() || !entity.getWorld().equals(world);
@@ -3399,7 +3516,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 continue;
             }
             ModuleRecord module = modules.get(instance.moduleKey());
-            if (module == null || module.dungeonStarter() == null || module.dungeonWaves().isEmpty()) {
+            if (module == null || module.dungeonStarter() == null || module.dungeonType() != DungeonType.WAVES || module.dungeonWaves().isEmpty()) {
                 continue;
             }
             BlockPos starter = module.dungeonStarter();
@@ -3477,6 +3594,476 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         return null;
     }
 
+    private void spawnDungeonBoss(DungeonRun run) {
+        World world = Bukkit.getWorld(run.worldName);
+        if (world == null) {
+            return;
+        }
+        BossConfig boss = run.bossConfig;
+        Location spawn = run.center.clone();
+        Entity spawnedBoss = isCustomMonsterInput(boss.type()) ? spawnCustomMonster(normalizeCustomMonsterType(boss.type()), spawn) : null;
+        if (spawnedBoss instanceof LivingEntity living) {
+            applyDungeonBossStats(living, boss, true);
+            run.bossUuid = living.getUniqueId();
+            updateDungeonBossBar(run);
+            for (Player player : world.getPlayers()) {
+                player.sendMessage(boss.displayName() + " 出现了。");
+                player.playSound(player.getLocation(), Sound.ENTITY_WITHER_SPAWN, 0.65F, 0.75F);
+            }
+            return;
+        }
+        Zombie entity = world.spawn(spawn, Zombie.class, zombie -> {
+            zombie.customName(Component.text(boss.displayName(), NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
+            zombie.setCustomNameVisible(false);
+            zombie.setAdult();
+            zombie.setShouldBurnInDay(false);
+            zombie.setCanPickupItems(false);
+            zombie.setRemoveWhenFarAway(false);
+            zombie.setPersistent(true);
+            zombie.setSilent(true);
+            zombie.setAI(true);
+            applyDungeonBossStats(zombie, boss, true);
+            EntityEquipment equipment = zombie.getEquipment();
+            if (equipment != null) {
+                equipment.setItemInMainHand(new ItemStack(Material.NETHERITE_AXE));
+                equipment.setHelmet(new ItemStack(Material.NETHERITE_HELMET));
+                equipment.setChestplate(new ItemStack(Material.NETHERITE_CHESTPLATE));
+                equipment.setLeggings(new ItemStack(Material.NETHERITE_LEGGINGS));
+                equipment.setBoots(new ItemStack(Material.NETHERITE_BOOTS));
+                equipment.setItemInMainHandDropChance(0.0F);
+                equipment.setHelmetDropChance(0.0F);
+                equipment.setChestplateDropChance(0.0F);
+                equipment.setLeggingsDropChance(0.0F);
+                equipment.setBootsDropChance(0.0F);
+            }
+        });
+        run.bossUuid = entity.getUniqueId();
+        updateDungeonBossBar(run);
+        for (Player player : world.getPlayers()) {
+            player.sendMessage(boss.displayName() + " 出现了。");
+            player.playSound(player.getLocation(), Sound.ENTITY_WITHER_SPAWN, 0.65F, 0.75F);
+        }
+    }
+
+    private void applyDungeonBossStats(LivingEntity entity, BossConfig boss, boolean heal) {
+        setAttribute(entity, Attribute.MAX_HEALTH, boss.maxHealth());
+        setAttribute(entity, Attribute.ARMOR, boss.armor());
+        setAttribute(entity, Attribute.ATTACK_DAMAGE, boss.attackDamage());
+        setAttribute(entity, Attribute.MOVEMENT_SPEED, boss.movementSpeed());
+        setAttribute(entity, Attribute.FOLLOW_RANGE, boss.followRange());
+        if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(boss.type()))) {
+            setAttribute(entity, Attribute.KNOCKBACK_RESISTANCE, FERRYMAN_KNOCKBACK_RESISTANCE);
+        }
+        if (heal) {
+            entity.setHealth(Math.max(1.0D, Math.min(boss.maxHealth(), maxHealth(entity))));
+        }
+    }
+
+    private void tickDungeonBossRun(DungeonRun run, World world) {
+        LivingEntity boss = run.bossEntity();
+        if (boss == null || boss.isDead() || !boss.isValid() || !boss.getWorld().equals(world)) {
+            updateDungeonBossBar(run);
+            return;
+        }
+        tickBossPassiveRules(run, world, boss);
+        BossConfig config = run.bossConfig;
+        applyDungeonBossStats(boss, config, false);
+        if (isFerryman(boss)) {
+            tickFerrymanBossSkills(run, world, boss);
+        }
+        if (boss instanceof Zombie zombie) {
+            zombie.setShouldBurnInDay(false);
+            zombie.setSilent(true);
+            if (run.activeBossSkill != null || run.bossEnraged) {
+                zombie.setAI(false);
+                zombie.setTarget(null);
+                zombie.setVelocity(new Vector(0.0D, zombie.getVelocity().getY(), 0.0D));
+            } else if (zombie.getTarget() instanceof Player target && isValidMonsterTarget(zombie, target)) {
+                zombie.setAI(true);
+                // Keep its current target when still valid.
+            } else {
+                zombie.setAI(true);
+                zombie.setTarget(nearestMonsterTarget(zombie));
+            }
+        }
+        if (shouldResetDungeonBoss(run, boss)) {
+            resetDungeonBossToCenter(run, boss);
+        }
+        updateDungeonBossBar(run);
+    }
+
+    private void tickBossPassiveRules(DungeonRun run, World world, LivingEntity boss) {
+        if (!isFerryman(boss)) {
+            return;
+        }
+        if (boss.getLocation().getY() < FERRYMAN_DIMENSION_DISORDER_Y) {
+            resetDungeonBossToCenter(run, boss);
+        }
+        for (Player player : world.getPlayers()) {
+            if (!isActiveDungeonPlayer(player) || player.getLocation().getY() >= FERRYMAN_DIMENSION_DISORDER_Y) {
+                continue;
+            }
+            killDungeonPlayer(player);
+        }
+    }
+
+    private void tickFerrymanBossSkills(DungeonRun run, World world, LivingEntity boss) {
+        if (run.bossEnraged) {
+            killAllDungeonPlayers(world);
+            return;
+        }
+        long elapsed = customMonsterTick - run.bossStartTick;
+        if (elapsed >= FERRYMAN_WASTELAND_ENRAGE_TICKS
+                && (run.activeBossSkill == null || run.activeBossSkill.type != BossSkillType.WASTELAND)) {
+            startBossSkill(run, boss, BossSkillType.WASTELAND);
+        }
+        if (run.activeBossSkill == null && customMonsterTick >= run.nextBossSkillTick) {
+            BossSkillType type = FERRYMAN_SKILL_SEQUENCE[run.nextBossSkillIndex % FERRYMAN_SKILL_SEQUENCE.length];
+            run.nextBossSkillIndex++;
+            startBossSkill(run, boss, type);
+        }
+        if (run.activeBossSkill != null) {
+            tickActiveBossSkill(run, world, boss);
+        }
+    }
+
+    private void startBossSkill(DungeonRun run, LivingEntity boss, BossSkillType type) {
+        BossSkillCast cast = new BossSkillCast(type, customMonsterTick);
+        if (type == BossSkillType.SOULFIRE) {
+            Player target = nearestMonsterTarget(boss);
+            if (target == null) {
+                run.nextBossSkillTick = customMonsterTick + 20L;
+                return;
+            }
+            cast.targetUuid = target.getUniqueId();
+        } else if (type == BossSkillType.WASTELAND) {
+            resetDungeonBossToCenter(run, boss);
+            run.nextBossSkillTick = Long.MAX_VALUE;
+        }
+        run.activeBossSkill = cast;
+        boss.setVelocity(new Vector(0.0D, 0.0D, 0.0D));
+        if (boss instanceof Zombie zombie) {
+            zombie.setAI(false);
+            zombie.setTarget(null);
+        }
+    }
+
+    private void tickActiveBossSkill(DungeonRun run, World world, LivingEntity boss) {
+        BossSkillCast cast = run.activeBossSkill;
+        if (cast == null) {
+            return;
+        }
+        boss.setVelocity(new Vector(0.0D, boss.getVelocity().getY(), 0.0D));
+        if (cast.type == BossSkillType.FERRY) {
+            playFerrymanFerryWarning(boss.getLocation());
+            if (cast.age(customMonsterTick) >= FERRYMAN_CAST_TICKS) {
+                dealBossPhysicalDamageInRadius(boss, boss.getLocation(), FERRYMAN_FERRY_RADIUS, FERRYMAN_FERRY_DAMAGE);
+                finishBossSkill(run);
+            }
+            return;
+        }
+        if (cast.type == BossSkillType.SHOCK) {
+            playFerrymanShockWarning(world, run.center);
+            if (cast.age(customMonsterTick) >= FERRYMAN_CAST_TICKS) {
+                dealBossPhysicalDamageToAll(boss, world, FERRYMAN_SHOCK_DAMAGE);
+                finishBossSkill(run);
+            }
+            return;
+        }
+        if (cast.type == BossSkillType.WASTELAND) {
+            playFerrymanWastelandWarning(world, run.center, cast.age(customMonsterTick));
+            if (cast.age(customMonsterTick) >= FERRYMAN_WASTELAND_CAST_TICKS) {
+                run.activeBossSkill = null;
+                run.bossEnraged = true;
+                killAllDungeonPlayers(world);
+            }
+            return;
+        }
+        tickSoulfireSkill(run, world, boss, cast);
+    }
+
+    private void tickSoulfireSkill(DungeonRun run, World world, LivingEntity boss, BossSkillCast cast) {
+        Player target = cast.targetUuid == null ? null : Bukkit.getPlayer(cast.targetUuid);
+        if (cast.phase == BossSkillPhase.CASTING) {
+            if (target == null || !target.isOnline() || !target.getWorld().equals(world) || target.isDead()) {
+                target = nearestMonsterTarget(boss);
+                cast.targetUuid = target == null ? null : target.getUniqueId();
+            }
+            if (target != null) {
+                playSoulfireLineWarning(boss.getLocation(), target.getLocation());
+            }
+            if (cast.age(customMonsterTick) >= FERRYMAN_CAST_TICKS) {
+                if (target == null) {
+                    finishBossSkill(run);
+                    return;
+                }
+                cast.phase = BossSkillPhase.CHARGING;
+                cast.phaseStartedTick = customMonsterTick;
+                cast.chargeStart = boss.getLocation().clone();
+                cast.chargeEnd = target.getLocation().clone();
+                cast.hitPlayers.clear();
+            }
+            return;
+        }
+        if (cast.phase == BossSkillPhase.CHARGING) {
+            double progress = Math.min(1.0D, (double) cast.phaseAge(customMonsterTick) / FERRYMAN_SOULFIRE_CHARGE_TICKS);
+            Location next = interpolateLocation(cast.chargeStart, cast.chargeEnd, progress);
+            boss.teleport(next);
+            playSoulfireChargeParticles(cast.chargeStart, next);
+            damagePlayersNearSoulfirePath(boss, world, cast, cast.chargeStart, next);
+            if (cast.phaseAge(customMonsterTick) >= FERRYMAN_SOULFIRE_CHARGE_TICKS) {
+                cast.phase = BossSkillPhase.AFTERSHOCK;
+                cast.phaseStartedTick = customMonsterTick;
+            }
+            return;
+        }
+        playFerrymanAftershockWarning(boss.getLocation());
+        if (cast.phaseAge(customMonsterTick) >= FERRYMAN_SOULFIRE_AFTERSHOCK_TICKS) {
+            dealSoulfireAftershock(world, boss.getLocation());
+            finishBossSkill(run);
+        }
+    }
+
+    private void finishBossSkill(DungeonRun run) {
+        run.activeBossSkill = null;
+        run.nextBossSkillTick = customMonsterTick + FERRYMAN_SKILL_INTERVAL_TICKS;
+    }
+
+    private boolean isBossSkillLocked(UUID bossUuid) {
+        DungeonRun run = dungeonRunByBoss(bossUuid);
+        return run != null && (run.activeBossSkill != null || run.bossEnraged);
+    }
+
+    private boolean shouldResetDungeonBoss(DungeonRun run, LivingEntity boss) {
+        Location location = boss.getLocation();
+        if (location.getY() < run.center.getY() - DUNGEON_BOSS_FALL_RESET_Y_OFFSET) {
+            return true;
+        }
+        if (!Objects.equals(location.getWorld(), run.center.getWorld())) {
+            return true;
+        }
+        double dx = location.getX() - run.center.getX();
+        double dz = location.getZ() - run.center.getZ();
+        double maxDistance = DUNGEON_BOSS_PLATFORM_RESET_RADIUS;
+        return dx * dx + dz * dz > maxDistance * maxDistance && location.getY() <= run.center.getY() + 2.0D;
+    }
+
+    private void resetDungeonBossToCenter(DungeonRun run, LivingEntity boss) {
+        Location target = run.center.clone();
+        World world = target.getWorld();
+        if (world == null) {
+            return;
+        }
+        boss.teleport(target);
+        boss.setVelocity(new Vector(0.0D, 0.0D, 0.0D));
+        boss.setFallDistance(0.0F);
+        world.spawnParticle(Particle.PORTAL, target.clone().add(0.0D, 1.0D, 0.0D), 48, 0.6D, 0.9D, 0.6D, 0.05D);
+        world.playSound(target, Sound.ENTITY_ENDERMAN_TELEPORT, 0.65F, 0.75F);
+    }
+
+    private void dealBossPhysicalDamageInRadius(LivingEntity boss, Location center, double radius, double damage) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        double radiusSquared = radius * radius;
+        for (Player player : world.getPlayers()) {
+            if (!isActiveDungeonPlayer(player) || player.getLocation().distanceSquared(center) > radiusSquared) {
+                continue;
+            }
+            dealBossPhysicalDamage(boss, player, damage);
+        }
+        world.playSound(center, Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1.0F, 0.55F);
+    }
+
+    private void dealBossPhysicalDamageToAll(LivingEntity boss, World world, double damage) {
+        for (Player player : world.getPlayers()) {
+            if (isActiveDungeonPlayer(player)) {
+                dealBossPhysicalDamage(boss, player, damage);
+            }
+        }
+        world.playSound(boss.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, 0.75F, 0.8F);
+    }
+
+    private void dealBossPhysicalDamage(LivingEntity boss, Player player, double damage) {
+        player.setNoDamageTicks(0);
+        player.damage(damage, boss);
+        player.setNoDamageTicks(0);
+    }
+
+    private void dealBossMagicDamage(Player player, double damage) {
+        if (!isActiveDungeonPlayer(player) || damage <= 0.0D) {
+            return;
+        }
+        player.setNoDamageTicks(0);
+        if (player.getHealth() <= damage) {
+            player.setHealth(0.0D);
+            return;
+        }
+        player.setHealth(Math.max(0.0D, player.getHealth() - damage));
+    }
+
+    private void killAllDungeonPlayers(World world) {
+        for (Player player : world.getPlayers()) {
+            killDungeonPlayer(player);
+        }
+    }
+
+    private void killDungeonPlayer(Player player) {
+        if (!isActiveDungeonPlayer(player)) {
+            return;
+        }
+        player.setNoDamageTicks(0);
+        player.setHealth(0.0D);
+    }
+
+    private boolean isActiveDungeonPlayer(Player player) {
+        return player != null
+                && player.isOnline()
+                && !player.isDead()
+                && player.getGameMode() != GameMode.CREATIVE
+                && player.getGameMode() != GameMode.SPECTATOR;
+    }
+
+    private void damagePlayersNearSoulfirePath(LivingEntity boss, World world, BossSkillCast cast, Location start, Location end) {
+        Vector a = start.toVector();
+        Vector b = end.toVector();
+        double widthSquared = FERRYMAN_SOULFIRE_PATH_WIDTH * FERRYMAN_SOULFIRE_PATH_WIDTH;
+        for (Player player : world.getPlayers()) {
+            if (!isActiveDungeonPlayer(player) || cast.hitPlayers.contains(player.getUniqueId())) {
+                continue;
+            }
+            if (distanceSquaredToSegment(player.getLocation().toVector(), a, b) > widthSquared) {
+                continue;
+            }
+            cast.hitPlayers.add(player.getUniqueId());
+            dealBossPhysicalDamage(boss, player, FERRYMAN_SOULFIRE_PATH_DAMAGE);
+        }
+    }
+
+    private double distanceSquaredToSegment(Vector point, Vector start, Vector end) {
+        Vector segment = end.clone().subtract(start);
+        double lengthSquared = segment.lengthSquared();
+        if (lengthSquared <= 0.0001D) {
+            return point.distanceSquared(start);
+        }
+        double t = point.clone().subtract(start).dot(segment) / lengthSquared;
+        t = Math.max(0.0D, Math.min(1.0D, t));
+        Vector projection = start.clone().add(segment.multiply(t));
+        return point.distanceSquared(projection);
+    }
+
+    private void dealSoulfireAftershock(World world, Location center) {
+        double radiusSquared = FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS * FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS;
+        for (Player player : world.getPlayers()) {
+            if (!isActiveDungeonPlayer(player) || player.getLocation().distanceSquared(center) > radiusSquared) {
+                continue;
+            }
+            dealBossMagicDamage(player, FERRYMAN_SOULFIRE_AFTERSHOCK_DAMAGE);
+            player.setVelocity(player.getVelocity().add(new Vector(0.0D, 1.05D, 0.0D)));
+            player.setFireTicks(Math.max(player.getFireTicks(), FERRYMAN_SOULFIRE_BURN_TICKS));
+        }
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, center.clone().add(0.0D, 0.25D, 0.0D), 64, 1.4D, 0.25D, 1.4D, 0.08D);
+        world.playSound(center, Sound.ITEM_FIRECHARGE_USE, 1.0F, 0.65F);
+    }
+
+    private Location interpolateLocation(Location start, Location end, double progress) {
+        World world = start.getWorld();
+        double x = start.getX() + (end.getX() - start.getX()) * progress;
+        double y = start.getY() + (end.getY() - start.getY()) * progress;
+        double z = start.getZ() + (end.getZ() - start.getZ()) * progress;
+        Location location = new Location(world, x, y, z, start.getYaw(), start.getPitch());
+        Vector direction = end.toVector().subtract(start.toVector());
+        if (end.getWorld() == world && direction.lengthSquared() > 0.0001D) {
+            location.setDirection(direction);
+        }
+        return location;
+    }
+
+    private void playFerrymanFerryWarning(Location center) {
+        playWarningCircle(center, FERRYMAN_FERRY_RADIUS, Color.fromRGB(255, 228, 72), 36, 0.08D);
+    }
+
+    private void playFerrymanAftershockWarning(Location center) {
+        playWarningCircle(center, FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS, Color.fromRGB(255, 130, 38), 28, 0.12D);
+    }
+
+    private void playFerrymanShockWarning(World world, Location center) {
+        if (customMonsterTick % 5L != 0L) {
+            return;
+        }
+        Particle.DustOptions dust = new Particle.DustOptions(Color.fromRGB(255, 218, 73), 1.25F);
+        for (Player player : world.getPlayers()) {
+            if (isActiveDungeonPlayer(player)) {
+                world.spawnParticle(Particle.DUST, player.getLocation().clone().add(0.0D, 0.15D, 0.0D), 8, 0.65D, 0.04D, 0.65D, 0.0D, dust);
+            }
+        }
+        world.spawnParticle(Particle.DUST, center.clone().add(0.0D, 0.2D, 0.0D), 10, 2.4D, 0.02D, 2.4D, 0.0D, dust);
+    }
+
+    private void playFerrymanWastelandWarning(World world, Location center, long age) {
+        Particle.DustOptions dust = new Particle.DustOptions(Color.fromRGB(112, 52, 132), 1.8F);
+        double radius = 4.0D + Math.min(12.0D, age / 12.0D);
+        playWarningCircle(center, radius, Color.fromRGB(155, 65, 185), 56, 0.16D);
+        world.spawnParticle(Particle.DUST, center.clone().add(0.0D, 1.0D, 0.0D), 18, 1.2D, 1.2D, 1.2D, 0.0D, dust);
+        if (age % 20L == 0L) {
+            world.playSound(center, Sound.BLOCK_BEACON_DEACTIVATE, 1.1F, 0.55F);
+        }
+    }
+
+    private void playWarningCircle(Location center, double radius, Color color, int points, double yOffset) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        Particle.DustOptions dust = new Particle.DustOptions(color, 1.25F);
+        double phase = customMonsterTick % 10L < 5L ? 0.0D : Math.PI / points;
+        Location origin = center.clone().add(0.0D, yOffset, 0.0D);
+        for (int i = 0; i < points; i++) {
+            double angle = phase + Math.PI * 2.0D * i / points;
+            Location point = origin.clone().add(Math.cos(angle) * radius, 0.0D, Math.sin(angle) * radius);
+            world.spawnParticle(Particle.DUST, point, 1, 0.01D, 0.01D, 0.01D, 0.0D, dust);
+        }
+    }
+
+    private void playSoulfireLineWarning(Location from, Location to) {
+        World world = from.getWorld();
+        if (world == null || to.getWorld() != world) {
+            return;
+        }
+        Particle.DustOptions dust = new Particle.DustOptions(Color.fromRGB(255, 225, 86), 1.15F);
+        Vector start = from.clone().add(0.0D, 1.15D, 0.0D).toVector();
+        Vector end = to.clone().add(0.0D, 0.55D, 0.0D).toVector();
+        Vector delta = end.clone().subtract(start);
+        int points = Math.max(6, (int) Math.ceil(delta.length() * 2.0D));
+        for (int i = 0; i <= points; i++) {
+            double t = (double) i / points;
+            Vector point = start.clone().add(delta.clone().multiply(t));
+            world.spawnParticle(Particle.DUST, point.toLocation(world), 1, 0.01D, 0.01D, 0.01D, 0.0D, dust);
+        }
+    }
+
+    private void playSoulfireChargeParticles(Location from, Location to) {
+        World world = from.getWorld();
+        if (world == null || to.getWorld() != world) {
+            return;
+        }
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, to.clone().add(0.0D, 0.8D, 0.0D), 10, 0.28D, 0.35D, 0.28D, 0.04D);
+        playSoulfireLineWarning(from, to);
+    }
+
+    private DungeonRun dungeonRunByBoss(UUID bossUuid) {
+        if (bossUuid == null) {
+            return null;
+        }
+        for (DungeonRun run : dungeonRunsByWorld.values()) {
+            if (bossUuid.equals(run.bossUuid)) {
+                return run;
+            }
+        }
+        return null;
+    }
+
     private void completeDungeonRun(DungeonRun run, World world) {
         dungeonRunsByWorld.remove(run.worldName);
         run.bossBar.removeAll();
@@ -3525,6 +4112,28 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void updateDungeonBossBar(DungeonRun run) {
+        if (run.isBossDungeon()) {
+            BossConfig config = run.bossConfig;
+            LivingEntity boss = run.bossEntity();
+            if (boss == null || boss.isDead() || !boss.isValid()) {
+                run.bossBar.setTitle(config.displayName() + " - 已消失");
+                run.bossBar.setProgress(0.0D);
+                run.bossBar.setColor(BarColor.PURPLE);
+                return;
+            }
+            double maxHealth = Math.max(1.0D, maxHealth(boss));
+            double health = Math.max(0.0D, Math.min(boss.getHealth(), maxHealth));
+            String state = "";
+            if (run.bossEnraged) {
+                state = " - 荒芜降临";
+            } else if (run.activeBossSkill != null) {
+                state = " - " + run.activeBossSkill.type.displayName();
+            }
+            run.bossBar.setTitle(config.displayName() + state + " - " + formatHealthValue(health) + "/" + formatHealthValue(maxHealth));
+            run.bossBar.setProgress(Math.max(0.0D, Math.min(1.0D, health / maxHealth)));
+            run.bossBar.setColor(BarColor.PURPLE);
+            return;
+        }
         int totalWaves = Math.max(1, run.waves.size());
         if (run.restStartTick >= 0L && run.nextWaveTick > run.restStartTick) {
             long restDuration = run.nextWaveTick - run.restStartTick;
@@ -3595,6 +4204,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         applyDungeonPlayerDamageRules(player);
         callPotionEffectsPlugin("applyWarpSuppression", player, 25_000L);
         callPotionEffectsPlugin("applyStrongBan", player, 25_000L);
+        if (selectedBlessing(player) == DungeonBlessing.ARCHER_BLESSING) {
+            callPotionEffectsPlugin("applyArcherBlessing", player, 25_000L);
+        }
         if (selectedBlessing(player) == DungeonBlessing.SWORDSMAN_MEMORY) {
             callPotionEffectsPlugin("applySwordsmanMemory", player, 25_000L);
         }
@@ -3605,6 +4217,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         callPotionEffectsPlugin("clearWarpSuppression", player);
         callPotionEffectsPlugin("clearStrongBan", player);
         callPotionEffectsPlugin("clearSwordsmanMemory", player);
+        callPotionEffectsPlugin("clearArcherBlessing", player);
         callPotionEffectsPlugin("clearRebirthBlessing", player);
     }
 
@@ -4155,6 +4768,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             float yaw = (float) modulesConfig.getDouble(path + ".spawn.yaw", 0.0D);
             float pitch = (float) modulesConfig.getDouble(path + ".spawn.pitch", 0.0D);
             int curseEscapeDeaths = clampCurseEscapeDeaths(modulesConfig.getInt(path + ".curse-escape-deaths", defaultCurseEscapeDeaths()));
+            DungeonType dungeonType = DungeonType.byId(modulesConfig.getString(path + ".dungeon-type", DungeonType.WAVES.id()));
             BlockPos dungeonStarter = null;
             if (modulesConfig.isConfigurationSection(path + ".dungeon-starter")) {
                 dungeonStarter = new BlockPos(
@@ -4163,11 +4777,12 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                         modulesConfig.getInt(path + ".dungeon-starter.z"));
             }
             List<DungeonWaveConfig> dungeonWaves = loadDungeonWaves(path + ".dungeon-waves");
+            BossConfig bossConfig = loadBossConfig(path + ".boss");
             List<ItemStack> dungeonRewards = loadDungeonRewards(path + ".dungeon-rewards");
             List<String> requiredCompletions = loadModuleRequirements(path + ".entry-requirements.completed-modules");
             modules.put(key, new ModuleRecord(key, displayName, dungeonName, iconMaterial == null ? defaultModuleIcon() : iconMaterial,
                     worldName, borderDistance, x, y, z, yaw, pitch, curseEscapeDeaths,
-                    dungeonStarter, dungeonWaves, dungeonRewards, requiredCompletions));
+                    dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions));
         }
     }
 
@@ -4186,6 +4801,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             out.set(path + ".spawn.yaw", module.spawnYaw());
             out.set(path + ".spawn.pitch", module.spawnPitch());
             out.set(path + ".curse-escape-deaths", module.curseEscapeDeaths());
+            out.set(path + ".dungeon-type", module.dungeonType().id());
             out.set(path + ".entry-requirements.completed-modules", module.requiredCompletions());
             if (module.dungeonStarter() != null) {
                 out.set(path + ".dungeon-starter.x", module.dungeonStarter().x());
@@ -4193,6 +4809,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 out.set(path + ".dungeon-starter.z", module.dungeonStarter().z());
             }
             out.set(path + ".dungeon-waves", dumpDungeonWaves(module.dungeonWaves()));
+            out.set(path + ".boss.type", module.bossConfig().type());
+            out.set(path + ".boss.display-name", module.bossConfig().displayName());
+            out.set(path + ".boss.max-health", module.bossConfig().maxHealth());
+            out.set(path + ".boss.attack-damage", module.bossConfig().attackDamage());
+            out.set(path + ".boss.armor", module.bossConfig().armor());
+            out.set(path + ".boss.movement-speed", module.bossConfig().movementSpeed());
+            out.set(path + ".boss.follow-range", module.bossConfig().followRange());
             out.set(path + ".dungeon-rewards", copyRewardItems(module.dungeonRewards()));
         }
         try {
@@ -4216,6 +4839,17 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         ModuleRecord tower2 = modules.get("tower_2");
         if (tower2 != null && !modulesConfig.contains("modules.tower_2.entry-requirements.completed-modules")) {
             modules.put(tower2.key(), tower2.withRequiredCompletions(List.of("tower_1")));
+            changed = true;
+        }
+        ModuleRecord tower5 = modules.get("tower_5");
+        if (tower5 != null && !modulesConfig.contains("modules.tower_5.entry-requirements.completed-modules")) {
+            tower5 = tower5.withRequiredCompletions(List.of("tower_4"));
+            modules.put(tower5.key(), tower5);
+            changed = true;
+        }
+        tower5 = modules.get("tower_5");
+        if (tower5 != null && !modulesConfig.contains("modules.tower_5.dungeon-type")) {
+            modules.put(tower5.key(), tower5.withDungeonType(DungeonType.BOSS));
             changed = true;
         }
         for (ModuleRecord module : List.copyOf(modules.values())) {
@@ -4419,6 +5053,17 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             enemies.add(new DungeonWaveEnemyConfig(ROTTEN_GUARD_TYPE, count));
         }
         return new DungeonWaveConfig(enemies, waitSeconds);
+    }
+
+    private BossConfig loadBossConfig(String path) {
+        return new BossConfig(
+                modulesConfig.getString(path + ".type", DEFAULT_DUNGEON_BOSS_TYPE),
+                modulesConfig.getString(path + ".display-name", DEFAULT_DUNGEON_BOSS_DISPLAY_NAME),
+                modulesConfig.getDouble(path + ".max-health", DEFAULT_DUNGEON_BOSS_MAX_HEALTH),
+                modulesConfig.getDouble(path + ".attack-damage", DEFAULT_DUNGEON_BOSS_ATTACK_DAMAGE),
+                modulesConfig.getDouble(path + ".armor", DEFAULT_DUNGEON_BOSS_ARMOR),
+                modulesConfig.getDouble(path + ".movement-speed", DEFAULT_DUNGEON_BOSS_MOVEMENT_SPEED),
+                modulesConfig.getDouble(path + ".follow-range", DEFAULT_DUNGEON_BOSS_FOLLOW_RANGE));
     }
 
     private List<ItemStack> loadDungeonRewards(String path) {
@@ -5289,6 +5934,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private Entity spawnCustomMonster(String type, Location location) {
+        if (FERRYMAN_TYPE.equals(type)) {
+            return spawnFerryman(location);
+        }
         if (GULPER_TYPE.equals(type)) {
             return spawnGulper(location);
         }
@@ -5313,6 +5961,27 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             applyGulperStats(spawned, true);
             applyGulperVisualBase(spawned);
             syncGulperDisplay(spawned);
+        });
+        removeRottenGuardChickenJockeyMount(zombie);
+        Bukkit.getScheduler().runTask(this, () -> removeRottenGuardChickenJockeyMount(zombie));
+        return zombie;
+    }
+
+    private Zombie spawnFerryman(Location location) {
+        Zombie zombie = location.getWorld().spawn(location, Zombie.class, spawned -> {
+            spawned.getPersistentDataContainer().set(monsterTypeKey, PersistentDataType.STRING, FERRYMAN_TYPE);
+            spawned.customName(Component.text("引渡人", NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
+            spawned.setCustomNameVisible(false);
+            spawned.setCanPickupItems(false);
+            spawned.setRemoveWhenFarAway(false);
+            spawned.setAdult();
+            spawned.setShouldBurnInDay(false);
+            spawned.setPersistent(true);
+            spawned.setSilent(true);
+            spawned.setAI(true);
+            applyFerrymanStats(spawned, true);
+            applyFerrymanVisualBase(spawned);
+            syncFerrymanDisplay(spawned);
         });
         removeRottenGuardChickenJockeyMount(zombie);
         Bukkit.getScheduler().runTask(this, () -> removeRottenGuardChickenJockeyMount(zombie));
@@ -5359,6 +6028,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         boolean updateCombatLogic = customMonsterTick++ % 20L == 0L;
         Set<UUID> liveRottenGuards = new HashSet<>();
         Set<UUID> liveGulpers = new HashSet<>();
+        Set<UUID> liveFerrymen = new HashSet<>();
         Set<UUID> livePusBugs = new HashSet<>();
         Set<UUID> liveTrainingDummies = new HashSet<>();
         Set<UUID> liveCustomMonsters = new HashSet<>();
@@ -5378,6 +6048,24 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                         if (zombie.isDead() || !zombie.isValid()) {
                             continue;
                         }
+                        if (zombie.getTarget() instanceof Player target && isValidMonsterTarget(zombie, target)) {
+                            continue;
+                        }
+                        zombie.setTarget(nearestMonsterTarget(zombie));
+                    }
+                    continue;
+                }
+                if (isFerryman(zombie) && !zombie.isDead() && zombie.isValid()) {
+                    liveFerrymen.add(zombie.getUniqueId());
+                    liveCustomMonsters.add(zombie.getUniqueId());
+                    removeRottenGuardChickenJockeyMount(zombie);
+                    applyFerrymanVisualBase(zombie);
+                    syncFerrymanDisplay(zombie);
+                    if (dungeonRunByBoss(zombie.getUniqueId()) == null) {
+                        syncCustomMonsterHealthDisplay(zombie);
+                    }
+                    if (updateCombatLogic) {
+                        applyFerrymanStats(zombie, false);
                         if (zombie.getTarget() instanceof Player target && isValidMonsterTarget(zombie, target)) {
                             continue;
                         }
@@ -5442,14 +6130,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         tickPusPools();
         removeMissingRottenGuardDisplays(liveRottenGuards);
         removeMissingGulperDisplays(liveGulpers);
+        removeMissingFerrymanDisplays(liveFerrymen);
         removeMissingPusBugDisplays(livePusBugs);
         removeMissingTrainingDummyDisplays(liveTrainingDummies);
         removeMissingCustomMonsterHealthDisplays(liveCustomMonsters);
         removeMissingSplitDamageCooldowns(liveSplitDamageTargets);
         if (updateCombatLogic) {
             tickIdleDungeonSpawnPreviews();
-            tickDungeonRuns();
         }
+        tickDungeonRuns(updateCombatLogic);
     }
 
     private void applyRottenGuardVisualBase(Zombie zombie) {
@@ -5464,6 +6153,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         zombie.setInvisible(true);
         zombie.setSilent(true);
         zombie.setCanPickupItems(false);
+        clearRottenGuardEquipment(zombie);
+        zombie.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, PotionEffect.INFINITE_DURATION, 0, false, false, false));
+    }
+
+    private void applyFerrymanVisualBase(Zombie zombie) {
+        zombie.setInvisible(true);
+        zombie.setSilent(true);
+        zombie.setCanPickupItems(false);
+        zombie.setShouldBurnInDay(false);
         clearRottenGuardEquipment(zombie);
         zombie.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, PotionEffect.INFINITE_DURATION, 0, false, false, false));
     }
@@ -5855,6 +6553,176 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
+    private void syncFerrymanDisplay(Zombie zombie) {
+        ItemDisplay display = ferrymanDisplay(zombie);
+        Location location = ferrymanDisplayLocation(zombie);
+        configureFerrymanDisplayBounds(display);
+        display.setInterpolationDelay(0);
+        display.setInterpolationDuration(2);
+        display.setTeleportDuration(2);
+        syncDisplayFire(display, zombie);
+        display.setTransformation(ferrymanAnimation(zombie));
+        display.teleport(location);
+        playFerrymanAmbientEffects(zombie);
+    }
+
+    private Location ferrymanDisplayLocation(Zombie zombie) {
+        double bob = Math.sin(customMonsterTick * 0.12D) * 0.035D;
+        Location location = zombie.getLocation().clone();
+        location.add(0.0D, 1.05D + bob, 0.0D);
+        location.setYaw(zombie.getBodyYaw());
+        location.setPitch(0.0F);
+        return location;
+    }
+
+    private Transformation ferrymanAnimation(Zombie zombie) {
+        long tick = customMonsterTick;
+        UUID uuid = zombie.getUniqueId();
+        float pitch = (float) Math.sin(tick * 0.08D) * 0.025F;
+        float roll = (float) Math.sin(tick * 0.10D) * 0.035F;
+        long attackAge = tick - ferrymanAttackTicks.getOrDefault(uuid, -100L);
+        if (attackAge >= 0L && attackAge < 9L) {
+            float progress = 1.0F - attackAge / 9.0F;
+            pitch -= 0.18F * progress;
+            roll += 0.12F * progress;
+        }
+        long hurtAge = tick - ferrymanHurtTicks.getOrDefault(uuid, -100L);
+        if (hurtAge >= 0L && hurtAge < 7L) {
+            roll += (hurtAge % 2L == 0L ? 0.10F : -0.10F) * (1.0F - hurtAge / 7.0F);
+        }
+        if (attackAge >= 9L) {
+            ferrymanAttackTicks.remove(uuid);
+        }
+        if (hurtAge >= 7L) {
+            ferrymanHurtTicks.remove(uuid);
+        }
+        return new Transformation(
+                new Vector3f(0.0F, 0.0F, 0.0F),
+                new AxisAngle4f(pitch, 1.0F, 0.0F, 0.0F),
+                new Vector3f(1.0F, 1.0F, 1.0F),
+                new AxisAngle4f(roll, 0.0F, 0.0F, 1.0F));
+    }
+
+    private void playFerrymanAmbientEffects(Zombie zombie) {
+        if (customMonsterTick % 5L != 0L) {
+            return;
+        }
+        Location center = zombie.getLocation().clone().add(0.0D, 0.12D, 0.0D);
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        world.spawnParticle(Particle.SMOKE, center, 3, 0.42D, 0.08D, 0.42D, 0.01D);
+        Particle.DustOptions dust = new Particle.DustOptions(Color.fromRGB(76, 52, 91), 0.9F);
+        world.spawnParticle(Particle.DUST, center.clone().add(0.0D, 1.1D, 0.0D), 2, 0.35D, 0.45D, 0.35D, 0.0D, dust);
+    }
+
+    private ItemDisplay ferrymanDisplay(Zombie zombie) {
+        UUID displayUuid = ferrymanDisplays.get(zombie.getUniqueId());
+        Entity existing = displayUuid == null ? null : Bukkit.getEntity(displayUuid);
+        if (existing instanceof ItemDisplay display && display.isValid() && display.getWorld().equals(zombie.getWorld())) {
+            return display;
+        }
+        if (existing != null) {
+            existing.remove();
+        }
+        ItemDisplay display = zombie.getWorld().spawn(ferrymanDisplayLocation(zombie), ItemDisplay.class, spawned -> {
+            spawned.setItemStack(createFerrymanDisplayItem());
+            spawned.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.FIXED);
+            spawned.setPersistent(false);
+            spawned.customName(Component.text("引渡人", NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
+            spawned.setCustomNameVisible(false);
+            configureFerrymanDisplayBounds(spawned);
+            spawned.setBrightness(new Display.Brightness(15, 15));
+            spawned.setInterpolationDelay(0);
+            spawned.setInterpolationDuration(2);
+            spawned.setTeleportDuration(2);
+            spawned.getPersistentDataContainer().set(ferrymanDisplayKey, PersistentDataType.BYTE, (byte) 1);
+            spawned.getPersistentDataContainer().set(ferrymanDisplayOwnerKey, PersistentDataType.STRING, zombie.getUniqueId().toString());
+        });
+        ferrymanDisplays.put(zombie.getUniqueId(), display.getUniqueId());
+        return display;
+    }
+
+    private void configureFerrymanDisplayBounds(ItemDisplay display) {
+        display.setDisplayWidth(FERRYMAN_DISPLAY_PICK_SIZE);
+        display.setDisplayHeight(FERRYMAN_DISPLAY_PICK_SIZE);
+        display.setShadowRadius(0.0F);
+        display.setShadowStrength(0.0F);
+    }
+
+    private ItemStack createFerrymanDisplayItem() {
+        ItemStack item = new ItemStack(Material.PAPER);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text("引渡人", NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
+        meta.setItemModel(ferrymanModelKey);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private void removeFerrymanDisplay(UUID zombieUuid) {
+        removeCustomMonsterHealthDisplay(zombieUuid);
+        ferrymanAttackTicks.remove(zombieUuid);
+        ferrymanHurtTicks.remove(zombieUuid);
+        UUID displayUuid = ferrymanDisplays.remove(zombieUuid);
+        Entity display = displayUuid == null ? null : Bukkit.getEntity(displayUuid);
+        if (display != null) {
+            display.remove();
+        }
+        for (World world : Bukkit.getWorlds()) {
+            for (ItemDisplay candidate : world.getEntitiesByClass(ItemDisplay.class)) {
+                if (zombieUuid.toString().equals(candidate.getPersistentDataContainer().get(ferrymanDisplayOwnerKey, PersistentDataType.STRING))) {
+                    candidate.remove();
+                }
+            }
+        }
+    }
+
+    private void removeMissingFerrymanDisplays(Set<UUID> liveFerrymen) {
+        for (UUID zombieUuid : new HashSet<>(ferrymanDisplays.keySet())) {
+            if (!liveFerrymen.contains(zombieUuid)) {
+                removeFerrymanDisplay(zombieUuid);
+                continue;
+            }
+            Entity display = Bukkit.getEntity(ferrymanDisplays.get(zombieUuid));
+            if (display == null || !display.isValid()) {
+                ferrymanDisplays.remove(zombieUuid);
+            }
+        }
+        for (World world : Bukkit.getWorlds()) {
+            for (ItemDisplay display : world.getEntitiesByClass(ItemDisplay.class)) {
+                if (!display.getPersistentDataContainer().has(ferrymanDisplayKey, PersistentDataType.BYTE)) {
+                    continue;
+                }
+                String owner = display.getPersistentDataContainer().get(ferrymanDisplayOwnerKey, PersistentDataType.STRING);
+                if (owner == null) {
+                    display.remove();
+                    continue;
+                }
+                try {
+                    if (!liveFerrymen.contains(UUID.fromString(owner))) {
+                        display.remove();
+                    }
+                } catch (IllegalArgumentException ignored) {
+                    display.remove();
+                }
+            }
+        }
+    }
+
+    private void removeAllFerrymanDisplays() {
+        ferrymanDisplays.clear();
+        ferrymanAttackTicks.clear();
+        ferrymanHurtTicks.clear();
+        for (World world : Bukkit.getWorlds()) {
+            for (ItemDisplay display : world.getEntitiesByClass(ItemDisplay.class)) {
+                if (display.getPersistentDataContainer().has(ferrymanDisplayKey, PersistentDataType.BYTE)) {
+                    display.remove();
+                }
+            }
+        }
+    }
+
     private void syncPusBugDisplay(Endermite endermite) {
         ItemDisplay display = pusBugDisplay(endermite);
         Location location = pusBugDisplayLocation(endermite);
@@ -6179,7 +7047,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private Location customMonsterHealthDisplayLocation(LivingEntity monster) {
         double height = isTrainingDummy(monster)
                 ? TRAINING_DUMMY_HEALTH_DISPLAY_HEIGHT
-                : (isPusBug(monster) ? PUS_BUG_HEALTH_DISPLAY_HEIGHT : (isGulper(monster) ? GULPER_HEALTH_DISPLAY_HEIGHT : ROTTEN_GUARD_HEALTH_DISPLAY_HEIGHT));
+                : (isPusBug(monster) ? PUS_BUG_HEALTH_DISPLAY_HEIGHT : (isGulper(monster) ? GULPER_HEALTH_DISPLAY_HEIGHT
+                : (isFerryman(monster) ? FERRYMAN_HEALTH_DISPLAY_HEIGHT : ROTTEN_GUARD_HEALTH_DISPLAY_HEIGHT)));
         Location location = monster.getLocation().clone().add(0.0D, height, 0.0D);
         location.setPitch(0.0F);
         return location;
@@ -6432,6 +7301,22 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
+    private void applyFerrymanStats(Zombie zombie, boolean heal) {
+        zombie.setAI(true);
+        zombie.setSilent(true);
+        zombie.setAdult();
+        zombie.setShouldBurnInDay(false);
+        setAttribute(zombie, Attribute.MAX_HEALTH, FERRYMAN_MAX_HEALTH);
+        setAttribute(zombie, Attribute.ARMOR, FERRYMAN_ARMOR);
+        setAttribute(zombie, Attribute.ATTACK_DAMAGE, FERRYMAN_ATTACK_DAMAGE);
+        setAttribute(zombie, Attribute.FOLLOW_RANGE, FERRYMAN_FOLLOW_RANGE);
+        setAttribute(zombie, Attribute.MOVEMENT_SPEED, FERRYMAN_MOVEMENT_SPEED);
+        setAttribute(zombie, Attribute.KNOCKBACK_RESISTANCE, FERRYMAN_KNOCKBACK_RESISTANCE);
+        if (heal) {
+            zombie.setHealth(FERRYMAN_MAX_HEALTH);
+        }
+    }
+
     private void decayGulperHealth(Zombie zombie) {
         if (zombie.isDead() || !zombie.isValid()) {
             return;
@@ -6469,6 +7354,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         } else if (isGulper(entity)) {
             removeGulperDisplay(uuid);
             spawnExperience(entity.getLocation(), 15);
+        } else if (isFerryman(entity)) {
+            removeFerrymanDisplay(uuid);
+            spawnExperience(entity.getLocation(), 80);
         } else if (isPusBug(entity)) {
             removePusBugDisplay(uuid);
             triggerPusBugDeath(entity);
@@ -6615,17 +7503,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         Vector origin = eye.toVector();
         LivingEntity best = null;
         double bestDistance = Double.MAX_VALUE;
-        double searchRadius = range + Math.max(TRAINING_DUMMY_HITBOX_EXPANSION, Math.max(GULPER_HITBOX_EXPANSION, Math.max(ROTTEN_GUARD_HITBOX_EXPANSION, PUS_BUG_HITBOX_EXPANSION))) + 1.0D;
+        double searchRadius = range + Math.max(TRAINING_DUMMY_HITBOX_EXPANSION, Math.max(FERRYMAN_HITBOX_EXPANSION,
+                Math.max(GULPER_HITBOX_EXPANSION, Math.max(ROTTEN_GUARD_HITBOX_EXPANSION, PUS_BUG_HITBOX_EXPANSION)))) + 1.0D;
         for (Entity entity : player.getWorld().getNearbyEntities(eye, searchRadius, searchRadius, searchRadius, this::isCustomMonster)) {
             if (!(entity instanceof LivingEntity monster) || monster.isDead() || !monster.isValid()) {
                 continue;
             }
             double horizontalExpansion = isTrainingDummy(monster)
                     ? TRAINING_DUMMY_HITBOX_EXPANSION
-                    : (isPusBug(monster) ? PUS_BUG_HITBOX_EXPANSION : (isGulper(monster) ? GULPER_HITBOX_EXPANSION : ROTTEN_GUARD_HITBOX_EXPANSION));
+                    : (isPusBug(monster) ? PUS_BUG_HITBOX_EXPANSION : (isGulper(monster) ? GULPER_HITBOX_EXPANSION
+                    : (isFerryman(monster) ? FERRYMAN_HITBOX_EXPANSION : ROTTEN_GUARD_HITBOX_EXPANSION)));
             double verticalExpansion = isTrainingDummy(monster)
                     ? 0.9D
-                    : (isPusBug(monster) ? PUS_BUG_VERTICAL_HITBOX_EXPANSION : (isGulper(monster) ? 0.55D : 0.08D));
+                    : (isPusBug(monster) ? PUS_BUG_VERTICAL_HITBOX_EXPANSION : (isGulper(monster) ? 0.55D
+                    : (isFerryman(monster) ? 0.75D : 0.08D)));
             BoundingBox expandedBox = monster.getBoundingBox().expand(horizontalExpansion, verticalExpansion, horizontalExpansion);
             RayTraceResult hit = expandedBox.rayTrace(origin, direction, range);
             if (hit == null) {
@@ -6671,6 +7562,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 && entity.getPersistentDataContainer().has(gulperDisplayKey, PersistentDataType.BYTE);
     }
 
+    private boolean isFerrymanDisplay(Entity entity) {
+        return entity instanceof ItemDisplay
+                && entity.getPersistentDataContainer().has(ferrymanDisplayKey, PersistentDataType.BYTE);
+    }
+
     private boolean isTrainingDummyDisplay(Entity entity) {
         return entity instanceof ItemDisplay
                 && entity.getPersistentDataContainer().has(trainingDummyDisplayKey, PersistentDataType.BYTE);
@@ -6682,7 +7578,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private boolean isCustomMonsterDisplay(Entity entity) {
-        return isRottenGuardDisplay(entity) || isGulperDisplay(entity) || isPusBugDisplay(entity) || isTrainingDummyDisplay(entity) || isCustomMonsterHealthDisplay(entity);
+        return isRottenGuardDisplay(entity) || isGulperDisplay(entity) || isFerrymanDisplay(entity)
+                || isPusBugDisplay(entity) || isTrainingDummyDisplay(entity) || isCustomMonsterHealthDisplay(entity);
     }
 
     private void setAttribute(LivingEntity entity, Attribute attribute, double value) {
@@ -6738,6 +7635,12 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 && GULPER_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
     }
 
+    private boolean isFerryman(Entity entity) {
+        return entity instanceof Zombie
+                && entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)
+                && FERRYMAN_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
+    }
+
     private boolean isTrainingDummy(Entity entity) {
         return entity instanceof Slime
                 && entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)
@@ -6745,7 +7648,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private boolean isCustomMonster(Entity entity) {
-        return isRottenGuard(entity) || isGulper(entity) || isPusBug(entity) || isTrainingDummy(entity);
+        return isRottenGuard(entity) || isGulper(entity) || isFerryman(entity) || isPusBug(entity) || isTrainingDummy(entity);
     }
 
     private boolean isRottenGuardInput(String input) {
@@ -6770,6 +7673,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 || "啜食者".equals(input);
     }
 
+    private boolean isFerrymanInput(String input) {
+        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+        return FERRYMAN_TYPE.equals(normalized)
+                || "ferry_man".equals(normalized)
+                || "guide".equals(normalized)
+                || "boatman".equals(normalized)
+                || "引渡人".equals(input);
+    }
+
     private boolean isTrainingDummyInput(String input) {
         String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace('-', '_');
         return TRAINING_DUMMY_TYPE.equals(normalized)
@@ -6780,10 +7692,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private boolean isCustomMonsterInput(String input) {
-        return isRottenGuardInput(input) || isGulperInput(input) || isPusBugInput(input) || isTrainingDummyInput(input);
+        return isRottenGuardInput(input) || isGulperInput(input) || isFerrymanInput(input) || isPusBugInput(input) || isTrainingDummyInput(input);
     }
 
     private String normalizeCustomMonsterType(String input) {
+        if (isFerrymanInput(input)) {
+            return FERRYMAN_TYPE;
+        }
         if (isTrainingDummyInput(input)) {
             return TRAINING_DUMMY_TYPE;
         }
@@ -6835,11 +7750,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private record ModuleRecord(String key, String displayName, String dungeonName, Material iconMaterial, String worldName, int borderDistance,
                                 double spawnX, double spawnY, double spawnZ, float spawnYaw, float spawnPitch,
-                                int curseEscapeDeaths, BlockPos dungeonStarter, List<DungeonWaveConfig> dungeonWaves,
-                                List<ItemStack> dungeonRewards, List<String> requiredCompletions) {
+                                int curseEscapeDeaths, BlockPos dungeonStarter, DungeonType dungeonType, List<DungeonWaveConfig> dungeonWaves,
+                                BossConfig bossConfig, List<ItemStack> dungeonRewards, List<String> requiredCompletions) {
         private ModuleRecord {
             curseEscapeDeaths = Math.max(0, Math.min(99, curseEscapeDeaths));
+            dungeonType = dungeonType == null ? DungeonType.WAVES : dungeonType;
             dungeonWaves = dungeonWaves == null ? List.of() : List.copyOf(dungeonWaves);
+            bossConfig = bossConfig == null ? BossConfig.defaultConfig() : bossConfig;
             dungeonRewards = copyRewardItems(dungeonRewards);
             requiredCompletions = requiredCompletions == null ? List.of() : requiredCompletions.stream()
                     .filter(Objects::nonNull)
@@ -6854,27 +7771,80 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
         private ModuleRecord withDungeonStarter(BlockPos dungeonStarter) {
             return new ModuleRecord(key, displayName, dungeonName, iconMaterial, worldName, borderDistance,
-                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonWaves, dungeonRewards, requiredCompletions);
+                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions);
+        }
+
+        private ModuleRecord withDungeonType(DungeonType dungeonType) {
+            return new ModuleRecord(key, displayName, dungeonName, iconMaterial, worldName, borderDistance,
+                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions);
         }
 
         private ModuleRecord withDungeonWaves(List<DungeonWaveConfig> dungeonWaves) {
             return new ModuleRecord(key, displayName, dungeonName, iconMaterial, worldName, borderDistance,
-                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonWaves, dungeonRewards, requiredCompletions);
+                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions);
         }
 
         private ModuleRecord withDungeonRewards(List<ItemStack> dungeonRewards) {
             return new ModuleRecord(key, displayName, dungeonName, iconMaterial, worldName, borderDistance,
-                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonWaves, dungeonRewards, requiredCompletions);
+                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions);
         }
 
         private ModuleRecord withRequiredCompletions(List<String> requiredCompletions) {
             return new ModuleRecord(key, displayName, dungeonName, iconMaterial, worldName, borderDistance,
-                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonWaves, dungeonRewards, requiredCompletions);
+                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions);
         }
 
         private ModuleRecord withCurseEscapeDeaths(int curseEscapeDeaths) {
             return new ModuleRecord(key, displayName, dungeonName, iconMaterial, worldName, borderDistance,
-                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonWaves, dungeonRewards, requiredCompletions);
+                    spawnX, spawnY, spawnZ, spawnYaw, spawnPitch, curseEscapeDeaths, dungeonStarter, dungeonType, dungeonWaves, bossConfig, dungeonRewards, requiredCompletions);
+        }
+    }
+
+    private enum DungeonType {
+        WAVES("waves"),
+        BOSS("boss");
+
+        private final String id;
+
+        DungeonType(String id) {
+            this.id = id;
+        }
+
+        private String id() {
+            return id;
+        }
+
+        private static DungeonType byId(String raw) {
+            if (raw == null || raw.isBlank()) {
+                return WAVES;
+            }
+            String normalized = raw.trim().toLowerCase(Locale.ROOT);
+            for (DungeonType type : values()) {
+                if (type.id.equals(normalized)) {
+                    return type;
+                }
+            }
+            return WAVES;
+        }
+    }
+
+    private record BossConfig(String type, String displayName, double maxHealth, double attackDamage,
+                              double armor, double movementSpeed, double followRange) {
+        private BossConfig {
+            type = type == null || type.isBlank() ? DEFAULT_DUNGEON_BOSS_TYPE : type;
+            displayName = displayName == null || displayName.isBlank() ? DEFAULT_DUNGEON_BOSS_DISPLAY_NAME : displayName;
+            maxHealth = Math.max(1.0D, Math.min(100000.0D, maxHealth));
+            attackDamage = Math.max(0.0D, Math.min(10000.0D, attackDamage));
+            armor = Math.max(0.0D, Math.min(30.0D, armor));
+            movementSpeed = Math.max(0.0D, Math.min(1.0D, movementSpeed));
+            followRange = Math.max(1.0D, Math.min(256.0D, followRange));
+        }
+
+        private static BossConfig defaultConfig() {
+            return new BossConfig(DEFAULT_DUNGEON_BOSS_TYPE, DEFAULT_DUNGEON_BOSS_DISPLAY_NAME,
+                    DEFAULT_DUNGEON_BOSS_MAX_HEALTH, DEFAULT_DUNGEON_BOSS_ATTACK_DAMAGE,
+                    DEFAULT_DUNGEON_BOSS_ARMOR, DEFAULT_DUNGEON_BOSS_MOVEMENT_SPEED,
+                    DEFAULT_DUNGEON_BOSS_FOLLOW_RANGE);
         }
     }
 
@@ -6969,26 +7939,98 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
+    private enum BossSkillType {
+        FERRY("引渡"),
+        SOULFIRE("魂火"),
+        SHOCK("震击"),
+        WASTELAND("荒芜之魔塔");
+
+        private final String displayName;
+
+        BossSkillType(String displayName) {
+            this.displayName = displayName;
+        }
+
+        private String displayName() {
+            return displayName;
+        }
+    }
+
+    private enum BossSkillPhase {
+        CASTING,
+        CHARGING,
+        AFTERSHOCK
+    }
+
+    private static final class BossSkillCast {
+        private final BossSkillType type;
+        private final long startedTick;
+        private long phaseStartedTick;
+        private BossSkillPhase phase = BossSkillPhase.CASTING;
+        private UUID targetUuid;
+        private Location chargeStart;
+        private Location chargeEnd;
+        private final Set<UUID> hitPlayers = new HashSet<>();
+
+        private BossSkillCast(BossSkillType type, long startedTick) {
+            this.type = type;
+            this.startedTick = startedTick;
+            this.phaseStartedTick = startedTick;
+        }
+
+        private long age(long now) {
+            return now - startedTick;
+        }
+
+        private long phaseAge(long now) {
+            return now - phaseStartedTick;
+        }
+    }
+
     private static final class DungeonRun {
         private final String worldName;
         private final String moduleKey;
         private final Location center;
+        private final DungeonType dungeonType;
         private final List<DungeonWaveConfig> waves;
+        private final BossConfig bossConfig;
         private final Set<UUID> liveMobs = new HashSet<>();
         private final HudBossBar bossBar;
+        private final long bossStartTick;
+        private UUID bossUuid;
+        private BossSkillCast activeBossSkill;
+        private boolean bossEnraged;
+        private int nextBossSkillIndex;
+        private long nextBossSkillTick;
         private int currentWaveIndex = -1;
         private int currentWaveInitialMobs;
         private int nextWaveIndex;
         private long nextWaveTick = -1L;
         private long restStartTick = -1L;
 
-        private DungeonRun(HudService hudService, String worldName, String moduleKey, Location center, List<DungeonWaveConfig> waves) {
+        private DungeonRun(HudService hudService, String worldName, String moduleKey, Location center,
+                           DungeonType dungeonType, List<DungeonWaveConfig> waves, BossConfig bossConfig, long startTick) {
             this.worldName = worldName;
             this.moduleKey = moduleKey;
             this.center = center.clone();
+            this.dungeonType = dungeonType == null ? DungeonType.WAVES : dungeonType;
             this.waves = List.copyOf(waves);
-            this.bossBar = hudService.createBossBar("xicerpg:dungeon:" + worldName, "副本准备中", BarColor.RED, BarStyle.SEGMENTED_10);
+            this.bossConfig = bossConfig == null ? BossConfig.defaultConfig() : bossConfig;
+            this.bossStartTick = startTick;
+            this.nextBossSkillTick = startTick + FERRYMAN_FIRST_SKILL_DELAY_TICKS;
+            this.bossBar = hudService.createBossBar("xicerpg:dungeon:" + worldName, "副本准备中",
+                    this.dungeonType == DungeonType.BOSS ? BarColor.PURPLE : BarColor.RED,
+                    this.dungeonType == DungeonType.BOSS ? BarStyle.SOLID : BarStyle.SEGMENTED_10);
             this.bossBar.setProgress(1.0D);
+        }
+
+        private boolean isBossDungeon() {
+            return dungeonType == DungeonType.BOSS;
+        }
+
+        private LivingEntity bossEntity() {
+            Entity entity = bossUuid == null ? null : Bukkit.getEntity(bossUuid);
+            return entity instanceof LivingEntity living ? living : null;
         }
     }
 
@@ -7269,6 +8311,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 ROTTEN_GUARD_MAX_HEALTH, ROTTEN_GUARD_ATTACK_DAMAGE, ROTTEN_GUARD_ARMOR, ROTTEN_GUARD_MOVEMENT_SPEED, true, false),
         GULPER(GULPER_TYPE, "啜食者", Material.SCULK_SHRIEKER,
                 GULPER_MAX_HEALTH, GULPER_ATTACK_DAMAGE, GULPER_ARMOR, GULPER_MOVEMENT_SPEED, true, false),
+        FERRYMAN(FERRYMAN_TYPE, "引渡人", Material.SOUL_LANTERN,
+                FERRYMAN_MAX_HEALTH, FERRYMAN_ATTACK_DAMAGE, FERRYMAN_ARMOR, FERRYMAN_MOVEMENT_SPEED, true, false),
         PUS_BUG(PUS_BUG_TYPE, "脓包虫", Material.SPIDER_EYE,
                 PUS_BUG_MAX_HEALTH, PUS_BUG_ATTACK_DAMAGE, PUS_BUG_ARMOR, PUS_BUG_MOVEMENT_SPEED, false, true),
         TRAINING_DUMMY(TRAINING_DUMMY_TYPE, "测试木桩", Material.PLAYER_HEAD,
@@ -7430,6 +8474,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private enum DungeonBlessing {
         NONE("none", "无祝福", Material.GRAY_DYE, List.of("不携带额外祝福进入副本。")),
+        ARCHER_BLESSING("archer_blessing", "弓手的祝福", Material.BOW,
+                List.of("进入副本后获得远程专注。", "远程武器命中时，每格距离提升 1.75% 伤害。")),
         SWORDSMAN_MEMORY("swordsman_memory", "剑士的记忆", Material.IRON_SWORD,
                 List.of("进入副本后持续唤醒古老剑术。", "无法使用远程武器，近战伤害提升 20%。"));
 

@@ -1,0 +1,120 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "xicerpg:item/ferryman_model",
+    "ferryman": "xicerpg:item/ferryman_model"
+  },
+  "elements": [
+    {
+      "name": "long_robe",
+      "from": [4.0, 0.0, 5.0],
+      "to": [12.0, 15.0, 11.0],
+      "faces": {
+        "down": { "uv": [4, 14, 12, 16], "texture": "#ferryman" },
+        "up": { "uv": [4, 0, 12, 3], "texture": "#ferryman" },
+        "north": { "uv": [4, 3, 12, 16], "texture": "#ferryman" },
+        "south": { "uv": [4, 3, 12, 16], "texture": "#ferryman" },
+        "west": { "uv": [0, 3, 4, 16], "texture": "#ferryman" },
+        "east": { "uv": [12, 3, 16, 16], "texture": "#ferryman" }
+      }
+    },
+    {
+      "name": "sunken_head",
+      "from": [5.0, 13.2, 4.2],
+      "to": [11.0, 19.0, 10.2],
+      "faces": {
+        "down": { "uv": [12, 12, 16, 16], "texture": "#ferryman" },
+        "up": { "uv": [12, 0, 16, 4], "texture": "#ferryman" },
+        "north": { "uv": [8, 0, 14, 6], "texture": "#ferryman" },
+        "south": { "uv": [8, 0, 14, 6], "texture": "#ferryman" },
+        "west": { "uv": [8, 6, 12, 12], "texture": "#ferryman" },
+        "east": { "uv": [12, 6, 16, 12], "texture": "#ferryman" }
+      }
+    },
+    {
+      "name": "wide_hat_brim",
+      "from": [0.5, 17.2, 0.5],
+      "to": [15.5, 19.0, 15.5],
+      "faces": {
+        "down": { "uv": [0, 0, 16, 4], "texture": "#ferryman" },
+        "up": { "uv": [0, 0, 16, 4], "texture": "#ferryman" },
+        "north": { "uv": [0, 4, 16, 6], "texture": "#ferryman" },
+        "south": { "uv": [0, 4, 16, 6], "texture": "#ferryman" },
+        "west": { "uv": [0, 4, 16, 6], "texture": "#ferryman" },
+        "east": { "uv": [0, 4, 16, 6], "texture": "#ferryman" }
+      }
+    },
+    {
+      "name": "hat_crown",
+      "from": [4.0, 18.8, 4.0],
+      "to": [12.0, 23.0, 12.0],
+      "faces": {
+        "down": { "uv": [0, 0, 8, 8], "texture": "#ferryman" },
+        "up": { "uv": [0, 0, 8, 8], "texture": "#ferryman" },
+        "north": { "uv": [8, 0, 16, 8], "texture": "#ferryman" },
+        "south": { "uv": [8, 0, 16, 8], "texture": "#ferryman" },
+        "west": { "uv": [8, 0, 16, 8], "texture": "#ferryman" },
+        "east": { "uv": [8, 0, 16, 8], "texture": "#ferryman" }
+      }
+    },
+    {
+      "name": "right_sleeve",
+      "from": [1.8, 5.0, 4.0],
+      "to": [4.8, 14.0, 8.0],
+      "faces": {
+        "down": { "uv": [0, 12, 4, 16], "texture": "#ferryman" },
+        "up": { "uv": [0, 8, 4, 12], "texture": "#ferryman" },
+        "north": { "uv": [0, 8, 4, 16], "texture": "#ferryman" },
+        "south": { "uv": [0, 8, 4, 16], "texture": "#ferryman" },
+        "west": { "uv": [4, 8, 8, 16], "texture": "#ferryman" },
+        "east": { "uv": [8, 8, 12, 16], "texture": "#ferryman" }
+      }
+    },
+    {
+      "name": "left_sleeve",
+      "from": [11.2, 5.0, 4.0],
+      "to": [14.2, 14.0, 8.0],
+      "faces": {
+        "down": { "uv": [0, 12, 4, 16], "texture": "#ferryman" },
+        "up": { "uv": [0, 8, 4, 12], "texture": "#ferryman" },
+        "north": { "uv": [0, 8, 4, 16], "texture": "#ferryman" },
+        "south": { "uv": [0, 8, 4, 16], "texture": "#ferryman" },
+        "west": { "uv": [4, 8, 8, 16], "texture": "#ferryman" },
+        "east": { "uv": [8, 8, 12, 16], "texture": "#ferryman" }
+      }
+    },
+    {
+      "name": "old_staff",
+      "from": [13.2, 0.0, 3.0],
+      "to": [14.4, 19.0, 4.2],
+      "faces": {
+        "down": { "uv": [14, 14, 16, 16], "texture": "#ferryman" },
+        "up": { "uv": [14, 14, 16, 16], "texture": "#ferryman" },
+        "north": { "uv": [14, 0, 16, 16], "texture": "#ferryman" },
+        "south": { "uv": [14, 0, 16, 16], "texture": "#ferryman" },
+        "west": { "uv": [14, 0, 16, 16], "texture": "#ferryman" },
+        "east": { "uv": [14, 0, 16, 16], "texture": "#ferryman" }
+      }
+    },
+    {
+      "name": "lantern_core",
+      "from": [12.4, 7.0, 2.0],
+      "to": [15.0, 10.8, 4.6],
+      "faces": {
+        "down": { "uv": [10, 10, 14, 14], "texture": "#ferryman" },
+        "up": { "uv": [10, 10, 14, 14], "texture": "#ferryman" },
+        "north": { "uv": [10, 8, 14, 14], "texture": "#ferryman" },
+        "south": { "uv": [10, 8, 14, 14], "texture": "#ferryman" },
+        "west": { "uv": [10, 8, 14, 14], "texture": "#ferryman" },
+        "east": { "uv": [10, 8, 14, 14], "texture": "#ferryman" }
+      }
+    }
+  ],
+  "display": {
+    "fixed": {
+      "rotation": [0, 0, 0],
+      "translation": [0, -1.5, 0],
+      "scale": [1.25, 1.65, 1.25]
+    }
+  }
+}

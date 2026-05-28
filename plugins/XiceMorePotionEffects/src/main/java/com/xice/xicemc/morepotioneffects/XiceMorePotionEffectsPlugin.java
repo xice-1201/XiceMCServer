@@ -29,6 +29,7 @@ import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Trident;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -75,6 +76,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     private static final String SWORDSMAN_MEMORY_ID = "swordsman_memory";
     private static final String REBIRTH_BLESSING_ID = "rebirth_blessing";
     private static final String REBIRTH_BLESSING_NAME = "\u590d\u751f\u4e4b\u795d\u798f";
+    private static final String ARCHER_BLESSING_ID = "archer_blessing";
+    private static final String ARCHER_BLESSING_NAME = "弓手的祝福";
     private static final String SWORDSMAN_MEMORY_NAME = "剑士的记忆";
     private static final String SIDEBAR_OWNER = "xicemorepotioneffects:effects";
     private static final String WITHERING_BLADE_ID = "withering_blade";
@@ -93,7 +96,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     private static final int MAX_CUSTOM_ENCHANT_LEVEL = 5;
     private static final int MAX_SATIETY_VIGOR_LEVEL = 2;
     private static final int MAX_EXTENDING_HAND_LEVEL = 3;
-    private static final double PAIN_BLADE_DAMAGE_BONUS_PER_LEVEL = 0.03D;
+    private static final double PAIN_BLADE_DAMAGE_BONUS_PER_NEGATIVE_CONDITION_PER_LEVEL = 0.02D;
+    private static final double ARCHER_BLESSING_DAMAGE_BONUS_PER_BLOCK = 0.0175D;
     private static final int SELF_GROWING_REPAIR_PER_SECOND = 2;
     private static final long CLAIM_TELEPORT_SUPPRESSION_MILLIS = 30_000L;
     private static final long PORTAL_TELEPORT_SUPPRESSION_MILLIS = 20_000L;
@@ -103,6 +107,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     private final Map<UUID, StrongBan> strongBans = new HashMap<>();
     private final Map<UUID, SwordsmanMemory> swordsmanMemories = new HashMap<>();
     private final Map<UUID, RebirthBlessing> rebirthBlessings = new HashMap<>();
+    private final Map<UUID, ArcherBlessing> archerBlessings = new HashMap<>();
     private final Set<UUID> playerIgnitedThisTick = new HashSet<>();
     private HudService hudService;
     private NamespacedKey witheringBladeKey;
@@ -277,6 +282,14 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        if (event.getDamager() instanceof Projectile projectile
+                && projectile.getShooter() instanceof Player player
+                && event.getEntity() instanceof LivingEntity target
+                && isRemoteWeaponProjectile(projectile)) {
+            consumeRebirthBlessing(player);
+            applyArcherBlessingDamage(player, target, event);
+            return;
+        }
         if (!(event.getDamager() instanceof Player player)) {
             return;
         }
@@ -301,12 +314,32 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         target.addPotionEffect(new PotionEffect(PotionEffectType.WITHER, durationTicks, level - 1, false, true, true), true);
     }
 
-    private void applyPainBladeDamage(Player player, LivingEntity target, EntityDamageByEntityEvent event) {
-        int level = painBladeLevel(player.getInventory().getItemInMainHand());
-        if (level <= 0 || !hasNegativeCondition(target, true)) {
+    private void applyArcherBlessingDamage(Player player, LivingEntity target, EntityDamageByEntityEvent event) {
+        if (!hasArcherBlessing(player) || player.getWorld() != target.getWorld()) {
             return;
         }
-        event.setDamage(event.getDamage() * (1.0D + PAIN_BLADE_DAMAGE_BONUS_PER_LEVEL * level));
+        double distance = player.getLocation().distance(target.getLocation());
+        if (distance <= 0.0D) {
+            return;
+        }
+        event.setDamage(event.getDamage() * (1.0D + ARCHER_BLESSING_DAMAGE_BONUS_PER_BLOCK * distance));
+    }
+
+    private boolean isRemoteWeaponProjectile(Projectile projectile) {
+        return projectile instanceof AbstractArrow || projectile instanceof Trident;
+    }
+
+    private void applyPainBladeDamage(Player player, LivingEntity target, EntityDamageByEntityEvent event) {
+        int level = painBladeLevel(player.getInventory().getItemInMainHand());
+        if (level <= 0) {
+            return;
+        }
+        int negativeConditions = negativeConditionCount(target, true);
+        if (negativeConditions <= 0) {
+            return;
+        }
+        event.setDamage(event.getDamage() * (1.0D
+                + PAIN_BLADE_DAMAGE_BONUS_PER_NEGATIVE_CONDITION_PER_LEVEL * negativeConditions * level));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -683,6 +716,13 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         applyEffectSilently(player, CustomEffect.REBIRTH_BLESSING, durationMillis);
     }
 
+    public void applyArcherBlessing(Player player, long durationMillis) {
+        if (player == null || !player.isOnline() || durationMillis <= 0L) {
+            return;
+        }
+        applyEffectSilently(player, CustomEffect.ARCHER_BLESSING, durationMillis);
+    }
+
     public void clearWarpSuppression(Player player) {
         if (player == null) {
             return;
@@ -712,6 +752,14 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             return;
         }
         rebirthBlessings.remove(player.getUniqueId());
+        updateSidebar(player);
+    }
+
+    public void clearArcherBlessing(Player player) {
+        if (player == null) {
+            return;
+        }
+        archerBlessings.remove(player.getUniqueId());
         updateSidebar(player);
     }
 
@@ -754,6 +802,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
                 swordsmanMemories.remove(target.getUniqueId());
             } else if (effect == CustomEffect.REBIRTH_BLESSING) {
                 rebirthBlessings.remove(target.getUniqueId());
+            } else if (effect == CustomEffect.ARCHER_BLESSING) {
+                archerBlessings.remove(target.getUniqueId());
             }
             updateSidebar(target);
         }
@@ -901,6 +951,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             swordsmanMemories.put(target.getUniqueId(), new SwordsmanMemory(expiresAt));
         } else if (effect == CustomEffect.REBIRTH_BLESSING) {
             rebirthBlessings.put(target.getUniqueId(), new RebirthBlessing(expiresAt));
+        } else if (effect == CustomEffect.ARCHER_BLESSING) {
+            archerBlessings.put(target.getUniqueId(), new ArcherBlessing(expiresAt));
         }
         updateSidebar(target);
     }
@@ -910,6 +962,7 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         strongBans.remove(player.getUniqueId());
         swordsmanMemories.remove(player.getUniqueId());
         rebirthBlessings.remove(player.getUniqueId());
+        archerBlessings.remove(player.getUniqueId());
         updateSidebar(player);
     }
 
@@ -995,6 +1048,19 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         return true;
     }
 
+    private boolean hasArcherBlessing(Player player) {
+        ArcherBlessing blessing = archerBlessings.get(player.getUniqueId());
+        if (blessing == null) {
+            return false;
+        }
+        if (blessing.expiresAt <= System.currentTimeMillis()) {
+            archerBlessings.remove(player.getUniqueId());
+            updateSidebar(player);
+            return false;
+        }
+        return true;
+    }
+
     private boolean consumeRebirthBlessing(Player player) {
         if (!hasRebirthBlessing(player)) {
             return false;
@@ -1005,11 +1071,16 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     }
 
     public boolean hasNegativeCustomEffect(LivingEntity entity) {
+        return negativeCustomEffectCount(entity) > 0;
+    }
+
+    private int negativeCustomEffectCount(LivingEntity entity) {
         if (!(entity instanceof Player player)) {
-            return false;
+            return 0;
         }
         long now = System.currentTimeMillis();
         boolean changed = false;
+        int count = 0;
         for (CustomEffect effect : CustomEffect.values()) {
             if (!effect.negative) {
                 continue;
@@ -1023,29 +1094,31 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
                 changed = true;
                 continue;
             }
-            if (changed) {
-                updateSidebar(player);
-            }
-            return true;
+            count++;
         }
         if (changed) {
             updateSidebar(player);
         }
-        return false;
+        return count;
     }
 
-    private boolean hasNegativeCondition(LivingEntity target, boolean ignoreCurrentHitFire) {
+    private int negativeConditionCount(LivingEntity target, boolean ignoreCurrentHitFire) {
+        int count = 0;
         boolean fireCounts = target.getFireTicks() > 0
                 && !(ignoreCurrentHitFire && playerIgnitedThisTick.contains(target.getUniqueId()));
-        if (fireCounts || target.getFreezeTicks() > 0 || hasNegativeCustomEffect(target)) {
-            return true;
+        if (fireCounts) {
+            count++;
         }
+        if (target.getFreezeTicks() > 0) {
+            count++;
+        }
+        count += negativeCustomEffectCount(target);
         for (PotionEffect effect : target.getActivePotionEffects()) {
             if (effect.getType().getCategory() == PotionEffectTypeCategory.HARMFUL) {
-                return true;
+                count++;
             }
         }
-        return false;
+        return count;
     }
 
     private void removeEffect(Player player, CustomEffect effect) {
@@ -1057,6 +1130,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
             swordsmanMemories.remove(player.getUniqueId());
         } else if (effect == CustomEffect.REBIRTH_BLESSING) {
             rebirthBlessings.remove(player.getUniqueId());
+        } else if (effect == CustomEffect.ARCHER_BLESSING) {
+            archerBlessings.remove(player.getUniqueId());
         }
     }
 
@@ -1075,6 +1150,10 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         }
         if (effect == CustomEffect.REBIRTH_BLESSING) {
             RebirthBlessing blessing = rebirthBlessings.get(player.getUniqueId());
+            return blessing == null ? null : new TimedEffectState(blessing.expiresAt);
+        }
+        if (effect == CustomEffect.ARCHER_BLESSING) {
+            ArcherBlessing blessing = archerBlessings.get(player.getUniqueId());
             return blessing == null ? null : new TimedEffectState(blessing.expiresAt);
         }
         return null;
@@ -1161,6 +1240,15 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
                 rebirthBlessings.remove(player.getUniqueId());
             } else {
                 active.add(new ActiveEffect(CustomEffect.REBIRTH_BLESSING, remainingSeconds(remainingMillis)));
+            }
+        }
+        ArcherBlessing archerBlessing = archerBlessings.get(player.getUniqueId());
+        if (archerBlessing != null) {
+            long remainingMillis = archerBlessing.expiresAt - System.currentTimeMillis();
+            if (remainingMillis <= 0L) {
+                archerBlessings.remove(player.getUniqueId());
+            } else {
+                active.add(new ActiveEffect(CustomEffect.ARCHER_BLESSING, remainingSeconds(remainingMillis)));
             }
         }
         return active;
@@ -1750,7 +1838,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         if (args.length == 3) {
             String prefix = args[2].toLowerCase(Locale.ROOT);
             return List.of(WARP_SUPPRESSION_ID, WARP_SUPPRESSION_NAME, STRONG_BAN_ID, STRONG_BAN_NAME,
-                            SWORDSMAN_MEMORY_ID, SWORDSMAN_MEMORY_NAME, REBIRTH_BLESSING_ID, REBIRTH_BLESSING_NAME)
+                            SWORDSMAN_MEMORY_ID, SWORDSMAN_MEMORY_NAME, REBIRTH_BLESSING_ID, REBIRTH_BLESSING_NAME,
+                            ARCHER_BLESSING_ID, ARCHER_BLESSING_NAME)
                     .stream()
                     .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix))
                     .toList();
@@ -1776,6 +1865,9 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
     private record RebirthBlessing(long expiresAt) {
     }
 
+    private record ArcherBlessing(long expiresAt) {
+    }
+
     private record TimedEffectState(long expiresAt) {
     }
 
@@ -1786,7 +1878,8 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
         WARP_SUPPRESSION(WARP_SUPPRESSION_ID, WARP_SUPPRESSION_NAME, true),
         STRONG_BAN(STRONG_BAN_ID, STRONG_BAN_NAME, true),
         SWORDSMAN_MEMORY(SWORDSMAN_MEMORY_ID, SWORDSMAN_MEMORY_NAME, false),
-        REBIRTH_BLESSING(REBIRTH_BLESSING_ID, REBIRTH_BLESSING_NAME, false);
+        REBIRTH_BLESSING(REBIRTH_BLESSING_ID, REBIRTH_BLESSING_NAME, false),
+        ARCHER_BLESSING(ARCHER_BLESSING_ID, ARCHER_BLESSING_NAME, false);
 
         private final String id;
         private final String displayName;
@@ -1827,6 +1920,13 @@ public final class XiceMorePotionEffectsPlugin extends JavaPlugin implements Lis
                 || normalized.equals("respawn")
                 || raw.trim().equals(REBIRTH_BLESSING_NAME)) {
             return CustomEffect.REBIRTH_BLESSING;
+        }
+        if (normalized.equals(ARCHER_BLESSING_ID)
+                || normalized.equals("archer")
+                || normalized.equals("bow")
+                || normalized.equals("ranged")
+                || raw.trim().equals(ARCHER_BLESSING_NAME)) {
+            return CustomEffect.ARCHER_BLESSING;
         }
         return null;
     }
