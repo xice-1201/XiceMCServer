@@ -236,8 +236,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final int SLOT_WAVE_WAIT_INCREASE_SMALL = 23;
     private static final int SLOT_WAVE_WAIT_INCREASE_LARGE = 24;
     private static final int SLOT_WAVE_ADD_ENEMY = 29;
-    private static final int SLOT_WAVE_ADD_PUS_BUG = 31;
-    private static final int SLOT_WAVE_REMOVE_ENEMY = 33;
+    private static final int SLOT_WAVE_ADD_GULPER = 31;
+    private static final int SLOT_WAVE_ADD_PUS_BUG = 33;
+    private static final int SLOT_WAVE_REMOVE_ENEMY = 35;
     private static final int SLOT_WAVE_DETAIL_BACK = 40;
     private static final Material MAGIC_ANVIL_CARRIER = Material.ANVIL;
     private static final int MAGIC_ANVIL_MENU_SIZE = 27;
@@ -1583,6 +1584,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             saveDungeonWaveAndReopen(player, module, waves, menu.waveIndex, new DungeonWaveConfig(replaceEnemy(enemies, added), wave.waitSeconds()));
             return;
         }
+        if (slot == SLOT_WAVE_ADD_GULPER) {
+            DungeonWaveEnemyConfig added = addEnemyToWave(enemies, GULPER_TYPE, shiftClick ? 5 : 1);
+            saveDungeonWaveAndReopen(player, module, waves, menu.waveIndex, new DungeonWaveConfig(replaceEnemy(enemies, added), wave.waitSeconds()));
+            return;
+        }
         if (slot == SLOT_WAVE_ADD_PUS_BUG) {
             DungeonWaveEnemyConfig added = addEnemyToWave(enemies, PUS_BUG_TYPE, shiftClick ? 5 : 1);
             saveDungeonWaveAndReopen(player, module, waves, menu.waveIndex, new DungeonWaveConfig(replaceEnemy(enemies, added), wave.waitSeconds()));
@@ -1903,6 +1909,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 List.of("当前: " + wave.waitSeconds() + " 秒。")));
         inventory.setItem(SLOT_WAVE_ADD_ENEMY, menuItem(Material.SPAWNER, "添加朽败卫兵", NamedTextColor.GREEN,
                 List.of("添加 1 个朽败卫兵。", "按住 Shift 添加 5 个。")));
+        inventory.setItem(SLOT_WAVE_ADD_GULPER, menuItem(Material.SCULK_SHRIEKER, "添加啜食者", NamedTextColor.GREEN,
+                List.of("添加 1 个啜食者。", "按住 Shift 添加 5 个。")));
         inventory.setItem(SLOT_WAVE_ADD_PUS_BUG, menuItem(Material.SPIDER_EYE, "添加脓包虫", NamedTextColor.GREEN,
                 List.of("添加 1 个脓包虫。", "按住 Shift 添加 5 个。")));
         inventory.setItem(SLOT_WAVE_REMOVE_ENEMY, menuItem(Material.RED_DYE, "删除末尾敌人", NamedTextColor.RED,
