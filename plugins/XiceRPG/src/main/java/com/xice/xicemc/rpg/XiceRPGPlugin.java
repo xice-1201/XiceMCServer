@@ -180,6 +180,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final double FERRYMAN_SOULFIRE_AFTERSHOCK_DAMAGE = 10.0D;
     private static final int FERRYMAN_SOULFIRE_BURN_TICKS = 20 * 10;
     private static final double FERRYMAN_SHOCK_DAMAGE = 80.0D;
+    private static final float SATIETY_SKILL_ORB_RESTORE_AMOUNT = 12.0F;
+    private static final long SATIETY_SKILL_ORB_COOLDOWN_MILLIS = 20_000L;
     private static final BossSkillType[] FERRYMAN_SKILL_SEQUENCE = {
             BossSkillType.FERRY,
             BossSkillType.SOULFIRE,
@@ -400,6 +402,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private NamespacedKey dungeonStarterItemKey;
     private NamespacedKey dungeonStarterItemModelKey;
     private NamespacedKey dungeonStarterDisplayKey;
+    private NamespacedKey satietySkillOrbKey;
+    private NamespacedKey satietySkillOrbItemModelKey;
     private CustomBlockDefinition magicAnvilBlockDefinition;
     private CustomBlockDefinition magicGrindstoneBlockDefinition;
     private CustomBlockDefinition dungeonStarterBlockDefinition;
@@ -444,6 +448,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private final Map<UUID, EnumMap<TrainingDummyPart, UUID>> trainingDummyDisplays = new HashMap<>();
     private final Map<UUID, List<TrainingDummyDamageSample>> trainingDummyDamageSamples = new HashMap<>();
     private final Map<UUID, Map<String, SplitDamageCooldown>> splitDamageCooldowns = new HashMap<>();
+    private final Map<UUID, Long> satietySkillOrbCooldowns = new HashMap<>();
     private final Map<UUID, Integer> dungeonPlayerNoDamageDefaults = new HashMap<>();
     private final Map<UUID, UUID> customMonsterHealthDisplays = new HashMap<>();
     private final Map<String, DungeonRun> dungeonRunsByWorld = new HashMap<>();
@@ -472,6 +477,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         dungeonStarterItemKey = new NamespacedKey(this, "dungeon_starter");
         dungeonStarterItemModelKey = new NamespacedKey(this, "dungeon_starter");
         dungeonStarterDisplayKey = new NamespacedKey(this, "dungeon_starter_display");
+        satietySkillOrbKey = new NamespacedKey(this, "satiety_skill_orb");
+        satietySkillOrbItemModelKey = new NamespacedKey(this, "satiety_skill_orb");
         selectedBlessingKey = new NamespacedKey(this, "selected_blessing");
         magicAnvilFailuresKey = new NamespacedKey(this, "magic_anvil_failures");
         for (RottenGuardPart part : RottenGuardPart.values()) {
@@ -1162,7 +1169,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         Player player = event.getPlayer();
         boolean magicTowerKey = isMagicTowerKey(event.getItem());
-        if (event.isCancelled() && !magicTowerKey) {
+        boolean satietySkillOrb = isSatietySkillOrb(event.getItem());
+        if (event.isCancelled() && !magicTowerKey && !satietySkillOrb) {
+            return;
+        }
+        if (satietySkillOrb) {
+            event.setCancelled(true);
+            useSatietySkillOrb(player);
             return;
         }
         if (action == Action.RIGHT_CLICK_BLOCK && event.getClickedBlock() != null) {
@@ -1249,6 +1262,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         Player player = event.getPlayer();
         hudService.clearTabListWorld(player.getUniqueId(), RPG_TAB_WORLD_OWNER);
         stopCustomBlockBreak(player);
+        satietySkillOrbCooldowns.remove(player.getUniqueId());
         restorePlayerViewDistance(player, "quit");
         PendingTowerEntry entry = pendingTowerEntries.get(player.getUniqueId());
         if (entry != null) {
@@ -5622,6 +5636,16 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                         Component.text("放置在模板世界中，用于配置并启动副本试炼。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
                         Component.text("模板世界右键配置；副本世界右键启动。", NamedTextColor.DARK_GRAY).decoration(TextDecoration.ITALIC, false)),
                 null));
+        customItemService.register(new CustomItemDefinition(
+                satietySkillOrbKey,
+                Material.MAGMA_CREAM,
+                satietySkillOrbKey,
+                satietySkillOrbItemModelKey,
+                Component.text("饱食技能珠", NamedTextColor.RED).decoration(TextDecoration.ITALIC, false),
+                List.of(
+                        Component.text("右键使用: 恢复 12 点隐藏饱和度。", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                        Component.text("冷却时间: 20 秒，同类技能珠共享冷却。", NamedTextColor.DARK_GRAY).decoration(TextDecoration.ITALIC, false)),
+                null));
     }
 
     private void registerCustomBlocks() {
@@ -5680,6 +5704,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         return customItemService.create(dungeonStarterItemKey, amount);
     }
 
+    private ItemStack createSatietySkillOrb(int amount) {
+        return customItemService.create(satietySkillOrbKey, amount);
+    }
+
     private ItemStack createDungeonStarterDisplayItem() {
         ItemStack item = new ItemStack(DUNGEON_STARTER_ITEM);
         ItemMeta meta = item.getItemMeta();
@@ -5706,6 +5734,33 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private boolean isDungeonStarterItem(ItemStack item) {
         return customItemService != null && customItemService.isCustomItem(item, dungeonStarterItemKey);
+    }
+
+    private boolean isSatietySkillOrb(ItemStack item) {
+        return customItemService != null && customItemService.isCustomItem(item, satietySkillOrbKey);
+    }
+
+    private void useSatietySkillOrb(Player player) {
+        long now = System.currentTimeMillis();
+        long cooldownUntil = satietySkillOrbCooldowns.getOrDefault(player.getUniqueId(), 0L);
+        if (cooldownUntil > now) {
+            long remainingSeconds = Math.max(1L, (cooldownUntil - now + 999L) / 1000L);
+            player.sendActionBar(Component.text("饱食技能珠冷却中: " + remainingSeconds + " 秒", NamedTextColor.RED));
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 0.45F, 0.7F);
+            return;
+        }
+        float previous = player.getSaturation();
+        float restored = Math.min(20.0F, previous + SATIETY_SKILL_ORB_RESTORE_AMOUNT);
+        if (restored <= previous + 0.001F) {
+            player.sendActionBar(Component.text("饱和度已充盈", NamedTextColor.YELLOW));
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 0.45F, 1.3F);
+            return;
+        }
+        player.setSaturation(restored);
+        satietySkillOrbCooldowns.put(player.getUniqueId(), now + SATIETY_SKILL_ORB_COOLDOWN_MILLIS);
+        player.getWorld().spawnParticle(Particle.HEART, player.getLocation().clone().add(0.0D, 1.2D, 0.0D), 4, 0.35D, 0.25D, 0.35D, 0.0D);
+        player.playSound(player.getLocation(), Sound.ENTITY_GENERIC_EAT, 0.85F, 1.15F);
+        player.sendActionBar(Component.text("饱食技能珠恢复了隐藏饱和度", NamedTextColor.RED));
     }
 
     private boolean isSword(ItemStack item) {

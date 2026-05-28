@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "xicerpg:item/satiety_skill_orb"
+  }
+}
