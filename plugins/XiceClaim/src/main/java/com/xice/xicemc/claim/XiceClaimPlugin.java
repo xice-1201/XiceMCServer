@@ -1689,10 +1689,18 @@ public final class XiceClaimPlugin extends JavaPlugin implements Listener, Comma
         Location center = bottom.getLocation().add(0.5, 1.0, 0.5);
         for (Entity entity : bottom.getWorld().getNearbyEntities(center, 2.0, 2.5, 2.0)) {
             PersistentDataContainer data = entity.getPersistentDataContainer();
-            if (data.has(totemDisplayKey, PersistentDataType.BYTE)
-                    && totemId.equals(data.get(totemIdKey, PersistentDataType.STRING))) {
+            if (totemId.equals(persistentString(data, totemDisplayKey))
+                    || (data.has(totemDisplayKey, PersistentDataType.BYTE) && totemId.equals(persistentString(data, totemIdKey)))) {
                 entity.remove();
             }
+        }
+    }
+
+    private String persistentString(PersistentDataContainer data, NamespacedKey key) {
+        try {
+            return data.get(key, PersistentDataType.STRING);
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
     }
 

@@ -37,6 +37,7 @@ import org.bukkit.event.inventory.PrepareItemCraftEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -345,7 +346,7 @@ public final class XiceCustomItemPlugin extends JavaPlugin implements CustomItem
             return;
         }
         for (Entity entity : world.getNearbyEntities(center, radius, radius, radius)) {
-            String displayId = entity.getPersistentDataContainer().get(definition.displayMarkerKey(), PersistentDataType.STRING);
+            String displayId = persistentString(entity.getPersistentDataContainer(), definition.displayMarkerKey());
             if (blockId.equals(displayId)) {
                 entity.remove();
             }
@@ -454,10 +455,18 @@ public final class XiceCustomItemPlugin extends JavaPlugin implements CustomItem
             return;
         }
         for (Entity entity : world.getNearbyEntities(center, radius, radius, radius)) {
-            String displayId = entity.getPersistentDataContainer().get(definition.displayMarkerKey(), PersistentDataType.STRING);
+            String displayId = persistentString(entity.getPersistentDataContainer(), definition.displayMarkerKey());
             if (structureId.equals(displayId)) {
                 entity.remove();
             }
+        }
+    }
+
+    private String persistentString(PersistentDataContainer data, NamespacedKey key) {
+        try {
+            return data.get(key, PersistentDataType.STRING);
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
     }
 
