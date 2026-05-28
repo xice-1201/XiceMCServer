@@ -800,7 +800,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             event.setDeathSound(null);
             event.setDeathSoundVolume(0.0F);
             event.getDrops().clear();
-            event.setDroppedExp(80);
+            event.setDroppedExp(40);
             return;
         }
         if (isPusBug(event.getEntity())) {
@@ -3812,6 +3812,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             playFerrymanFerryWarning(boss.getLocation());
             if (cast.age(customMonsterTick) >= FERRYMAN_CAST_TICKS) {
                 dealBossPhysicalDamageInRadius(boss, boss.getLocation(), FERRYMAN_FERRY_RADIUS, FERRYMAN_FERRY_DAMAGE);
+                playFerrymanFerryReleaseEffect(boss.getLocation());
                 finishBossSkill(run);
             }
             return;
@@ -3864,9 +3865,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             Location next = interpolateLocation(cast.chargeStart, cast.chargeEnd, progress);
             boss.teleport(next);
             playSoulfireChargeParticles(cast.chargeStart, next);
-            damagePlayersNearSoulfirePath(boss, world, cast, cast.chargeStart, next);
+            damagePlayersNearSoulfirePath(boss, world, cast, cast.chargeStart, next, cast.targetUuid);
             if (cast.phaseAge(customMonsterTick) >= FERRYMAN_SOULFIRE_CHARGE_TICKS) {
-                damagePlayersNearSoulfirePath(boss, world, cast, cast.chargeStart, cast.chargeEnd);
+                damagePlayersNearSoulfirePath(boss, world, cast, cast.chargeStart, cast.chargeEnd, cast.targetUuid);
                 damageSoulfireImpactTarget(boss, target, cast);
                 cast.phase = BossSkillPhase.AFTERSHOCK;
                 cast.phaseStartedTick = customMonsterTick;
@@ -3981,12 +3982,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 && player.getGameMode() != GameMode.SPECTATOR;
     }
 
-    private void damagePlayersNearSoulfirePath(LivingEntity boss, World world, BossSkillCast cast, Location start, Location end) {
+    private void damagePlayersNearSoulfirePath(LivingEntity boss, World world, BossSkillCast cast, Location start, Location end, UUID exemptPlayerUuid) {
         Vector a = start.toVector();
         Vector b = end.toVector();
         double widthSquared = FERRYMAN_SOULFIRE_PATH_WIDTH * FERRYMAN_SOULFIRE_PATH_WIDTH;
         for (Player player : world.getPlayers()) {
             if (!isActiveDungeonPlayer(player) || cast.hitPlayers.contains(player.getUniqueId())) {
+                continue;
+            }
+            if (exemptPlayerUuid != null && exemptPlayerUuid.equals(player.getUniqueId())) {
                 continue;
             }
             if (distanceSquaredToSegment(player.getLocation().toVector(), a, b) > widthSquared) {
@@ -3998,7 +4002,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void damageSoulfireImpactTarget(LivingEntity boss, Player target, BossSkillCast cast) {
-        if (!isActiveDungeonPlayer(target) || cast.hitPlayers.contains(target.getUniqueId())) {
+        if (!isActiveDungeonPlayer(target)) {
             return;
         }
         cast.hitPlayers.add(target.getUniqueId());
@@ -4046,6 +4050,22 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private void playFerrymanFerryWarning(Location center) {
         playFilledWarningCircle(center, FERRYMAN_FERRY_RADIUS, Color.fromRGB(255, 228, 72), 0.08D);
+    }
+
+    private void playFerrymanFerryReleaseEffect(Location center) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        Location origin = center.clone().add(0.0D, 0.12D, 0.0D);
+        for (int i = 0; i < 140; i++) {
+            double angle = Math.random() * Math.PI * 2.0D;
+            double distance = Math.sqrt(Math.random()) * FERRYMAN_FERRY_RADIUS;
+            Location point = origin.clone().add(Math.cos(angle) * distance, 0.0D, Math.sin(angle) * distance);
+            world.spawnParticle(Particle.SOUL, point, 1, 0.03D, 0.02D, 0.03D, 0.02D);
+        }
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, origin.clone().add(0.0D, 0.35D, 0.0D), 48,
+                FERRYMAN_FERRY_RADIUS * 0.38D, 0.18D, FERRYMAN_FERRY_RADIUS * 0.38D, 0.04D);
     }
 
     private void playFerrymanAftershockWarning(Location center) {
@@ -7516,7 +7536,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             spawnExperience(entity.getLocation(), 15);
         } else if (isFerryman(entity)) {
             removeFerrymanDisplay(uuid);
-            spawnExperience(entity.getLocation(), 80);
+            spawnExperience(entity.getLocation(), 40);
         } else if (isPusBug(entity)) {
             removePusBugDisplay(uuid);
             triggerPusBugDeath(entity);

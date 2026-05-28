@@ -708,7 +708,8 @@ public final class XiceSimpleIndustryPlugin extends JavaPlugin implements Listen
         if (type != EntityType.ZOMBIE && type != EntityType.ZOMBIE_VILLAGER) {
             return;
         }
-        if ("rotten_guard".equals(event.getEntity().getPersistentDataContainer().get(xiceRpgMonsterTypeKey, PersistentDataType.STRING))) {
+        String rpgMonsterType = event.getEntity().getPersistentDataContainer().get(xiceRpgMonsterTypeKey, PersistentDataType.STRING);
+        if (rpgMonsterType != null && !rpgMonsterType.isBlank()) {
             return;
         }
         Player killer = event.getEntity().getKiller();
