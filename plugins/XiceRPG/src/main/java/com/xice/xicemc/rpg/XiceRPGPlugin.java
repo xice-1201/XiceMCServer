@@ -446,6 +446,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private final Set<UUID> curseForcedExits = new HashSet<>();
     private final List<PusPool> pusPools = new ArrayList<>();
     private int customBlockBreakTaskId = -1;
+    private boolean applyingBossSkillDamage;
 
     @Override
     public void onEnable() {
@@ -769,7 +770,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             event.setDeathSound(null);
             event.setDeathSoundVolume(0.0F);
             event.getDrops().clear();
-            event.setDroppedExp(40);
+            event.setDroppedExp(200);
             completeDungeonRun(bossRun, event.getEntity().getWorld());
             return;
         }
@@ -800,7 +801,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             event.setDeathSound(null);
             event.setDeathSoundVolume(0.0F);
             event.getDrops().clear();
-            event.setDroppedExp(40);
+            event.setDroppedExp(200);
             return;
         }
         if (isPusBug(event.getEntity())) {
@@ -899,11 +900,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             applyGulperDrain((Zombie) byEntity.getDamager(), player);
         }
         if (event instanceof EntityDamageByEntityEvent byEntity && isFerryman(byEntity.getDamager())) {
-            if (isBossSkillLocked(byEntity.getDamager().getUniqueId())) {
+            if (!applyingBossSkillDamage && isBossSkillLocked(byEntity.getDamager().getUniqueId())) {
                 event.setCancelled(true);
                 return;
             }
-            ferrymanAttackTicks.put(byEntity.getDamager().getUniqueId(), customMonsterTick);
+            if (!applyingBossSkillDamage) {
+                ferrymanAttackTicks.put(byEntity.getDamager().getUniqueId(), customMonsterTick);
+            }
         }
     }
 
@@ -3818,7 +3821,6 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return;
         }
         if (cast.type == BossSkillType.SHOCK) {
-            playFerrymanShockWarning(world, run.center);
             if (cast.age(customMonsterTick) >= FERRYMAN_CAST_TICKS) {
                 dealBossPhysicalDamageToAll(boss, world, FERRYMAN_SHOCK_DAMAGE);
                 finishBossSkill(run);
@@ -3944,8 +3946,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private void dealBossPhysicalDamage(LivingEntity boss, Player player, double damage) {
         player.setNoDamageTicks(0);
-        player.damage(damage, boss);
-        player.setNoDamageTicks(0);
+        applyingBossSkillDamage = true;
+        try {
+            player.damage(damage, boss);
+        } finally {
+            applyingBossSkillDamage = false;
+            player.setNoDamageTicks(0);
+        }
     }
 
     private void dealBossMagicDamage(Player player, double damage) {
@@ -7536,7 +7543,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             spawnExperience(entity.getLocation(), 15);
         } else if (isFerryman(entity)) {
             removeFerrymanDisplay(uuid);
-            spawnExperience(entity.getLocation(), 40);
+            spawnExperience(entity.getLocation(), 200);
         } else if (isPusBug(entity)) {
             removePusBugDisplay(uuid);
             triggerPusBugDeath(entity);
