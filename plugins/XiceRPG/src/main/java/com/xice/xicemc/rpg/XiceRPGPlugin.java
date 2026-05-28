@@ -151,9 +151,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final double BOSS_ENTITY_MAX_HEALTH = 1024.0D;
     private static final String FERRYMAN_TYPE = "ferryman";
     private static final float FERRYMAN_DISPLAY_PICK_SIZE = 0.0F;
-    private static final double FERRYMAN_DESIGNED_EFFECTIVE_HEALTH = 5800.0D;
     private static final double FERRYMAN_MAX_HEALTH = BOSS_ENTITY_MAX_HEALTH;
-    private static final double FERRYMAN_ALL_DAMAGE_REDUCTION = 1.0D - BOSS_ENTITY_MAX_HEALTH / FERRYMAN_DESIGNED_EFFECTIVE_HEALTH;
+    private static final double FERRYMAN_ALL_DAMAGE_REDUCTION = 0.20D;
     private static final double FERRYMAN_ARMOR = 20.0D;
     private static final double FERRYMAN_ATTACK_DAMAGE = 30.0D;
     private static final double FERRYMAN_FOLLOW_RANGE = 64.0D;
@@ -168,8 +167,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final long FERRYMAN_SOULFIRE_CHARGE_TICKS = 8L;
     private static final long FERRYMAN_SOULFIRE_AFTERSHOCK_TICKS = 20L;
     private static final long FERRYMAN_WASTELAND_CAST_TICKS = 200L;
-    private static final long FERRYMAN_WASTELAND_ENRAGE_TICKS = 20L * 180L;
-    private static final double FERRYMAN_FERRY_RADIUS = 5.0D;
+    private static final long FERRYMAN_WASTELAND_ENRAGE_TICKS = 20L * 480L;
+    private static final double FERRYMAN_FERRY_RADIUS = 8.0D;
     private static final double FERRYMAN_FERRY_DAMAGE = 65.0D;
     private static final double FERRYMAN_SOULFIRE_PATH_DAMAGE = 40.0D;
     private static final double FERRYMAN_SOULFIRE_PATH_WIDTH = 1.55D;
@@ -3438,7 +3437,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         curseForcedExits.remove(instance.ownerUuid());
         DungeonRun run = dungeonRunsByWorld.remove(instance.worldName());
         if (run != null) {
-            run.bossBar.removeAll();
+            removeDungeonRunBars(run);
         }
         World world = Bukkit.getWorld(instance.worldName());
         int movedPlayers = 0;
@@ -3521,7 +3520,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             World world = Bukkit.getWorld(run.worldName);
             if (world == null || !towerInstancesByWorld.containsKey(run.worldName)) {
                 dungeonRunsByWorld.remove(run.worldName);
-                run.bossBar.removeAll();
+                removeDungeonRunBars(run);
                 continue;
             }
             addDungeonBossBarPlayers(run);
@@ -3867,6 +3866,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             playSoulfireChargeParticles(cast.chargeStart, next);
             damagePlayersNearSoulfirePath(boss, world, cast, cast.chargeStart, next);
             if (cast.phaseAge(customMonsterTick) >= FERRYMAN_SOULFIRE_CHARGE_TICKS) {
+                damagePlayersNearSoulfirePath(boss, world, cast, cast.chargeStart, cast.chargeEnd);
+                damageSoulfireImpactTarget(boss, target, cast);
                 cast.phase = BossSkillPhase.AFTERSHOCK;
                 cast.phaseStartedTick = customMonsterTick;
             }
@@ -3996,6 +3997,14 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
+    private void damageSoulfireImpactTarget(LivingEntity boss, Player target, BossSkillCast cast) {
+        if (!isActiveDungeonPlayer(target) || cast.hitPlayers.contains(target.getUniqueId())) {
+            return;
+        }
+        cast.hitPlayers.add(target.getUniqueId());
+        dealBossPhysicalDamage(boss, target, FERRYMAN_SOULFIRE_PATH_DAMAGE);
+    }
+
     private double distanceSquaredToSegment(Vector point, Vector start, Vector end) {
         Vector segment = end.clone().subtract(start);
         double lengthSquared = segment.lengthSquared();
@@ -4036,7 +4045,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void playFerrymanFerryWarning(Location center) {
-        playWarningCircle(center, FERRYMAN_FERRY_RADIUS, Color.fromRGB(255, 228, 72), 36, 0.08D);
+        playFilledWarningCircle(center, FERRYMAN_FERRY_RADIUS, Color.fromRGB(255, 228, 72), 0.08D);
     }
 
     private void playFerrymanAftershockWarning(Location center) {
@@ -4081,6 +4090,29 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
+    private void playFilledWarningCircle(Location center, double radius, Color color, double yOffset) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        playWarningCircle(center, radius, color, 56, yOffset);
+        if (customMonsterTick % 2L != 0L) {
+            return;
+        }
+        Particle.DustOptions dust = new Particle.DustOptions(color, 0.85F);
+        Location origin = center.clone().add(0.0D, yOffset, 0.0D);
+        world.spawnParticle(Particle.DUST, origin, 1, 0.01D, 0.01D, 0.01D, 0.0D, dust);
+        for (double currentRadius = 1.5D; currentRadius < radius; currentRadius += 1.5D) {
+            int points = Math.max(8, (int) Math.ceil(currentRadius * 6.0D));
+            double phase = (customMonsterTick % 20L) * 0.08D;
+            for (int i = 0; i < points; i++) {
+                double angle = phase + Math.PI * 2.0D * i / points;
+                Location point = origin.clone().add(Math.cos(angle) * currentRadius, 0.0D, Math.sin(angle) * currentRadius);
+                world.spawnParticle(Particle.DUST, point, 1, 0.01D, 0.01D, 0.01D, 0.0D, dust);
+            }
+        }
+    }
+
     private void playSoulfireLineWarning(Location from, Location to) {
         World world = from.getWorld();
         if (world == null || to.getWorld() != world) {
@@ -4121,7 +4153,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private void completeDungeonRun(DungeonRun run, World world) {
         dungeonRunsByWorld.remove(run.worldName);
-        run.bossBar.removeAll();
+        removeDungeonRunBars(run);
         ModuleRecord module = modules.get(run.moduleKey);
         for (Player player : world.getPlayers()) {
             if (module != null) {
@@ -4163,6 +4195,16 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             if (!run.bossBar.getPlayers().contains(player)) {
                 run.bossBar.addPlayer(player);
             }
+            if (run.castBar != null && !run.castBar.getPlayers().contains(player)) {
+                run.castBar.addPlayer(player);
+            }
+        }
+    }
+
+    private void removeDungeonRunBars(DungeonRun run) {
+        run.bossBar.removeAll();
+        if (run.castBar != null) {
+            run.castBar.removeAll();
         }
     }
 
@@ -4174,19 +4216,15 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 run.bossBar.setTitle(config.displayName() + " - 已消失");
                 run.bossBar.setProgress(0.0D);
                 run.bossBar.setColor(BarColor.PURPLE);
+                updateDungeonCastBar(run);
                 return;
             }
             double maxHealth = Math.max(1.0D, maxHealth(boss));
             double health = Math.max(0.0D, Math.min(boss.getHealth(), maxHealth));
-            String state = "";
-            if (run.bossEnraged) {
-                state = " - 荒芜降临";
-            } else if (run.activeBossSkill != null) {
-                state = " - " + run.activeBossSkill.type.displayName();
-            }
-            run.bossBar.setTitle(config.displayName() + state + " - " + formatHealthValue(health) + "/" + formatHealthValue(maxHealth));
+            run.bossBar.setTitle(config.displayName() + " - " + formatHealthValue(health) + "/" + formatHealthValue(maxHealth));
             run.bossBar.setProgress(Math.max(0.0D, Math.min(1.0D, health / maxHealth)));
             run.bossBar.setColor(BarColor.PURPLE);
+            updateDungeonCastBar(run);
             return;
         }
         int totalWaves = Math.max(1, run.waves.size());
@@ -4206,6 +4244,23 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         run.bossBar.setTitle("第 " + (run.currentWaveIndex + 1) + "/" + totalWaves + " 波 - 剩余敌人: " + remaining);
         run.bossBar.setProgress(progress);
         run.bossBar.setColor(BarColor.RED);
+    }
+
+    private void updateDungeonCastBar(DungeonRun run) {
+        if (run.castBar == null) {
+            return;
+        }
+        BossSkillCast cast = run.activeBossSkill;
+        if (cast == null || cast.phase != BossSkillPhase.CASTING) {
+            run.castBar.setVisible(false);
+            return;
+        }
+        long duration = cast.type == BossSkillType.WASTELAND ? FERRYMAN_WASTELAND_CAST_TICKS : FERRYMAN_CAST_TICKS;
+        double progress = Math.max(0.0D, Math.min(1.0D, (double) cast.age(customMonsterTick) / duration));
+        run.castBar.setTitle("读条: " + cast.type.displayName());
+        run.castBar.setProgress(progress);
+        run.castBar.setColor(cast.type == BossSkillType.WASTELAND ? BarColor.PURPLE : BarColor.YELLOW);
+        run.castBar.setVisible(true);
     }
 
     private Location findDungeonMobSpawn(Location center, int index, int total) {
@@ -4924,8 +4979,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             String bossPath = "modules." + module.key() + ".boss";
             BossConfig boss = module.bossConfig();
             BossConfig normalizedBoss = boss.withMaxHealth(Math.min(BOSS_ENTITY_MAX_HEALTH, boss.maxHealth()));
+            if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(boss.type()))
+                    && Math.abs(normalizedBoss.allDamageReduction() - FERRYMAN_ALL_DAMAGE_REDUCTION) > 0.0001D) {
+                normalizedBoss = normalizedBoss.withAllDamageReduction(FERRYMAN_ALL_DAMAGE_REDUCTION);
+            }
             if (!modulesConfig.contains(bossPath + ".all-damage-reduction")
-                    || Math.abs(boss.maxHealth() - normalizedBoss.maxHealth()) > 0.0001D) {
+                    || Math.abs(boss.maxHealth() - normalizedBoss.maxHealth()) > 0.0001D
+                    || Math.abs(boss.allDamageReduction() - normalizedBoss.allDamageReduction()) > 0.0001D) {
                 module = module.withBossConfig(normalizedBoss);
                 modules.put(module.key(), module);
                 changed = true;
@@ -7956,6 +8016,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         private BossConfig withMaxHealth(double maxHealth) {
             return new BossConfig(type, displayName, maxHealth, attackDamage, armor, movementSpeed, followRange, allDamageReduction);
         }
+
+        private BossConfig withAllDamageReduction(double allDamageReduction) {
+            return new BossConfig(type, displayName, maxHealth, attackDamage, armor, movementSpeed, followRange, allDamageReduction);
+        }
     }
 
     private record DungeonWaveConfig(List<DungeonWaveEnemyConfig> enemies, int waitSeconds) {
@@ -8106,6 +8170,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         private final BossConfig bossConfig;
         private final Set<UUID> liveMobs = new HashSet<>();
         private final HudBossBar bossBar;
+        private final HudBossBar castBar;
         private final long bossStartTick;
         private UUID bossUuid;
         private BossSkillCast activeBossSkill;
@@ -8132,6 +8197,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                     this.dungeonType == DungeonType.BOSS ? BarColor.PURPLE : BarColor.RED,
                     this.dungeonType == DungeonType.BOSS ? BarStyle.SOLID : BarStyle.SEGMENTED_10);
             this.bossBar.setProgress(1.0D);
+            this.castBar = this.dungeonType == DungeonType.BOSS
+                    ? hudService.createBossBar("xicerpg:dungeon_cast:" + worldName, "", BarColor.YELLOW, BarStyle.SOLID)
+                    : null;
+            if (this.castBar != null) {
+                this.castBar.setProgress(0.0D);
+                this.castBar.setVisible(false);
+            }
         }
 
         private boolean isBossDungeon() {

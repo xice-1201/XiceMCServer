@@ -730,6 +730,11 @@ public final class XiceHudPlugin extends JavaPlugin implements HudService, Liste
         }
 
         @Override
+        public void setVisible(boolean visible) {
+            bossBar.setVisible(visible);
+        }
+
+        @Override
         public void addPlayer(Player player) {
             bossBar.addPlayer(player);
         }

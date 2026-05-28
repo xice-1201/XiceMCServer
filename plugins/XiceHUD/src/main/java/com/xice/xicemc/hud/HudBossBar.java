@@ -11,6 +11,8 @@ public interface HudBossBar {
 
     void setColor(BarColor color);
 
+    void setVisible(boolean visible);
+
     void addPlayer(Player player);
 
     void removePlayer(Player player);
