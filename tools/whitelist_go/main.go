@@ -272,7 +272,7 @@ func loadConfig() config {
 		ServerDocsPath:              env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
 		ServerDocsMaxLength:         envInt("XICEMC_DOCS_MAX_LENGTH", 100000),
 		SessionSecret:               env("WHITELIST_WEB_SESSION_SECRET", rconPassword),
-		PublicSiteBaseURL:           strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "http://xicemc.site"), "/"),
+		PublicSiteBaseURL:           strings.TrimRight(env("XICEMC_PUBLIC_SITE_BASE_URL", "https://xicemc.site"), "/"),
 		PublicSiteDomain:            env("XICEMC_PUBLIC_SITE_DOMAIN", "xicemc.site"),
 		ICPRecordNo:                 env("XICEMC_ICP_RECORD_NO", "粤ICP备2026065077号"),
 		ICPRecordURL:                env("XICEMC_ICP_RECORD_URL", "https://beian.miit.gov.cn/"),

@@ -43,20 +43,20 @@ https://xicemc.site/
 https://www.xicemc.site/
 ```
 
-当前备案完成前临时使用 HTTP IP 入口：
+IP HTTP 入口保留给故障排查和域名异常时的临时访问：
 
 ```text
 http://150.158.93.80/
 ```
 
-该入口由 Nginx 的默认 HTTP server 转发到 Web 后端，仅用于域名备案完成前的小范围测试。HTTPS 域名入口和 `443` 监听可在备案完成后再补齐。
+该入口由 Nginx 的默认 HTTP server 转发到 Web 后端。正式公开访问使用 HTTPS 域名入口。
 
 DNS 解析：
 
 1. `xicemc.site` A 记录指向 `150.158.93.80`。
 2. `www.xicemc.site` A 记录指向 `150.158.93.80`。
 
-当前服务器侧由 Nginx 监听 `80`，再反向代理到本机 Web 服务；备案完成后再启用 `443`：
+当前服务器侧由 Nginx 监听 `80` 和 `443`。域名 HTTP 请求会跳转到 HTTPS，HTTPS 再反向代理到本机 Web 服务：
 
 ```text
 127.0.0.1:8080

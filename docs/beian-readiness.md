@@ -15,14 +15,14 @@ deploy/nginx/xicemc-web.conf
 正式 Web 入口：
 
 ```text
-http://xicemc.site/
-http://www.xicemc.site/
+https://xicemc.site/
+https://www.xicemc.site/
 ```
 
 资源包入口：
 
 ```text
-http://xicemc.site/resourcepacks/xiceclaim.zip
+https://xicemc.site/resourcepacks/xiceclaim.zip
 ```
 
 IP 入口仍可由 Nginx default server 转发到 Web 服务，但公开展示和资源地址以域名为准。
@@ -38,7 +38,7 @@ Web 端页脚显示 ICP 与公安联网备案信息。当前 ICP 备案号：
 运行时环境变量可覆盖默认值：
 
 ```env
-XICEMC_PUBLIC_SITE_BASE_URL=http://xicemc.site
+XICEMC_PUBLIC_SITE_BASE_URL=https://xicemc.site
 XICEMC_PUBLIC_SITE_DOMAIN=xicemc.site
 XICEMC_ICP_RECORD_NO=粤ICP备2026065077号
 XICEMC_ICP_RECORD_URL=https://beian.miit.gov.cn/
