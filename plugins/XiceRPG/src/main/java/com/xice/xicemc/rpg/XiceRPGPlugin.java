@@ -176,18 +176,22 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final long FERRYMAN_WASTELAND_CAST_TICKS = 200L;
     private static final long FERRYMAN_WASTELAND_ENRAGE_TICKS = 20L * 480L;
     private static final long FERRYMAN_HARD_TOWER_SEAL_TRIGGER_TICKS = 20L * 180L;
+    private static final long FERRYMAN_HARD_PHASE_THREE_TRIGGER_TICKS = 20L * 360L;
+    private static final long FERRYMAN_HARD_PHASE_THREE_SKILL_INTERVAL_TICKS = 40L;
     private static final long FERRYMAN_HARD_TOWER_SEAL_CAST_TICKS = 80L;
     private static final int FERRYMAN_HARD_TOWER_SEAL_PULSES = 9;
     private static final long FERRYMAN_HARD_TOWER_SEAL_PULSE_INTERVAL_TICKS = 20L;
     private static final double FERRYMAN_HARD_TOWER_SEAL_RING_WIDTH = 3.0D;
     private static final double FERRYMAN_HARD_TOWER_SEAL_DAMAGE = 60.0D;
     private static final long FERRYMAN_HARD_TOWER_SEAL_MIDNIGHT_TIME = 18000L;
-    private static final long FERRYMAN_SOUL_MARK_CAST_TICKS = 20L;
+    private static final long FERRYMAN_SOUL_MARK_CAST_TICKS = 10L;
     private static final long FERRYMAN_SOUL_MARK_DURATION_TICKS = 20L * 30L;
     private static final long FERRYMAN_SPIRIT_CALL_CAST_TICKS = 60L;
+    private static final long FERRYMAN_SPIRIT_CALL_PULL_INTERVAL_TICKS = 10L;
     private static final double FERRYMAN_SPIRIT_CALL_PULL_STRENGTH = 0.085D;
     private static final double FERRYMAN_SPIRIT_CALL_FINAL_PULL_STRENGTH = 1.85D;
-    private static final double FERRYMAN_PHASE_TWO_FERRY_SOULFIRE_CHAIN_CHANCE = 0.35D;
+    private static final double FERRYMAN_PHASE_TWO_FERRY_SOULFIRE_CHAIN_CHANCE = 0.20D;
+    private static final double FERRYMAN_PHASE_THREE_IMMEDIATE_SKILL_CHANCE = 0.45D;
     private static final double FERRYMAN_FERRY_RADIUS = 8.0D;
     private static final double FERRYMAN_FERRY_DAMAGE = 40.0D;
     private static final double FERRYMAN_HARD_FERRY_DAMAGE = 60.0D;
@@ -208,8 +212,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final int FERRYMAN_HARD_SOULFIRE_BURN_TICKS = 20 * 30;
     private static final double FERRYMAN_HARD_ATTACK_DAMAGE = 20.0D;
     private static final double FERRYMAN_SHOCK_DAMAGE = 25.0D;
-    private static final double FERRYMAN_HARD_SHOCK_DAMAGE = 50.0D;
-    private static final double FERRYMAN_HARD_ALL_DAMAGE_REDUCTION = 0.70D;
+    private static final double FERRYMAN_HARD_SHOCK_DAMAGE = 60.0D;
+    private static final double FERRYMAN_HARD_ALL_DAMAGE_REDUCTION = 0.55D;
     private static final long FERRYMAN_DAMAGE_REDUCTION_MILLIS = 30_000L;
     private static final int FERRYMAN_DAMAGE_REDUCTION_LEVEL = 5;
     private static final long FERRYMAN_SIPHON_CAST_TICKS = 60L;
@@ -240,6 +244,17 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             BossSkillType.SIPHON,
             BossSkillType.SPIRIT_CALL,
             BossSkillType.SOUL_MARK
+    };
+    private static final BossSkillType[] FERRYMAN_HARD_PHASE_THREE_SKILL_SEQUENCE = {
+            BossSkillType.SOUL_MARK,
+            BossSkillType.FERRY,
+            BossSkillType.SOULFIRE,
+            BossSkillType.SHOCK,
+            BossSkillType.SPIRIT_CALL,
+            BossSkillType.FERRY,
+            BossSkillType.SIPHON,
+            BossSkillType.SHOCK,
+            BossSkillType.SOULFIRE
     };
     private static final String PUS_BUG_TYPE = "pus_bug";
     private static final float PUS_BUG_DISPLAY_PICK_SIZE = 0.0F;
@@ -3871,7 +3886,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         long elapsed = customMonsterTick - run.bossStartTick;
         if (elapsed >= FERRYMAN_WASTELAND_ENRAGE_TICKS
-                && (run.activeBossSkill == null || run.activeBossSkill.type != BossSkillType.WASTELAND)) {
+                && run.activeBossSkill == null) {
             startBossSkill(run, boss, BossSkillType.WASTELAND);
         }
         if (isHardFerrymanRun(run) && !run.towerSealUsed
@@ -3898,6 +3913,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (!isHardFerrymanRun(run)) {
             return FERRYMAN_SKILL_SEQUENCE;
         }
+        if (isHardFerrymanPhaseThree(run)) {
+            return FERRYMAN_HARD_PHASE_THREE_SKILL_SEQUENCE;
+        }
         return run.towerSealUsed ? FERRYMAN_HARD_PHASE_TWO_SKILL_SEQUENCE : FERRYMAN_HARD_PHASE_ONE_SKILL_SEQUENCE;
     }
 
@@ -3923,6 +3941,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private boolean isHardFerrymanPhaseTwo(DungeonRun run) {
         return isHardFerrymanRun(run) && run.towerSealUsed;
+    }
+
+    private boolean isHardFerrymanPhaseThree(DungeonRun run) {
+        return isHardFerrymanPhaseTwo(run)
+                && customMonsterTick - run.bossStartTick >= FERRYMAN_HARD_PHASE_THREE_TRIGGER_TICKS;
     }
 
     private long ferrymanSkillCastTicks(DungeonRun run, BossSkillType type) {
@@ -4020,7 +4043,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         if (cast.type == BossSkillType.SOUL_MARK) {
             if (cast.age(customMonsterTick) >= ferrymanSkillCastTicks(run, cast.type)) {
-                applyFerrymanSoulMarks(run, world);
+                applyFerrymanSoulMarks(run, world, boss);
                 run.forcedNextBossSkill = Math.random() < 0.5D ? BossSkillType.FERRY : BossSkillType.SIPHON;
                 finishBossSkill(run);
             }
@@ -4103,12 +4126,28 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void finishBossSkill(DungeonRun run) {
+        BossSkillType finishedType = run.activeBossSkill == null ? null : run.activeBossSkill.type;
         run.activeBossSkill = null;
-        run.nextBossSkillTick = customMonsterTick + ferrymanSkillIntervalTicks(run);
+        long interval = ferrymanSkillIntervalTicks(run);
+        if (shouldImmediatelyContinuePhaseThreeSkill(run, finishedType)) {
+            interval = 1L;
+        }
+        run.nextBossSkillTick = customMonsterTick + interval;
     }
 
     private long ferrymanSkillIntervalTicks(DungeonRun run) {
+        if (isHardFerrymanPhaseThree(run)) {
+            return FERRYMAN_HARD_PHASE_THREE_SKILL_INTERVAL_TICKS;
+        }
         return isHardFerrymanPhaseTwo(run) ? FERRYMAN_HARD_PHASE_TWO_SKILL_INTERVAL_TICKS : FERRYMAN_SKILL_INTERVAL_TICKS;
+    }
+
+    private boolean shouldImmediatelyContinuePhaseThreeSkill(DungeonRun run, BossSkillType type) {
+        return isHardFerrymanPhaseThree(run)
+                && type != null
+                && type != BossSkillType.TOWER_SEAL
+                && type != BossSkillType.WASTELAND
+                && Math.random() < FERRYMAN_PHASE_THREE_IMMEDIATE_SKILL_CHANCE;
     }
 
     private void maybeChainPhaseTwoSoulfire(DungeonRun run) {
@@ -4120,7 +4159,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void tickSpiritCallSkill(DungeonRun run, World world, LivingEntity boss, BossSkillCast cast) {
-        pullDungeonPlayersToward(boss.getLocation(), world, FERRYMAN_SPIRIT_CALL_PULL_STRENGTH, 0.05D);
+        if (cast.age(customMonsterTick) % FERRYMAN_SPIRIT_CALL_PULL_INTERVAL_TICKS == 0L) {
+            pullDungeonPlayersToward(boss.getLocation(), world, FERRYMAN_SPIRIT_CALL_PULL_STRENGTH, 0.05D);
+        }
         playSpiritCallCastEffect(boss.getLocation(), cast.age(customMonsterTick));
         if (cast.age(customMonsterTick) < ferrymanSkillCastTicks(run, cast.type)) {
             return;
@@ -4223,7 +4264,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
-    private void applyFerrymanSoulMarks(DungeonRun run, World world) {
+    private void applyFerrymanSoulMarks(DungeonRun run, World world, LivingEntity boss) {
         run.soulMarks.clear();
         long expiresTick = customMonsterTick + FERRYMAN_SOUL_MARK_DURATION_TICKS;
         for (Player player : world.getPlayers()) {
@@ -4233,6 +4274,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             Location location = player.getLocation().clone();
             run.soulMarks.add(new FerrymanSoulMark(location, expiresTick));
             playSoulMarkApplyEffect(location);
+        }
+        if (isHardFerrymanPhaseThree(run)) {
+            Location bossLocation = boss.getLocation().clone();
+            run.soulMarks.add(new FerrymanSoulMark(bossLocation, expiresTick));
+            playSoulMarkApplyEffect(bossLocation);
         }
         world.playSound(run.center, Sound.ENTITY_EVOKER_CAST_SPELL, 0.95F, 0.55F);
     }
