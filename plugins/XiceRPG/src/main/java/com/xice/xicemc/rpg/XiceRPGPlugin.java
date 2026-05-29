@@ -184,6 +184,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final long FERRYMAN_HARD_TOWER_SEAL_MIDNIGHT_TIME = 18000L;
     private static final long FERRYMAN_SOUL_MARK_CAST_TICKS = 20L;
     private static final long FERRYMAN_SOUL_MARK_DURATION_TICKS = 20L * 30L;
+    private static final long FERRYMAN_SPIRIT_CALL_CAST_TICKS = 60L;
+    private static final double FERRYMAN_SPIRIT_CALL_PULL_STRENGTH = 0.085D;
+    private static final double FERRYMAN_SPIRIT_CALL_FINAL_PULL_STRENGTH = 1.85D;
     private static final double FERRYMAN_PHASE_TWO_FERRY_SOULFIRE_CHAIN_CHANCE = 0.35D;
     private static final double FERRYMAN_FERRY_RADIUS = 8.0D;
     private static final double FERRYMAN_FERRY_DAMAGE = 40.0D;
@@ -205,8 +208,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final int FERRYMAN_HARD_SOULFIRE_BURN_TICKS = 20 * 30;
     private static final double FERRYMAN_HARD_ATTACK_DAMAGE = 20.0D;
     private static final double FERRYMAN_SHOCK_DAMAGE = 25.0D;
-    private static final double FERRYMAN_HARD_SHOCK_DAMAGE = 40.0D;
-    private static final double FERRYMAN_HARD_ALL_DAMAGE_REDUCTION = 0.60D;
+    private static final double FERRYMAN_HARD_SHOCK_DAMAGE = 50.0D;
+    private static final double FERRYMAN_HARD_ALL_DAMAGE_REDUCTION = 0.70D;
     private static final long FERRYMAN_DAMAGE_REDUCTION_MILLIS = 30_000L;
     private static final int FERRYMAN_DAMAGE_REDUCTION_LEVEL = 5;
     private static final long FERRYMAN_SIPHON_CAST_TICKS = 60L;
@@ -235,6 +238,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             BossSkillType.FERRY,
             BossSkillType.SHOCK,
             BossSkillType.SIPHON,
+            BossSkillType.SPIRIT_CALL,
             BossSkillType.SOUL_MARK
     };
     private static final String PUS_BUG_TYPE = "pus_bug";
@@ -1403,6 +1407,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         Location spawn = moduleRecord.spawn(instanceWorld);
         configureWorld(instanceWorld, spawn, moduleRecord.borderDistance());
+        restoreDungeonPhaseWorldTime(instance.worldName(), instanceWorld);
         event.setRespawnLocation(spawn);
         Bukkit.getScheduler().runTask(this, () -> callPotionEffectsPlugin(
                 "applyRebirthBlessing",
@@ -3859,6 +3864,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         tickFerrymanSiphonPhantoms(run, world);
         tickFerrymanSoulMarks(run, world);
         tickTowerSealExpansion(run, world, boss);
+        maintainFerrymanPhaseWorldTime(run, world);
         if (run.bossEnraged) {
             killAllDungeonPlayers(world);
             return;
@@ -3928,6 +3934,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         if (type == BossSkillType.SOUL_MARK) {
             return FERRYMAN_SOUL_MARK_CAST_TICKS;
+        }
+        if (type == BossSkillType.SPIRIT_CALL) {
+            return FERRYMAN_SPIRIT_CALL_CAST_TICKS;
         }
         if (type == BossSkillType.SIPHON) {
             return FERRYMAN_SIPHON_CAST_TICKS;
@@ -4017,6 +4026,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             }
             return;
         }
+        if (cast.type == BossSkillType.SPIRIT_CALL) {
+            tickSpiritCallSkill(run, world, boss, cast);
+            return;
+        }
         if (cast.type == BossSkillType.WASTELAND) {
             playFerrymanWastelandWarning(world, run.center, cast.age(customMonsterTick));
             if (cast.age(customMonsterTick) >= FERRYMAN_WASTELAND_CAST_TICKS) {
@@ -4104,6 +4117,47 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         run.forcedNextBossSkill = BossSkillType.SOULFIRE;
         run.nextBossSkillTick = customMonsterTick + 1L;
+    }
+
+    private void tickSpiritCallSkill(DungeonRun run, World world, LivingEntity boss, BossSkillCast cast) {
+        pullDungeonPlayersToward(boss.getLocation(), world, FERRYMAN_SPIRIT_CALL_PULL_STRENGTH, 0.05D);
+        playSpiritCallCastEffect(boss.getLocation(), cast.age(customMonsterTick));
+        if (cast.age(customMonsterTick) < ferrymanSkillCastTicks(run, cast.type)) {
+            return;
+        }
+        pullDungeonPlayersToward(boss.getLocation(), world, FERRYMAN_SPIRIT_CALL_FINAL_PULL_STRENGTH, 0.28D);
+        playSpiritCallReleaseEffect(boss.getLocation());
+        finishBossSkill(run);
+        run.forcedNextBossSkill = BossSkillType.FERRY;
+        run.nextBossSkillTick = customMonsterTick + 1L;
+    }
+
+    private void pullDungeonPlayersToward(Location center, World world, double strength, double lift) {
+        for (Player player : world.getPlayers()) {
+            if (!isActiveDungeonPlayer(player)) {
+                continue;
+            }
+            Vector direction = center.toVector().subtract(player.getLocation().toVector());
+            direction.setY(0.0D);
+            if (direction.lengthSquared() <= 0.0001D) {
+                continue;
+            }
+            Vector pull = direction.normalize().multiply(strength).setY(lift);
+            player.setVelocity(player.getVelocity().add(pull));
+        }
+    }
+
+    private void maintainFerrymanPhaseWorldTime(DungeonRun run, World world) {
+        if (isHardFerrymanPhaseTwo(run) && world.getTime() != FERRYMAN_HARD_TOWER_SEAL_MIDNIGHT_TIME) {
+            world.setTime(FERRYMAN_HARD_TOWER_SEAL_MIDNIGHT_TIME);
+        }
+    }
+
+    private void restoreDungeonPhaseWorldTime(String worldName, World world) {
+        DungeonRun run = dungeonRunsByWorld.get(worldName);
+        if (run != null && isHardFerrymanPhaseTwo(run)) {
+            world.setTime(FERRYMAN_HARD_TOWER_SEAL_MIDNIGHT_TIME);
+        }
     }
 
     private void tickTowerSealSkill(DungeonRun run, World world, LivingEntity boss, BossSkillCast cast) {
@@ -4553,6 +4607,38 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (tick % 10L == 0L) {
             world.spawnParticle(Particle.SOUL, location.clone().add(0.0D, 1.1D, 0.0D), 10, 0.42D, 0.55D, 0.42D, 0.025D);
         }
+    }
+
+    private void playSpiritCallCastEffect(Location center, long age) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        double radius = Math.max(2.0D, 8.0D - Math.min(1.0D, age / (double) FERRYMAN_SPIRIT_CALL_CAST_TICKS) * 4.0D);
+        playWarningCircle(center, radius, Color.fromRGB(92, 210, 255), 96, 0.18D);
+        Particle.DustOptions dust = new Particle.DustOptions(Color.fromRGB(94, 202, 255), 1.1F);
+        for (int index = 0; index < 18; index++) {
+            double angle = Math.PI * 2.0D * index / 18.0D + age * 0.08D;
+            Location outer = center.clone().add(Math.cos(angle) * radius, 0.24D, Math.sin(angle) * radius);
+            Vector inward = center.toVector().subtract(outer.toVector()).normalize();
+            for (double step = 0.0D; step <= 2.4D; step += 0.8D) {
+                Location point = outer.clone().add(inward.clone().multiply(step));
+                world.spawnParticle(Particle.DUST, point, 1, 0.01D, 0.01D, 0.01D, 0.0D, dust);
+            }
+        }
+        if (age % 20L == 0L) {
+            world.playSound(center, Sound.ENTITY_EVOKER_PREPARE_ATTACK, 0.75F, 0.62F);
+        }
+    }
+
+    private void playSpiritCallReleaseEffect(Location center) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        world.spawnParticle(Particle.SONIC_BOOM, center.clone().add(0.0D, 1.0D, 0.0D), 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        world.spawnParticle(Particle.SOUL, center.clone().add(0.0D, 0.8D, 0.0D), 80, 2.2D, 0.8D, 2.2D, 0.08D);
+        world.playSound(center, Sound.ENTITY_WARDEN_SONIC_BOOM, 0.9F, 1.25F);
     }
 
     private void strikeTowerSealDecorations(World world, Location center) {
@@ -9041,6 +9127,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         SHOCK("震击"),
         TOWER_SEAL("灼魂镇塔"),
         SOUL_MARK("镇魂"),
+        SPIRIT_CALL("唤灵"),
         WASTELAND("荒芜之魔塔");
 
         private final String displayName;
