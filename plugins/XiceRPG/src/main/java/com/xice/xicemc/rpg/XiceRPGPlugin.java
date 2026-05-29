@@ -76,6 +76,7 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityCombustEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -861,6 +862,14 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onFerrymanCombust(EntityCombustEvent event) {
+        if (isFerryman(event.getEntity())) {
+            event.setCancelled(true);
+            event.getEntity().setFireTicks(0);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onCustomMonsterDamage(EntityDamageEvent event) {
         if (event.getFinalDamage() <= 0.0D) {
             return;
@@ -1162,16 +1171,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND) {
-            return;
-        }
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
+        boolean satietySkillOrb = isSatietySkillOrb(event.getItem());
+        if (event.getHand() != EquipmentSlot.HAND) {
+            if (event.getHand() == EquipmentSlot.OFF_HAND && satietySkillOrb) {
+                event.setCancelled(true);
+                useSatietySkillOrb(event.getPlayer());
+            }
+            return;
+        }
         Player player = event.getPlayer();
         boolean magicTowerKey = isMagicTowerKey(event.getItem());
-        boolean satietySkillOrb = isSatietySkillOrb(event.getItem());
         if (event.isCancelled() && !magicTowerKey && !satietySkillOrb) {
             return;
         }
