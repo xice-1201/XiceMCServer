@@ -178,11 +178,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final long FERRYMAN_WASTELAND_ENRAGE_TICKS = 20L * 480L;
     private static final double FERRYMAN_FERRY_RADIUS = 8.0D;
     private static final double FERRYMAN_FERRY_DAMAGE = 40.0D;
-    private static final double FERRYMAN_HARD_FERRY_DAMAGE = 120.0D;
+    private static final double FERRYMAN_HARD_FERRY_DAMAGE = 60.0D;
     private static final double FERRYMAN_SOULFIRE_PATH_DAMAGE = 20.0D;
     private static final double FERRYMAN_SOULFIRE_EMPOWERED_PATH_DAMAGE = 40.0D;
-    private static final double FERRYMAN_HARD_SOULFIRE_PATH_DAMAGE = 80.0D;
-    private static final double FERRYMAN_HARD_SOULFIRE_EMPOWERED_PATH_DAMAGE = 120.0D;
+    private static final double FERRYMAN_HARD_SOULFIRE_PATH_DAMAGE = 30.0D;
+    private static final double FERRYMAN_HARD_SOULFIRE_EMPOWERED_PATH_DAMAGE = 65.0D;
     private static final double FERRYMAN_SOULFIRE_EMPOWER_DISTANCE = 8.0D;
     private static final double FERRYMAN_SOULFIRE_EMPOWER_KNOCKBACK = 2.4D;
     private static final double FERRYMAN_HARD_SOULFIRE_EMPOWER_KNOCKBACK = 3.4D;
@@ -196,7 +196,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final int FERRYMAN_HARD_SOULFIRE_BURN_TICKS = 20 * 30;
     private static final double FERRYMAN_HARD_ATTACK_DAMAGE = 20.0D;
     private static final double FERRYMAN_SHOCK_DAMAGE = 25.0D;
-    private static final double FERRYMAN_HARD_SHOCK_DAMAGE = 80.0D;
+    private static final double FERRYMAN_HARD_SHOCK_DAMAGE = 40.0D;
     private static final double FERRYMAN_HARD_ALL_DAMAGE_REDUCTION = 0.40D;
     private static final long FERRYMAN_DAMAGE_REDUCTION_MILLIS = 30_000L;
     private static final int FERRYMAN_DAMAGE_REDUCTION_LEVEL = 5;
