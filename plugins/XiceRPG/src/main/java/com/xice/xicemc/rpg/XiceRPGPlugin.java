@@ -218,7 +218,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final int FERRYMAN_DAMAGE_REDUCTION_LEVEL = 5;
     private static final long FERRYMAN_SIPHON_CAST_TICKS = 60L;
     private static final long FERRYMAN_SIPHON_PHANTOM_TICKS = 200L;
-    private static final double FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH = 64.0D;
+    private static final double FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH = 36.0D;
     private static final double FERRYMAN_SIPHON_PHANTOM_HEALTH_DISPLAY_HEIGHT = 2.2D;
     private static final double FERRYMAN_SIPHON_DAMAGE = 10.0D;
     private static final int SATIETY_SKILL_ORB_FOOD_RESTORE_AMOUNT = 12;
@@ -491,6 +491,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private NamespacedKey ferrymanDisplayKey;
     private NamespacedKey ferrymanDisplayOwnerKey;
     private NamespacedKey ferrymanSiphonPhantomKey;
+    private NamespacedKey ferrymanSiphonPhantomMaxHealthKey;
     private NamespacedKey pusBugModelKey;
     private NamespacedKey pusBugDisplayKey;
     private NamespacedKey pusBugDisplayOwnerKey;
@@ -566,6 +567,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         ferrymanDisplayKey = new NamespacedKey(this, "ferryman_display");
         ferrymanDisplayOwnerKey = new NamespacedKey(this, "ferryman_display_owner");
         ferrymanSiphonPhantomKey = new NamespacedKey(this, "ferryman_siphon_phantom");
+        ferrymanSiphonPhantomMaxHealthKey = new NamespacedKey(this, "ferryman_siphon_phantom_max_health");
         pusBugModelKey = new NamespacedKey(this, "pus_bug_model");
         pusBugDisplayKey = new NamespacedKey(this, "pus_bug_display");
         pusBugDisplayOwnerKey = new NamespacedKey(this, "pus_bug_display_owner");
@@ -4032,7 +4034,6 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (cast.type == BossSkillType.SIPHON) {
             if (cast.age(customMonsterTick) >= ferrymanSkillCastTicks(run, cast.type)) {
                 summonFerrymanSiphonPhantoms(run, world);
-                summonFerrymanSiphonPhantomsAtSoulMarks(run, world);
                 finishBossSkill(run);
             }
             return;
@@ -4760,24 +4761,29 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void summonFerrymanSiphonPhantoms(DungeonRun run, World world) {
+        List<Location> locations = new ArrayList<>();
         for (Player player : world.getPlayers()) {
             if (!isActiveDungeonPlayer(player)) {
                 continue;
             }
-            summonFerrymanSiphonPhantom(run, world, player.getLocation().clone());
+            locations.add(player.getLocation().clone());
+        }
+        for (FerrymanSoulMark mark : run.soulMarks) {
+            if (mark.location.getWorld() == world) {
+                locations.add(mark.location.clone());
+            }
+        }
+        if (locations.isEmpty()) {
+            return;
+        }
+        double maxHealth = FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH / locations.size();
+        for (Location location : locations) {
+            summonFerrymanSiphonPhantom(run, world, location, maxHealth);
         }
         world.playSound(run.center, Sound.ENTITY_EVOKER_PREPARE_SUMMON, 1.0F, 0.65F);
     }
 
-    private void summonFerrymanSiphonPhantomsAtSoulMarks(DungeonRun run, World world) {
-        for (FerrymanSoulMark mark : run.soulMarks) {
-            if (mark.location.getWorld() == world) {
-                summonFerrymanSiphonPhantom(run, world, mark.location.clone());
-            }
-        }
-    }
-
-    private void summonFerrymanSiphonPhantom(DungeonRun run, World world, Location location) {
+    private void summonFerrymanSiphonPhantom(DungeonRun run, World world, Location location, double maxHealth) {
         Vindicator phantom = world.spawn(location, Vindicator.class, spawned -> {
                 spawned.setPersistent(false);
                 spawned.setSilent(true);
@@ -4787,7 +4793,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 spawned.setRemoveWhenFarAway(false);
                 spawned.customName(Component.text("摄魂幻影", NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
                 spawned.getPersistentDataContainer().set(ferrymanSiphonPhantomKey, PersistentDataType.BYTE, (byte) 1);
-                setAttribute(spawned, Attribute.MAX_HEALTH, FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH);
+                spawned.getPersistentDataContainer().set(ferrymanSiphonPhantomMaxHealthKey, PersistentDataType.DOUBLE, maxHealth);
+                setAttribute(spawned, Attribute.MAX_HEALTH, maxHealth);
                 setAttribute(spawned, Attribute.ARMOR, 0.0D);
                 setAttribute(spawned, Attribute.KNOCKBACK_RESISTANCE, 1.0D);
                 setAttribute(spawned, Attribute.MOVEMENT_SPEED, 0.0D);
@@ -4799,7 +4806,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                     equipment.setItemInMainHandDropChance(0.0F);
                     equipment.setItemInOffHandDropChance(0.0F);
                 }
-                spawned.setHealth(FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH);
+                spawned.setHealth(maxHealth);
             });
         HudBossBar bar = hudService.createBossBar("xicerpg:siphon:" + phantom.getUniqueId(), "", BarColor.PURPLE, BarStyle.SOLID);
         bar.setProgress(0.0D);
@@ -4872,16 +4879,26 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void applyFerrymanSiphonPhantomStats(LivingEntity phantom) {
+        double maxHealth = ferrymanSiphonPhantomMaxHealth(phantom);
         phantom.setSilent(true);
         phantom.setAI(false);
         phantom.setGravity(true);
         phantom.setVelocity(new Vector(0.0D, phantom.getVelocity().getY(), 0.0D));
         phantom.setCollidable(false);
-        setAttribute(phantom, Attribute.MAX_HEALTH, FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH);
+        setAttribute(phantom, Attribute.MAX_HEALTH, maxHealth);
+        if (phantom.getHealth() > maxHealth) {
+            phantom.setHealth(maxHealth);
+        }
         setAttribute(phantom, Attribute.ARMOR, 0.0D);
         setAttribute(phantom, Attribute.KNOCKBACK_RESISTANCE, 1.0D);
         setAttribute(phantom, Attribute.MOVEMENT_SPEED, 0.0D);
         setAttribute(phantom, Attribute.ATTACK_DAMAGE, 0.0D);
+    }
+
+    private double ferrymanSiphonPhantomMaxHealth(LivingEntity phantom) {
+        Double maxHealth = phantom.getPersistentDataContainer()
+                .get(ferrymanSiphonPhantomMaxHealthKey, PersistentDataType.DOUBLE);
+        return maxHealth == null || maxHealth <= 0.0D ? FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH : maxHealth;
     }
 
     private Location interpolateLocation(Location start, Location end, double progress) {
