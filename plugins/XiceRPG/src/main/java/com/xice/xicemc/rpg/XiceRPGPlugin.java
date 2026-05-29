@@ -76,9 +76,6 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.event.entity.EntityCombustByBlockEvent;
-import org.bukkit.event.entity.EntityCombustByEntityEvent;
-import org.bukkit.event.entity.EntityCombustEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -861,18 +858,6 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             player.sendMessage("挣脱诅咒: " + deaths + "/" + allowedDeaths);
         }
         respawnPlayerNextTick(player);
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onFerrymanCombust(EntityCombustEvent event) {
-        if (!isFerryman(event.getEntity())) {
-            return;
-        }
-        if (event instanceof EntityCombustByEntityEvent || event instanceof EntityCombustByBlockEvent) {
-            return;
-        }
-        event.setCancelled(true);
-        event.getEntity().setFireTicks(0);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
