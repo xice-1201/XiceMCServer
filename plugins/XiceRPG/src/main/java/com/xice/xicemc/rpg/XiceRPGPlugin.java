@@ -56,6 +56,8 @@ import org.bukkit.command.TabExecutor;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.damage.DamageSource;
+import org.bukkit.damage.DamageType;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Chicken;
 import org.bukkit.entity.Display;
@@ -3976,7 +3978,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         player.setNoDamageTicks(0);
         applyingBossSkillDamage = true;
         try {
-            player.damage(damage, boss);
+            DamageSource source = DamageSource.builder(DamageType.GENERIC).build();
+            player.damage(damage, source);
         } finally {
             applyingBossSkillDamage = false;
             player.setNoDamageTicks(0);
