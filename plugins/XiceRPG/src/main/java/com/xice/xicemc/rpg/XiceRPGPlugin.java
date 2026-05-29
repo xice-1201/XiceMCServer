@@ -217,7 +217,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final long FERRYMAN_DAMAGE_REDUCTION_MILLIS = 30_000L;
     private static final int FERRYMAN_DAMAGE_REDUCTION_LEVEL = 5;
     private static final long FERRYMAN_SIPHON_CAST_TICKS = 60L;
-    private static final long FERRYMAN_SIPHON_PHANTOM_TICKS = 200L;
+    private static final long FERRYMAN_SIPHON_PHANTOM_TICKS = 400L;
     private static final double FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH = 36.0D;
     private static final double FERRYMAN_SIPHON_PHANTOM_HEALTH_DISPLAY_HEIGHT = 2.2D;
     private static final double FERRYMAN_SIPHON_DAMAGE = 10.0D;
