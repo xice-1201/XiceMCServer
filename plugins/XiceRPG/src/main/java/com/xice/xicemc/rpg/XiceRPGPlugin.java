@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -66,6 +67,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.ExperienceOrb;
 import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Phantom;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Slime;
 import org.bukkit.entity.TextDisplay;
@@ -164,24 +166,45 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final double FERRYMAN_HEALTH_DISPLAY_HEIGHT = 3.0D;
     private static final double FERRYMAN_HITBOX_EXPANSION = 0.38D;
     private static final double FERRYMAN_DIMENSION_DISORDER_Y = 70.0D;
+    private static final String FERRYMAN_HARD_MODULE_KEY = "tower_5_hard";
     private static final long FERRYMAN_FIRST_SKILL_DELAY_TICKS = 100L;
     private static final long FERRYMAN_SKILL_INTERVAL_TICKS = 120L;
     private static final long FERRYMAN_CAST_TICKS = 60L;
+    private static final long FERRYMAN_HARD_SHORT_CAST_TICKS = 40L;
     private static final long FERRYMAN_SOULFIRE_CHARGE_TICKS = 8L;
     private static final long FERRYMAN_SOULFIRE_AFTERSHOCK_TICKS = 20L;
+    private static final long FERRYMAN_HARD_SOULFIRE_RING_DELAY_TICKS = 30L;
     private static final long FERRYMAN_WASTELAND_CAST_TICKS = 200L;
     private static final long FERRYMAN_WASTELAND_ENRAGE_TICKS = 20L * 480L;
     private static final double FERRYMAN_FERRY_RADIUS = 8.0D;
     private static final double FERRYMAN_FERRY_DAMAGE = 40.0D;
+    private static final double FERRYMAN_HARD_FERRY_DAMAGE = 120.0D;
     private static final double FERRYMAN_SOULFIRE_PATH_DAMAGE = 20.0D;
     private static final double FERRYMAN_SOULFIRE_EMPOWERED_PATH_DAMAGE = 40.0D;
+    private static final double FERRYMAN_HARD_SOULFIRE_PATH_DAMAGE = 80.0D;
+    private static final double FERRYMAN_HARD_SOULFIRE_EMPOWERED_PATH_DAMAGE = 120.0D;
     private static final double FERRYMAN_SOULFIRE_EMPOWER_DISTANCE = 8.0D;
     private static final double FERRYMAN_SOULFIRE_EMPOWER_KNOCKBACK = 2.4D;
+    private static final double FERRYMAN_HARD_SOULFIRE_EMPOWER_KNOCKBACK = 3.4D;
     private static final double FERRYMAN_SOULFIRE_PATH_WIDTH = 1.55D;
     private static final double FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS = 3.0D;
     private static final double FERRYMAN_SOULFIRE_AFTERSHOCK_DAMAGE = 5.0D;
+    private static final double FERRYMAN_HARD_SOULFIRE_AFTERSHOCK_DAMAGE = 10.0D;
+    private static final double FERRYMAN_HARD_SOULFIRE_RING_RADIUS = 20.0D;
+    private static final double FERRYMAN_HARD_SOULFIRE_RING_DAMAGE = 10.0D;
     private static final int FERRYMAN_SOULFIRE_BURN_TICKS = 20 * 10;
+    private static final int FERRYMAN_HARD_SOULFIRE_BURN_TICKS = 20 * 30;
+    private static final double FERRYMAN_HARD_ATTACK_DAMAGE = 20.0D;
     private static final double FERRYMAN_SHOCK_DAMAGE = 25.0D;
+    private static final double FERRYMAN_HARD_SHOCK_DAMAGE = 80.0D;
+    private static final double FERRYMAN_HARD_ALL_DAMAGE_REDUCTION = 0.40D;
+    private static final long FERRYMAN_DAMAGE_REDUCTION_MILLIS = 30_000L;
+    private static final int FERRYMAN_DAMAGE_REDUCTION_LEVEL = 5;
+    private static final long FERRYMAN_SIPHON_CAST_TICKS = 60L;
+    private static final long FERRYMAN_SIPHON_PHANTOM_TICKS = 200L;
+    private static final double FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH = 64.0D;
+    private static final double FERRYMAN_SIPHON_PHANTOM_HEALTH_DISPLAY_HEIGHT = 2.2D;
+    private static final double FERRYMAN_SIPHON_DAMAGE = 10.0D;
     private static final int SATIETY_SKILL_ORB_FOOD_RESTORE_AMOUNT = 12;
     private static final float SATIETY_SKILL_ORB_SATURATION_RESTORE_AMOUNT = 12.0F;
     private static final long SATIETY_SKILL_ORB_COOLDOWN_MILLIS = 20_000L;
@@ -190,6 +213,12 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             BossSkillType.FERRY,
             BossSkillType.SOULFIRE,
             BossSkillType.SHOCK
+    };
+    private static final BossSkillType[] FERRYMAN_HARD_SKILL_SEQUENCE = {
+            BossSkillType.FERRY,
+            BossSkillType.SOULFIRE,
+            BossSkillType.SHOCK,
+            BossSkillType.SIPHON
     };
     private static final String PUS_BUG_TYPE = "pus_bug";
     private static final float PUS_BUG_DISPLAY_PICK_SIZE = 0.0F;
@@ -425,6 +454,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private NamespacedKey ferrymanModelKey;
     private NamespacedKey ferrymanDisplayKey;
     private NamespacedKey ferrymanDisplayOwnerKey;
+    private NamespacedKey ferrymanSiphonPhantomKey;
     private NamespacedKey pusBugModelKey;
     private NamespacedKey pusBugDisplayKey;
     private NamespacedKey pusBugDisplayOwnerKey;
@@ -499,6 +529,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         ferrymanModelKey = new NamespacedKey(this, "ferryman_model");
         ferrymanDisplayKey = new NamespacedKey(this, "ferryman_display");
         ferrymanDisplayOwnerKey = new NamespacedKey(this, "ferryman_display_owner");
+        ferrymanSiphonPhantomKey = new NamespacedKey(this, "ferryman_siphon_phantom");
         pusBugModelKey = new NamespacedKey(this, "pus_bug_model");
         pusBugDisplayKey = new NamespacedKey(this, "pus_bug_display");
         pusBugDisplayOwnerKey = new NamespacedKey(this, "pus_bug_display_owner");
@@ -789,6 +820,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             completeDungeonRun(bossRun, event.getEntity().getWorld());
             return;
         }
+        if (isFerrymanSiphonPhantom(event.getEntity())) {
+            UUID uuid = event.getEntity().getUniqueId();
+            removeCustomMonsterHealthDisplay(uuid);
+            for (DungeonRun run : dungeonRunsByWorld.values()) {
+                run.siphonPhantoms.remove(uuid);
+            }
+            event.getEntity().setSilent(true);
+            event.setShouldPlayDeathSound(false);
+            event.setDeathSound(null);
+            event.setDeathSoundVolume(0.0F);
+            event.getDrops().clear();
+            event.setDroppedExp(0);
+            return;
+        }
         if (isRottenGuard(event.getEntity())) {
             removeRottenGuardDisplay(event.getEntity().getUniqueId());
             event.getEntity().setSilent(true);
@@ -964,7 +1009,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onTrainingDummyKnockback(EntityKnockbackEvent event) {
-        if (isTrainingDummy(event.getEntity()) || isFerryman(event.getEntity())) {
+        if (isTrainingDummy(event.getEntity()) || isFerryman(event.getEntity()) || isFerrymanSiphonPhantom(event.getEntity())) {
             event.setCancelled(true);
         }
     }
@@ -3791,6 +3836,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void tickFerrymanBossSkills(DungeonRun run, World world, LivingEntity boss) {
+        tickFerrymanSiphonPhantoms(run, world);
         if (run.bossEnraged) {
             killAllDungeonPlayers(world);
             return;
@@ -3801,13 +3847,35 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             startBossSkill(run, boss, BossSkillType.WASTELAND);
         }
         if (run.activeBossSkill == null && customMonsterTick >= run.nextBossSkillTick) {
-            BossSkillType type = FERRYMAN_SKILL_SEQUENCE[run.nextBossSkillIndex % FERRYMAN_SKILL_SEQUENCE.length];
+            BossSkillType[] sequence = ferrymanSkillSequence(run);
+            BossSkillType type = sequence[run.nextBossSkillIndex % sequence.length];
             run.nextBossSkillIndex++;
             startBossSkill(run, boss, type);
         }
         if (run.activeBossSkill != null) {
             tickActiveBossSkill(run, world, boss);
         }
+    }
+
+    private BossSkillType[] ferrymanSkillSequence(DungeonRun run) {
+        return isHardFerrymanRun(run) ? FERRYMAN_HARD_SKILL_SEQUENCE : FERRYMAN_SKILL_SEQUENCE;
+    }
+
+    private boolean isHardFerrymanRun(DungeonRun run) {
+        return run != null && FERRYMAN_HARD_MODULE_KEY.equals(run.moduleKey);
+    }
+
+    private long ferrymanSkillCastTicks(DungeonRun run, BossSkillType type) {
+        if (type == BossSkillType.WASTELAND) {
+            return FERRYMAN_WASTELAND_CAST_TICKS;
+        }
+        if (type == BossSkillType.SIPHON) {
+            return FERRYMAN_SIPHON_CAST_TICKS;
+        }
+        if (isHardFerrymanRun(run) && (type == BossSkillType.FERRY || type == BossSkillType.SHOCK)) {
+            return FERRYMAN_HARD_SHORT_CAST_TICKS;
+        }
+        return FERRYMAN_CAST_TICKS;
     }
 
     private void startBossSkill(DungeonRun run, LivingEntity boss, BossSkillType type) {
@@ -3838,17 +3906,28 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         boss.setVelocity(new Vector(0.0D, boss.getVelocity().getY(), 0.0D));
         if (cast.type == BossSkillType.FERRY) {
-            playFerrymanFerryWarning(boss.getLocation());
-            if (cast.age(customMonsterTick) >= FERRYMAN_CAST_TICKS) {
-                dealBossPhysicalDamageInRadius(boss, boss.getLocation(), FERRYMAN_FERRY_RADIUS, FERRYMAN_FERRY_DAMAGE);
+            if (!isHardFerrymanRun(run)) {
+                playFerrymanFerryWarning(boss.getLocation());
+            }
+            if (cast.age(customMonsterTick) >= ferrymanSkillCastTicks(run, cast.type)) {
+                dealBossPhysicalDamageInRadius(boss, boss.getLocation(), FERRYMAN_FERRY_RADIUS,
+                        isHardFerrymanRun(run) ? FERRYMAN_HARD_FERRY_DAMAGE : FERRYMAN_FERRY_DAMAGE,
+                        isHardFerrymanRun(run));
                 playFerrymanFerryReleaseEffect(boss.getLocation());
                 finishBossSkill(run);
             }
             return;
         }
         if (cast.type == BossSkillType.SHOCK) {
-            if (cast.age(customMonsterTick) >= FERRYMAN_CAST_TICKS) {
-                dealBossPhysicalDamageToAll(boss, world, FERRYMAN_SHOCK_DAMAGE);
+            if (cast.age(customMonsterTick) >= ferrymanSkillCastTicks(run, cast.type)) {
+                dealBossPhysicalDamageToAll(boss, world, isHardFerrymanRun(run) ? FERRYMAN_HARD_SHOCK_DAMAGE : FERRYMAN_SHOCK_DAMAGE);
+                finishBossSkill(run);
+            }
+            return;
+        }
+        if (cast.type == BossSkillType.SIPHON) {
+            if (cast.age(customMonsterTick) >= ferrymanSkillCastTicks(run, cast.type)) {
+                summonFerrymanSiphonPhantoms(run, world);
                 finishBossSkill(run);
             }
             return;
@@ -3875,7 +3954,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             if (target != null) {
                 playSoulfireChargeWarning(boss.getLocation(), target.getLocation(), cast.age(customMonsterTick));
             }
-            if (cast.age(customMonsterTick) >= FERRYMAN_CAST_TICKS) {
+            if (cast.age(customMonsterTick) >= ferrymanSkillCastTicks(run, cast.type)) {
                 if (target == null) {
                     finishBossSkill(run);
                     return;
@@ -3896,20 +3975,32 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             Location next = interpolateLocation(cast.chargeStart, cast.chargeEnd, progress);
             boss.teleport(next);
             playSoulfireChargeParticles(cast.chargeStart, next, cast.empoweredSoulfire);
-            damagePlayersNearSoulfirePath(boss, world, cast, cast.chargeStart, next, cast.targetUuid);
+            damagePlayersNearSoulfirePath(run, boss, world, cast, cast.chargeStart, next, cast.targetUuid);
             if (cast.phaseAge(customMonsterTick) >= FERRYMAN_SOULFIRE_CHARGE_TICKS) {
-                damagePlayersNearSoulfirePath(boss, world, cast, cast.chargeStart, cast.chargeEnd, cast.targetUuid);
-                damageSoulfireImpactTarget(boss, target, cast);
+                damagePlayersNearSoulfirePath(run, boss, world, cast, cast.chargeStart, cast.chargeEnd, cast.targetUuid);
+                damageSoulfireImpactTarget(run, boss, target, cast);
                 cast.phase = BossSkillPhase.AFTERSHOCK;
                 cast.phaseStartedTick = customMonsterTick;
                 playSoulfireSlamWindupStart(boss.getLocation());
             }
             return;
         }
+        if (cast.phase == BossSkillPhase.RING_DELAY) {
+            if (cast.phaseAge(customMonsterTick) >= FERRYMAN_HARD_SOULFIRE_RING_DELAY_TICKS) {
+                dealSoulfireRing(run, world, boss.getLocation());
+                finishBossSkill(run);
+            }
+            return;
+        }
         playFerrymanAftershockWarning(boss.getLocation(), cast.phaseAge(customMonsterTick));
         if (cast.phaseAge(customMonsterTick) >= FERRYMAN_SOULFIRE_AFTERSHOCK_TICKS) {
-            dealSoulfireAftershock(world, boss.getLocation());
-            finishBossSkill(run);
+            dealSoulfireAftershock(run, world, boss.getLocation());
+            if (isHardFerrymanRun(run)) {
+                cast.phase = BossSkillPhase.RING_DELAY;
+                cast.phaseStartedTick = customMonsterTick;
+            } else {
+                finishBossSkill(run);
+            }
         }
     }
 
@@ -3951,6 +4042,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void dealBossPhysicalDamageInRadius(LivingEntity boss, Location center, double radius, double damage) {
+        dealBossPhysicalDamageInRadius(boss, center, radius, damage, false);
+    }
+
+    private void dealBossPhysicalDamageInRadius(LivingEntity boss, Location center, double radius, double damage, boolean applyDamageReduction) {
         World world = center.getWorld();
         if (world == null) {
             return;
@@ -3961,6 +4056,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 continue;
             }
             dealBossPhysicalDamage(boss, player, damage);
+            if (applyDamageReduction) {
+                applyBossDamageReductionEffect(player);
+            }
         }
         world.playSound(center, Sound.ENTITY_WITHER_AMBIENT, 1.1F, 0.55F);
     }
@@ -3998,6 +4096,30 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         player.setHealth(Math.max(0.0D, player.getHealth() - damage));
     }
 
+    private void dealBossMagicDamage(Player player, double damage, boolean applyDamageReduction) {
+        dealBossMagicDamage(player, damage);
+        if (applyDamageReduction) {
+            applyBossDamageReductionEffect(player);
+        }
+    }
+
+    private void applyBossDamageReductionEffect(Player player) {
+        if (!isActiveDungeonPlayer(player)) {
+            return;
+        }
+        Plugin plugin = Bukkit.getPluginManager().getPlugin("XiceMorePotionEffects");
+        if (plugin == null || !plugin.isEnabled()) {
+            return;
+        }
+        try {
+            plugin.getClass()
+                    .getMethod("applyDamageReduction", Player.class, long.class, int.class)
+                    .invoke(plugin, player, FERRYMAN_DAMAGE_REDUCTION_MILLIS, FERRYMAN_DAMAGE_REDUCTION_LEVEL);
+        } catch (ReflectiveOperationException exception) {
+            getLogger().warning("Failed to apply damage_reduction effect through XiceMorePotionEffects: " + exception.getMessage());
+        }
+    }
+
     private void killAllDungeonPlayers(World world) {
         for (Player player : world.getPlayers()) {
             killDungeonPlayer(player);
@@ -4020,7 +4142,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 && player.getGameMode() != GameMode.SPECTATOR;
     }
 
-    private void damagePlayersNearSoulfirePath(LivingEntity boss, World world, BossSkillCast cast, Location start, Location end, UUID exemptPlayerUuid) {
+    private void damagePlayersNearSoulfirePath(DungeonRun run, LivingEntity boss, World world, BossSkillCast cast, Location start, Location end, UUID exemptPlayerUuid) {
         Vector a = start.toVector();
         Vector b = end.toVector();
         double widthSquared = FERRYMAN_SOULFIRE_PATH_WIDTH * FERRYMAN_SOULFIRE_PATH_WIDTH;
@@ -4035,21 +4157,34 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 continue;
             }
             cast.hitPlayers.add(player.getUniqueId());
-            dealBossPhysicalDamage(boss, player, cast.soulfirePathDamage());
-            applySoulfireEmpoweredKnockback(player, cast);
+            dealBossPhysicalDamage(boss, player, soulfirePathDamage(run, cast));
+            applySoulfireEmpoweredKnockback(run, player, cast);
+            if (isHardFerrymanRun(run) && cast.empoweredSoulfire) {
+                applyBossDamageReductionEffect(player);
+            }
         }
     }
 
-    private void damageSoulfireImpactTarget(LivingEntity boss, Player target, BossSkillCast cast) {
+    private void damageSoulfireImpactTarget(DungeonRun run, LivingEntity boss, Player target, BossSkillCast cast) {
         if (!isActiveDungeonPlayer(target)) {
             return;
         }
         cast.hitPlayers.add(target.getUniqueId());
-        dealBossPhysicalDamage(boss, target, cast.soulfirePathDamage());
-        applySoulfireEmpoweredKnockback(target, cast);
+        dealBossPhysicalDamage(boss, target, soulfirePathDamage(run, cast));
+        applySoulfireEmpoweredKnockback(run, target, cast);
+        if (isHardFerrymanRun(run) && cast.empoweredSoulfire) {
+            applyBossDamageReductionEffect(target);
+        }
     }
 
-    private void applySoulfireEmpoweredKnockback(Player player, BossSkillCast cast) {
+    private double soulfirePathDamage(DungeonRun run, BossSkillCast cast) {
+        if (isHardFerrymanRun(run)) {
+            return cast.empoweredSoulfire ? FERRYMAN_HARD_SOULFIRE_EMPOWERED_PATH_DAMAGE : FERRYMAN_HARD_SOULFIRE_PATH_DAMAGE;
+        }
+        return cast.empoweredSoulfire ? FERRYMAN_SOULFIRE_EMPOWERED_PATH_DAMAGE : FERRYMAN_SOULFIRE_PATH_DAMAGE;
+    }
+
+    private void applySoulfireEmpoweredKnockback(DungeonRun run, Player player, BossSkillCast cast) {
         if (!cast.empoweredSoulfire || cast.chargeStart == null || cast.chargeEnd == null) {
             return;
         }
@@ -4062,7 +4197,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (direction.lengthSquared() <= 0.0001D) {
             direction = new Vector(0.0D, 0.0D, 1.0D);
         }
-        Vector velocity = direction.normalize().multiply(FERRYMAN_SOULFIRE_EMPOWER_KNOCKBACK);
+        double knockback = isHardFerrymanRun(run) ? FERRYMAN_HARD_SOULFIRE_EMPOWER_KNOCKBACK : FERRYMAN_SOULFIRE_EMPOWER_KNOCKBACK;
+        Vector velocity = direction.normalize().multiply(knockback);
         velocity.setY(0.65D);
         player.setVelocity(velocity);
     }
@@ -4088,15 +4224,16 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         return dx * dx + dz * dz;
     }
 
-    private void dealSoulfireAftershock(World world, Location center) {
+    private void dealSoulfireAftershock(DungeonRun run, World world, Location center) {
         double radiusSquared = FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS * FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS;
+        boolean hard = isHardFerrymanRun(run);
         for (Player player : world.getPlayers()) {
             if (!isActiveDungeonPlayer(player) || player.getLocation().distanceSquared(center) > radiusSquared) {
                 continue;
             }
-            dealBossMagicDamage(player, FERRYMAN_SOULFIRE_AFTERSHOCK_DAMAGE);
+            dealBossMagicDamage(player, hard ? FERRYMAN_HARD_SOULFIRE_AFTERSHOCK_DAMAGE : FERRYMAN_SOULFIRE_AFTERSHOCK_DAMAGE, hard);
             player.setVelocity(player.getVelocity().add(new Vector(0.0D, 1.05D, 0.0D)));
-            player.setFireTicks(Math.max(player.getFireTicks(), FERRYMAN_SOULFIRE_BURN_TICKS));
+            player.setFireTicks(Math.max(player.getFireTicks(), hard ? FERRYMAN_HARD_SOULFIRE_BURN_TICKS : FERRYMAN_SOULFIRE_BURN_TICKS));
         }
         Location impact = center.clone().add(0.0D, 0.25D, 0.0D);
         world.spawnParticle(Particle.EXPLOSION, impact, 1, 0.0D, 0.0D, 0.0D, 0.0D);
@@ -4104,6 +4241,113 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         world.spawnParticle(Particle.SOUL, impact.clone().add(0.0D, 0.45D, 0.0D), 72, 1.8D, 0.18D, 1.8D, 0.08D);
         world.playSound(center, Sound.ITEM_FIRECHARGE_USE, 1.0F, 0.65F);
         world.playSound(center, Sound.ENTITY_GENERIC_EXPLODE, 0.65F, 1.35F);
+    }
+
+    private void dealSoulfireRing(DungeonRun run, World world, Location center) {
+        double innerSquared = FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS * FERRYMAN_SOULFIRE_AFTERSHOCK_RADIUS;
+        double outerSquared = FERRYMAN_HARD_SOULFIRE_RING_RADIUS * FERRYMAN_HARD_SOULFIRE_RING_RADIUS;
+        for (Player player : world.getPlayers()) {
+            if (!isActiveDungeonPlayer(player)) {
+                continue;
+            }
+            double distanceSquared = player.getLocation().distanceSquared(center);
+            if (distanceSquared <= innerSquared || distanceSquared > outerSquared) {
+                continue;
+            }
+            dealBossMagicDamage(player, FERRYMAN_HARD_SOULFIRE_RING_DAMAGE, true);
+            player.setVelocity(player.getVelocity().add(new Vector(0.0D, 1.05D, 0.0D)));
+            player.setFireTicks(Math.max(player.getFireTicks(), FERRYMAN_HARD_SOULFIRE_BURN_TICKS));
+        }
+        Location impact = center.clone().add(0.0D, 0.18D, 0.0D);
+        playWarningCircle(center, FERRYMAN_HARD_SOULFIRE_RING_RADIUS, Color.fromRGB(255, 80, 40), 96, 0.1D);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, impact, 120, FERRYMAN_HARD_SOULFIRE_RING_RADIUS * 0.45D, 0.14D,
+                FERRYMAN_HARD_SOULFIRE_RING_RADIUS * 0.45D, 0.08D);
+        world.spawnParticle(Particle.SOUL, impact.clone().add(0.0D, 0.4D, 0.0D), 100,
+                FERRYMAN_HARD_SOULFIRE_RING_RADIUS * 0.48D, 0.18D, FERRYMAN_HARD_SOULFIRE_RING_RADIUS * 0.48D, 0.06D);
+        world.playSound(center, Sound.ENTITY_WITHER_BREAK_BLOCK, 0.85F, 0.8F);
+    }
+
+    private void summonFerrymanSiphonPhantoms(DungeonRun run, World world) {
+        for (Player player : world.getPlayers()) {
+            if (!isActiveDungeonPlayer(player)) {
+                continue;
+            }
+            Location location = player.getLocation().clone().add(0.0D, 1.6D, 0.0D);
+            Phantom phantom = world.spawn(location, Phantom.class, spawned -> {
+                spawned.setPersistent(false);
+                spawned.setSilent(true);
+                spawned.setAI(false);
+                spawned.setGravity(false);
+                spawned.setCollidable(false);
+                spawned.setRemoveWhenFarAway(false);
+                spawned.customName(Component.text("摄魂幻影", NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
+                spawned.getPersistentDataContainer().set(ferrymanSiphonPhantomKey, PersistentDataType.BYTE, (byte) 1);
+                setAttribute(spawned, Attribute.MAX_HEALTH, FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH);
+                setAttribute(spawned, Attribute.ARMOR, 0.0D);
+                setAttribute(spawned, Attribute.KNOCKBACK_RESISTANCE, 1.0D);
+                setAttribute(spawned, Attribute.MOVEMENT_SPEED, 0.0D);
+                setAttribute(spawned, Attribute.FLYING_SPEED, 0.0D);
+                setAttribute(spawned, Attribute.ATTACK_DAMAGE, 0.0D);
+                spawned.setHealth(FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH);
+            });
+            run.siphonPhantoms.put(phantom.getUniqueId(), new FerrymanSiphonPhantom(customMonsterTick));
+            syncCustomMonsterHealthDisplay(phantom);
+            world.spawnParticle(Particle.SOUL, location, 32, 0.6D, 0.6D, 0.6D, 0.06D);
+        }
+        world.playSound(run.center, Sound.ENTITY_PHANTOM_AMBIENT, 1.0F, 0.45F);
+    }
+
+    private void tickFerrymanSiphonPhantoms(DungeonRun run, World world) {
+        Iterator<Map.Entry<UUID, FerrymanSiphonPhantom>> iterator = run.siphonPhantoms.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, FerrymanSiphonPhantom> entry = iterator.next();
+            Entity entity = Bukkit.getEntity(entry.getKey());
+            if (!(entity instanceof Phantom phantom) || phantom.isDead() || !phantom.isValid() || !phantom.getWorld().equals(world)) {
+                removeCustomMonsterHealthDisplay(entry.getKey());
+                iterator.remove();
+                continue;
+            }
+            applyFerrymanSiphonPhantomStats(phantom);
+            syncCustomMonsterHealthDisplay(phantom);
+            long age = customMonsterTick - entry.getValue().summonedTick;
+            if (age < FERRYMAN_SIPHON_PHANTOM_TICKS) {
+                if (age % 10L == 0L) {
+                    phantom.getWorld().spawnParticle(Particle.SOUL, phantom.getLocation().clone().add(0.0D, 0.7D, 0.0D),
+                            8, 0.35D, 0.35D, 0.35D, 0.03D);
+                }
+                continue;
+            }
+            explodeFerrymanSiphonPhantom(run, world, phantom);
+            removeCustomMonsterHealthDisplay(phantom.getUniqueId());
+            phantom.remove();
+            iterator.remove();
+        }
+    }
+
+    private void explodeFerrymanSiphonPhantom(DungeonRun run, World world, Phantom phantom) {
+        Location center = phantom.getLocation();
+        for (Player player : world.getPlayers()) {
+            if (isActiveDungeonPlayer(player)) {
+                dealBossMagicDamage(player, FERRYMAN_SIPHON_DAMAGE, true);
+            }
+        }
+        world.spawnParticle(Particle.EXPLOSION, center, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        world.spawnParticle(Particle.SOUL, center.clone().add(0.0D, 0.6D, 0.0D), 72, 0.9D, 0.7D, 0.9D, 0.08D);
+        world.playSound(center, Sound.ENTITY_GENERIC_EXPLODE, 0.8F, 1.5F);
+    }
+
+    private void applyFerrymanSiphonPhantomStats(Phantom phantom) {
+        phantom.setSilent(true);
+        phantom.setAI(false);
+        phantom.setGravity(false);
+        phantom.setVelocity(new Vector(0.0D, 0.0D, 0.0D));
+        phantom.setCollidable(false);
+        setAttribute(phantom, Attribute.MAX_HEALTH, FERRYMAN_SIPHON_PHANTOM_MAX_HEALTH);
+        setAttribute(phantom, Attribute.ARMOR, 0.0D);
+        setAttribute(phantom, Attribute.KNOCKBACK_RESISTANCE, 1.0D);
+        setAttribute(phantom, Attribute.MOVEMENT_SPEED, 0.0D);
+        setAttribute(phantom, Attribute.FLYING_SPEED, 0.0D);
+        setAttribute(phantom, Attribute.ATTACK_DAMAGE, 0.0D);
     }
 
     private Location interpolateLocation(Location start, Location end, double progress) {
@@ -4358,10 +4602,25 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void removeDungeonRunBars(DungeonRun run) {
+        removeDungeonRunSiphonPhantoms(run);
         run.bossBar.removeAll();
         if (run.castBar != null) {
             run.castBar.removeAll();
         }
+    }
+
+    private void removeDungeonRunSiphonPhantoms(DungeonRun run) {
+        if (run.siphonPhantoms.isEmpty()) {
+            return;
+        }
+        for (UUID uuid : new HashSet<>(run.siphonPhantoms.keySet())) {
+            removeCustomMonsterHealthDisplay(uuid);
+            Entity entity = Bukkit.getEntity(uuid);
+            if (entity != null) {
+                entity.remove();
+            }
+        }
+        run.siphonPhantoms.clear();
     }
 
     private void updateDungeonBossBar(DungeonRun run) {
@@ -4411,7 +4670,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             run.castBar.setVisible(false);
             return;
         }
-        long duration = cast.type == BossSkillType.WASTELAND ? FERRYMAN_WASTELAND_CAST_TICKS : FERRYMAN_CAST_TICKS;
+        long duration = ferrymanSkillCastTicks(run, cast.type);
         double progress = Math.max(0.0D, Math.min(1.0D, (double) cast.age(customMonsterTick) / duration));
         run.castBar.setTitle("读条: " + cast.type.displayName());
         run.castBar.setProgress(progress);
@@ -5136,12 +5395,24 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             BossConfig boss = module.bossConfig();
             BossConfig normalizedBoss = boss.withMaxHealth(Math.min(BOSS_ENTITY_MAX_HEALTH, boss.maxHealth()));
             if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(boss.type()))
+                    && !FERRYMAN_HARD_MODULE_KEY.equals(module.key())
                     && Math.abs(normalizedBoss.allDamageReduction() - FERRYMAN_ALL_DAMAGE_REDUCTION) > 0.0001D) {
                 normalizedBoss = normalizedBoss.withAllDamageReduction(FERRYMAN_ALL_DAMAGE_REDUCTION);
             }
+            if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(boss.type()))
+                    && FERRYMAN_HARD_MODULE_KEY.equals(module.key())
+                    && Math.abs(normalizedBoss.allDamageReduction() - FERRYMAN_HARD_ALL_DAMAGE_REDUCTION) > 0.0001D) {
+                normalizedBoss = normalizedBoss.withAllDamageReduction(FERRYMAN_HARD_ALL_DAMAGE_REDUCTION);
+            }
+            if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(boss.type()))
+                    && FERRYMAN_HARD_MODULE_KEY.equals(module.key())
+                    && Math.abs(normalizedBoss.attackDamage() - FERRYMAN_HARD_ATTACK_DAMAGE) > 0.0001D) {
+                normalizedBoss = normalizedBoss.withAttackDamage(FERRYMAN_HARD_ATTACK_DAMAGE);
+            }
             if (!modulesConfig.contains(bossPath + ".all-damage-reduction")
                     || Math.abs(boss.maxHealth() - normalizedBoss.maxHealth()) > 0.0001D
-                    || Math.abs(boss.allDamageReduction() - normalizedBoss.allDamageReduction()) > 0.0001D) {
+                    || Math.abs(boss.allDamageReduction() - normalizedBoss.allDamageReduction()) > 0.0001D
+                    || Math.abs(boss.attackDamage() - normalizedBoss.attackDamage()) > 0.0001D) {
                 module = module.withBossConfig(normalizedBoss);
                 modules.put(module.key(), module);
                 changed = true;
@@ -6483,6 +6754,14 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                     syncCustomMonsterHealthDisplay(slime);
                 }
             }
+            for (Phantom phantom : world.getEntitiesByClass(Phantom.class)) {
+                if (!isFerrymanSiphonPhantom(phantom) || phantom.isDead() || !phantom.isValid()) {
+                    continue;
+                }
+                liveCustomMonsters.add(phantom.getUniqueId());
+                applyFerrymanSiphonPhantomStats(phantom);
+                syncCustomMonsterHealthDisplay(phantom);
+            }
         }
         tickPusPools();
         removeMissingRottenGuardDisplays(liveRottenGuards);
@@ -6490,6 +6769,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         removeMissingFerrymanDisplays(liveFerrymen);
         removeMissingPusBugDisplays(livePusBugs);
         removeMissingTrainingDummyDisplays(liveTrainingDummies);
+        for (DungeonRun run : dungeonRunsByWorld.values()) {
+            liveCustomMonsters.addAll(run.siphonPhantoms.keySet());
+        }
         removeMissingCustomMonsterHealthDisplays(liveCustomMonsters);
         removeMissingSplitDamageCooldowns(liveSplitDamageTargets);
         if (updateCombatLogic) {
@@ -7427,13 +7709,27 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         double height = isTrainingDummy(monster)
                 ? TRAINING_DUMMY_HEALTH_DISPLAY_HEIGHT
                 : (isPusBug(monster) ? PUS_BUG_HEALTH_DISPLAY_HEIGHT : (isGulper(monster) ? GULPER_HEALTH_DISPLAY_HEIGHT
-                : (isFerryman(monster) ? FERRYMAN_HEALTH_DISPLAY_HEIGHT : ROTTEN_GUARD_HEALTH_DISPLAY_HEIGHT)));
+                : (isFerryman(monster) ? FERRYMAN_HEALTH_DISPLAY_HEIGHT
+                : (isFerrymanSiphonPhantom(monster) ? FERRYMAN_SIPHON_PHANTOM_HEALTH_DISPLAY_HEIGHT : ROTTEN_GUARD_HEALTH_DISPLAY_HEIGHT))));
         Location location = monster.getLocation().clone().add(0.0D, height, 0.0D);
         location.setPitch(0.0F);
         return location;
     }
 
     private Component customMonsterHealthText(LivingEntity monster) {
+        if (isFerrymanSiphonPhantom(monster)) {
+            double maxHealth = maxHealth(monster);
+            double health = Math.max(0.0D, Math.min(monster.getHealth(), maxHealth));
+            FerrymanSiphonPhantom siphon = siphonPhantomState(monster.getUniqueId());
+            long age = siphon == null ? 0L : Math.max(0L, customMonsterTick - siphon.summonedTick);
+            long remainingTicks = Math.max(0L, FERRYMAN_SIPHON_PHANTOM_TICKS - age);
+            int remainingSeconds = (int) ((remainingTicks + 19L) / 20L);
+            double progress = Math.max(0.0D, Math.min(1.0D, (double) age / FERRYMAN_SIPHON_PHANTOM_TICKS));
+            return Component.text("HP ", NamedTextColor.RED)
+                    .append(Component.text(formatHealthValue(health) + "/" + formatHealthValue(maxHealth), NamedTextColor.WHITE))
+                    .append(Component.text("\n\u81ea\u7206: " + progressBar(progress) + " " + remainingSeconds + "s", NamedTextColor.GOLD))
+                    .decoration(TextDecoration.ITALIC, false);
+        }
         if (isTrainingDummy(monster)) {
             return Component.text("DPS：", NamedTextColor.YELLOW)
                     .append(Component.text("❤×", NamedTextColor.RED))
@@ -7445,6 +7741,22 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         return Component.text("❤×", NamedTextColor.RED)
                 .append(Component.text(formatHealthValue(health) + "/" + formatHealthValue(maxHealth), NamedTextColor.WHITE))
                 .decoration(TextDecoration.ITALIC, false);
+    }
+
+    private String progressBar(double progress) {
+        int width = 10;
+        int filled = (int) Math.round(Math.max(0.0D, Math.min(1.0D, progress)) * width);
+        return "[" + "#".repeat(filled) + "-".repeat(width - filled) + "]";
+    }
+
+    private FerrymanSiphonPhantom siphonPhantomState(UUID uuid) {
+        for (DungeonRun run : dungeonRunsByWorld.values()) {
+            FerrymanSiphonPhantom state = run.siphonPhantoms.get(uuid);
+            if (state != null) {
+                return state;
+            }
+        }
+        return null;
     }
 
     private double maxHealth(LivingEntity monster) {
@@ -7758,6 +8070,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private void markDungeonMobRemoved(UUID uuid) {
         for (DungeonRun run : dungeonRunsByWorld.values()) {
             run.liveMobs.remove(uuid);
+            run.siphonPhantoms.remove(uuid);
         }
     }
 
@@ -8026,8 +8339,14 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 && TRAINING_DUMMY_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
     }
 
+    private boolean isFerrymanSiphonPhantom(Entity entity) {
+        return entity instanceof Phantom
+                && entity.getPersistentDataContainer().has(ferrymanSiphonPhantomKey, PersistentDataType.BYTE);
+    }
+
     private boolean isCustomMonster(Entity entity) {
-        return isRottenGuard(entity) || isGulper(entity) || isFerryman(entity) || isPusBug(entity) || isTrainingDummy(entity);
+        return isRottenGuard(entity) || isGulper(entity) || isFerryman(entity) || isPusBug(entity) || isTrainingDummy(entity)
+                || isFerrymanSiphonPhantom(entity);
     }
 
     private boolean isRottenGuardInput(String input) {
@@ -8236,6 +8555,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return new BossConfig(type, displayName, maxHealth, attackDamage, armor, movementSpeed, followRange, allDamageReduction);
         }
 
+        private BossConfig withAttackDamage(double attackDamage) {
+            return new BossConfig(type, displayName, maxHealth, attackDamage, armor, movementSpeed, followRange, allDamageReduction);
+        }
+
         private BossConfig withAllDamageReduction(double allDamageReduction) {
             return new BossConfig(type, displayName, maxHealth, attackDamage, armor, movementSpeed, followRange, allDamageReduction);
         }
@@ -8333,6 +8656,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private enum BossSkillType {
+        SIPHON("摄魂"),
         FERRY("引渡"),
         SOULFIRE("魂火"),
         SHOCK("震击"),
@@ -8352,7 +8676,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private enum BossSkillPhase {
         CASTING,
         CHARGING,
-        AFTERSHOCK
+        AFTERSHOCK,
+        RING_DELAY
     }
 
     private static final class BossSkillCast {
@@ -8380,9 +8705,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return now - phaseStartedTick;
         }
 
-        private double soulfirePathDamage() {
-            return empoweredSoulfire ? FERRYMAN_SOULFIRE_EMPOWERED_PATH_DAMAGE : FERRYMAN_SOULFIRE_PATH_DAMAGE;
-        }
+    }
+
+    private record FerrymanSiphonPhantom(long summonedTick) {
     }
 
     private static final class DungeonRun {
@@ -8393,6 +8718,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         private final List<DungeonWaveConfig> waves;
         private final BossConfig bossConfig;
         private final Set<UUID> liveMobs = new HashSet<>();
+        private final Map<UUID, FerrymanSiphonPhantom> siphonPhantoms = new HashMap<>();
         private final HudBossBar bossBar;
         private final HudBossBar castBar;
         private final long bossStartTick;
