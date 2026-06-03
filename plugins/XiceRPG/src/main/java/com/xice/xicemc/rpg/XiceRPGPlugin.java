@@ -227,37 +227,31 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final float SATIETY_SKILL_ORB_SATURATION_RESTORE_AMOUNT = 12.0F;
     private static final long SATIETY_SKILL_ORB_COOLDOWN_MILLIS = 20_000L;
     private static final int SATIETY_SKILL_ORB_COOLDOWN_TICKS = 20 * 20;
-    private static final BossSkillType[] FERRYMAN_SKILL_SEQUENCE = {
-            BossSkillType.FERRY,
-            BossSkillType.SOULFIRE,
-            BossSkillType.SHOCK
-    };
-    private static final BossSkillType[] FERRYMAN_HARD_PHASE_ONE_SKILL_SEQUENCE = {
-            BossSkillType.FERRY,
-            BossSkillType.SOULFIRE,
-            BossSkillType.SHOCK,
-            BossSkillType.SIPHON
-    };
-    private static final BossSkillType[] FERRYMAN_HARD_PHASE_TWO_SKILL_SEQUENCE = {
-            BossSkillType.SOULFIRE,
-            BossSkillType.SHOCK,
-            BossSkillType.FERRY,
-            BossSkillType.SHOCK,
-            BossSkillType.SIPHON,
-            BossSkillType.SPIRIT_CALL,
-            BossSkillType.SOUL_MARK
-    };
-    private static final BossSkillType[] FERRYMAN_HARD_PHASE_THREE_SKILL_SEQUENCE = {
-            BossSkillType.SOUL_MARK,
-            BossSkillType.FERRY,
-            BossSkillType.SOULFIRE,
-            BossSkillType.SHOCK,
-            BossSkillType.SPIRIT_CALL,
-            BossSkillType.FERRY,
-            BossSkillType.SIPHON,
-            BossSkillType.SHOCK,
-            BossSkillType.SOULFIRE
-    };
+    private static final BossSkillTimeline FERRYMAN_TIMELINE = new BossSkillTimeline(
+            FERRYMAN_SKILL_INTERVAL_TICKS,
+            0.0D,
+            List.of(BossSkillType.FERRY, BossSkillType.SOULFIRE, BossSkillType.SHOCK));
+    private static final BossSkillTimeline FERRYMAN_HARD_PHASE_ONE_TIMELINE = new BossSkillTimeline(
+            FERRYMAN_SKILL_INTERVAL_TICKS,
+            0.0D,
+            List.of(BossSkillType.FERRY, BossSkillType.SOULFIRE, BossSkillType.SHOCK, BossSkillType.SIPHON));
+    private static final BossSkillTimeline FERRYMAN_HARD_PHASE_TWO_TIMELINE = new BossSkillTimeline(
+            FERRYMAN_HARD_PHASE_TWO_SKILL_INTERVAL_TICKS,
+            0.0D,
+            List.of(BossSkillType.SOULFIRE, BossSkillType.SHOCK, BossSkillType.FERRY, BossSkillType.SHOCK,
+                    BossSkillType.SIPHON, BossSkillType.SPIRIT_CALL, BossSkillType.SOUL_MARK));
+    private static final BossSkillTimeline FERRYMAN_HARD_PHASE_THREE_TIMELINE = new BossSkillTimeline(
+            FERRYMAN_HARD_PHASE_THREE_SKILL_INTERVAL_TICKS,
+            FERRYMAN_PHASE_THREE_IMMEDIATE_SKILL_CHANCE,
+            List.of(BossSkillType.SOUL_MARK, BossSkillType.FERRY, BossSkillType.SOULFIRE, BossSkillType.SHOCK,
+                    BossSkillType.SPIRIT_CALL, BossSkillType.FERRY, BossSkillType.SIPHON, BossSkillType.SHOCK,
+                    BossSkillType.SOULFIRE));
+    private static final Map<BossSkillType, Long> FERRYMAN_CAST_TICKS_BY_SKILL = Map.of(
+            BossSkillType.WASTELAND, FERRYMAN_WASTELAND_CAST_TICKS,
+            BossSkillType.TOWER_SEAL, FERRYMAN_HARD_TOWER_SEAL_CAST_TICKS,
+            BossSkillType.SOUL_MARK, FERRYMAN_SOUL_MARK_CAST_TICKS,
+            BossSkillType.SPIRIT_CALL, FERRYMAN_SPIRIT_CALL_CAST_TICKS,
+            BossSkillType.SIPHON, FERRYMAN_SIPHON_CAST_TICKS);
     private static final String PUS_BUG_TYPE = "pus_bug";
     private static final float PUS_BUG_DISPLAY_PICK_SIZE = 0.0F;
     private static final double PUS_BUG_MAX_HEALTH = 40.0D;
@@ -3917,20 +3911,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
-    private BossSkillType[] ferrymanSkillSequence(DungeonRun run) {
+    private BossSkillTimeline ferrymanSkillTimeline(DungeonRun run) {
         if (!isHardFerrymanRun(run)) {
-            return FERRYMAN_SKILL_SEQUENCE;
+            return FERRYMAN_TIMELINE;
         }
         if (isHardFerrymanPhaseThree(run)) {
-            return FERRYMAN_HARD_PHASE_THREE_SKILL_SEQUENCE;
+            return FERRYMAN_HARD_PHASE_THREE_TIMELINE;
         }
-        return run.towerSealUsed ? FERRYMAN_HARD_PHASE_TWO_SKILL_SEQUENCE : FERRYMAN_HARD_PHASE_ONE_SKILL_SEQUENCE;
+        return run.towerSealUsed ? FERRYMAN_HARD_PHASE_TWO_TIMELINE : FERRYMAN_HARD_PHASE_ONE_TIMELINE;
     }
 
     private BossSkillType nextFerrymanTimelineSkill(DungeonRun run) {
-        BossSkillType[] sequence = ferrymanSkillSequence(run);
-        for (int attempt = 0; attempt < sequence.length; attempt++) {
-            BossSkillType type = sequence[run.nextBossSkillIndex % sequence.length];
+        List<BossSkillType> sequence = ferrymanSkillTimeline(run).sequence();
+        for (int attempt = 0; attempt < sequence.size(); attempt++) {
+            BossSkillType type = sequence.get(run.nextBossSkillIndex % sequence.size());
             run.nextBossSkillIndex++;
             if (canStartFerrymanTimelineSkill(run, type)) {
                 return type;
@@ -3957,20 +3951,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private long ferrymanSkillCastTicks(DungeonRun run, BossSkillType type) {
-        if (type == BossSkillType.WASTELAND) {
-            return FERRYMAN_WASTELAND_CAST_TICKS;
-        }
-        if (type == BossSkillType.TOWER_SEAL) {
-            return FERRYMAN_HARD_TOWER_SEAL_CAST_TICKS;
-        }
-        if (type == BossSkillType.SOUL_MARK) {
-            return FERRYMAN_SOUL_MARK_CAST_TICKS;
-        }
-        if (type == BossSkillType.SPIRIT_CALL) {
-            return FERRYMAN_SPIRIT_CALL_CAST_TICKS;
-        }
-        if (type == BossSkillType.SIPHON) {
-            return FERRYMAN_SIPHON_CAST_TICKS;
+        Long configuredTicks = FERRYMAN_CAST_TICKS_BY_SKILL.get(type);
+        if (configuredTicks != null) {
+            return configuredTicks;
         }
         if (isHardFerrymanRun(run) && type == BossSkillType.SHOCK) {
             return FERRYMAN_HARD_SHORT_CAST_TICKS;
@@ -4136,25 +4119,22 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         BossSkillType finishedType = run.activeBossSkill == null ? null : run.activeBossSkill.type;
         run.activeBossSkill = null;
         long interval = ferrymanSkillIntervalTicks(run);
-        if (shouldImmediatelyContinuePhaseThreeSkill(run, finishedType)) {
+        if (shouldImmediatelyContinueTimelineSkill(run, finishedType)) {
             interval = 1L;
         }
         run.nextBossSkillTick = customMonsterTick + interval;
     }
 
     private long ferrymanSkillIntervalTicks(DungeonRun run) {
-        if (isHardFerrymanPhaseThree(run)) {
-            return FERRYMAN_HARD_PHASE_THREE_SKILL_INTERVAL_TICKS;
-        }
-        return isHardFerrymanPhaseTwo(run) ? FERRYMAN_HARD_PHASE_TWO_SKILL_INTERVAL_TICKS : FERRYMAN_SKILL_INTERVAL_TICKS;
+        return ferrymanSkillTimeline(run).intervalTicks();
     }
 
-    private boolean shouldImmediatelyContinuePhaseThreeSkill(DungeonRun run, BossSkillType type) {
-        return isHardFerrymanPhaseThree(run)
+    private boolean shouldImmediatelyContinueTimelineSkill(DungeonRun run, BossSkillType type) {
+        return ferrymanSkillTimeline(run).immediateContinueChance() > 0.0D
                 && type != null
                 && type != BossSkillType.TOWER_SEAL
                 && type != BossSkillType.WASTELAND
-                && Math.random() < FERRYMAN_PHASE_THREE_IMMEDIATE_SKILL_CHANCE;
+                && Math.random() < ferrymanSkillTimeline(run).immediateContinueChance();
     }
 
     private void maybeChainPhaseTwoSoulfire(DungeonRun run) {
@@ -9196,6 +9176,14 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         AFTERSHOCK,
         RING_DELAY,
         EXPANDING
+    }
+
+    private record BossSkillTimeline(long intervalTicks, double immediateContinueChance, List<BossSkillType> sequence) {
+        private BossSkillTimeline {
+            intervalTicks = Math.max(1L, intervalTicks);
+            immediateContinueChance = Math.max(0.0D, Math.min(1.0D, immediateContinueChance));
+            sequence = List.copyOf(sequence);
+        }
     }
 
     private static final class BossSkillCast {
