@@ -15,6 +15,7 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -65,6 +66,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.ExperienceOrb;
 import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Slime;
 import org.bukkit.entity.TextDisplay;
@@ -279,6 +281,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final double TRAINING_DUMMY_DEFAULT_ARMOR = 0.0D;
     private static final double TRAINING_DUMMY_HEALTH_DISPLAY_HEIGHT = 2.55D;
     private static final double TRAINING_DUMMY_HITBOX_EXPANSION = 0.32D;
+    private static final double DEFAULT_CUSTOM_MONSTER_VERTICAL_HITBOX_EXPANSION = 0.08D;
     private static final long TRAINING_DUMMY_DPS_WINDOW_TICKS = 20L * 60L;
     private static final long SPLIT_DAMAGE_INVULNERABILITY_TICKS = 20L;
     private static final long SPLIT_DAMAGE_REPLACE_TICKS = 10L;
@@ -846,15 +849,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     public void onCustomMonsterDeath(EntityDeathEvent event) {
         DungeonRun bossRun = dungeonRunByBoss(event.getEntity().getUniqueId());
         if (bossRun != null) {
-            if (isFerryman(event.getEntity())) {
-                removeFerrymanDisplay(event.getEntity().getUniqueId());
-            }
-            event.getEntity().setSilent(true);
-            event.setShouldPlayDeathSound(false);
-            event.setDeathSound(null);
-            event.setDeathSoundVolume(0.0F);
-            event.getDrops().clear();
-            event.setDroppedExp(FERRYMAN_EXPERIENCE);
+            CustomMonsterDefinition definition = customMonsterDefinition(event.getEntity());
+            removeCustomMonsterVisual(event.getEntity());
+            prepareCustomMonsterDeath(event, definition == null ? FERRYMAN_EXPERIENCE : definition.experience());
             completeDungeonRun(bossRun, event.getEntity().getWorld());
             return;
         }
@@ -875,55 +872,39 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             event.setDroppedExp(0);
             return;
         }
-        if (isRottenGuard(event.getEntity())) {
-            removeRottenGuardDisplay(event.getEntity().getUniqueId());
-            event.getEntity().setSilent(true);
-            event.setShouldPlayDeathSound(false);
-            event.setDeathSound(null);
-            event.setDeathSoundVolume(0.0F);
-            event.getDrops().clear();
-            event.setDroppedExp(10);
+        CustomMonsterDefinition definition = customMonsterDefinition(event.getEntity());
+        if (definition == null) {
             return;
         }
-        if (isGulper(event.getEntity())) {
-            removeGulperDisplay(event.getEntity().getUniqueId());
-            event.getEntity().setSilent(true);
-            event.setShouldPlayDeathSound(false);
-            event.setDeathSound(null);
-            event.setDeathSoundVolume(0.0F);
-            event.getDrops().clear();
-            event.setDroppedExp(15);
-            return;
-        }
-        if (isFerryman(event.getEntity())) {
-            removeFerrymanDisplay(event.getEntity().getUniqueId());
-            event.getEntity().setSilent(true);
-            event.setShouldPlayDeathSound(false);
-            event.setDeathSound(null);
-            event.setDeathSoundVolume(0.0F);
-            event.getDrops().clear();
-            event.setDroppedExp(FERRYMAN_EXPERIENCE);
-            return;
-        }
-        if (isPusBug(event.getEntity())) {
-            removePusBugDisplay(event.getEntity().getUniqueId());
-            event.getEntity().setSilent(true);
-            event.setShouldPlayDeathSound(false);
-            event.setDeathSound(null);
-            event.setDeathSoundVolume(0.0F);
-            event.getDrops().clear();
-            event.setDroppedExp(6);
+        removeCustomMonsterVisual(event.getEntity());
+        prepareCustomMonsterDeath(event, definition.experience());
+        if (definition == CustomMonsterDefinition.PUS_BUG) {
             triggerPusBugDeath((LivingEntity) event.getEntity());
-            return;
         }
-        if (isTrainingDummy(event.getEntity())) {
-            removeTrainingDummyDisplay(event.getEntity().getUniqueId());
-            event.getEntity().setSilent(true);
-            event.setShouldPlayDeathSound(false);
-            event.setDeathSound(null);
-            event.setDeathSoundVolume(0.0F);
-            event.getDrops().clear();
-            event.setDroppedExp(0);
+    }
+
+    private void prepareCustomMonsterDeath(EntityDeathEvent event, int experience) {
+        event.getEntity().setSilent(true);
+        event.setShouldPlayDeathSound(false);
+        event.setDeathSound(null);
+        event.setDeathSoundVolume(0.0F);
+        event.getDrops().clear();
+        event.setDroppedExp(experience);
+    }
+
+    private void removeCustomMonsterVisual(LivingEntity entity) {
+        UUID uuid = entity.getUniqueId();
+        CustomMonsterDefinition definition = customMonsterDefinition(entity);
+        if (definition == CustomMonsterDefinition.ROTTEN_GUARD) {
+            removeRottenGuardDisplay(uuid);
+        } else if (definition == CustomMonsterDefinition.GULPER) {
+            removeGulperDisplay(uuid);
+        } else if (definition == CustomMonsterDefinition.FERRYMAN) {
+            removeFerrymanDisplay(uuid);
+        } else if (definition == CustomMonsterDefinition.PUS_BUG) {
+            removePusBugDisplay(uuid);
+        } else if (definition == CustomMonsterDefinition.TRAINING_DUMMY) {
+            removeTrainingDummyDisplay(uuid);
         }
     }
 
@@ -2071,17 +2052,17 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (enemy.arthropod()) {
             lore.add("节肢生物");
         }
-        if (PUS_BUG_TYPE.equals(enemy.type())) {
+        if (enemy.definition() == CustomMonsterDefinition.PUS_BUG) {
             lore.add("死亡爆裂: " + formatStat(PUS_BUG_EXPLOSION_DAMAGE) + " 物理伤害");
             lore.add("爆裂与脓液会施加中毒 III");
         }
-        if (GULPER_TYPE.equals(enemy.type())) {
+        if (enemy.definition() == CustomMonsterDefinition.GULPER) {
             lore.add("每秒自然流失 " + formatStat(GULPER_HEALTH_DECAY_PER_SECOND) + " 生命值。");
             lore.add("攻击会优先扣除 4 点饱和度，再扣除饱食度。");
             lore.add("若目标饱和度和饱食度均耗尽，则额外扣除 1 点生命。");
             lore.add("每次命中目标后恢复 " + formatStat(GULPER_ATTACK_HEAL) + " 点生命。");
         }
-        if (FERRYMAN_TYPE.equals(enemy.type())) {
+        if (enemy.definition() == CustomMonsterDefinition.FERRYMAN) {
             lore.add("完全免疫击退。");
             lore.add("使用普通近战追击玩家。");
             lore.add("斗笠下已无可辨认的面容，只剩留客于塔的执念。");
@@ -2217,16 +2198,41 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private static EnemyEntry enemyEntryByStaticType(String type) {
-        for (EnemyEntry entry : EnemyEntry.values()) {
-            if (entry.type().equals(type)) {
-                return entry;
+        CustomMonsterDefinition definition = customMonsterDefinitionByStaticType(type);
+        return definition == null ? null : EnemyEntry.byDefinition(definition);
+    }
+
+    private EnemyEntry enemyEntryByType(String type) {
+        return enemyEntryByStaticType(normalizeCustomMonsterType(type));
+    }
+
+    private static CustomMonsterDefinition customMonsterDefinitionByStaticType(String type) {
+        for (CustomMonsterDefinition definition : CustomMonsterDefinition.values()) {
+            if (definition.type().equals(type)) {
+                return definition;
             }
         }
         return null;
     }
 
-    private EnemyEntry enemyEntryByType(String type) {
-        return enemyEntryByStaticType(normalizeCustomMonsterType(type));
+    private CustomMonsterDefinition customMonsterDefinitionByType(String type) {
+        return customMonsterDefinitionByStaticType(normalizeCustomMonsterType(type));
+    }
+
+    private CustomMonsterDefinition customMonsterDefinition(Entity entity) {
+        String type = customMonsterType(entity);
+        return type == null ? null : customMonsterDefinitionByStaticType(type);
+    }
+
+    private String customMonsterType(Entity entity) {
+        if (entity == null || !entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)) {
+            return null;
+        }
+        return entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING);
+    }
+
+    private boolean isFerrymanType(String type) {
+        return customMonsterDefinitionByType(type) == CustomMonsterDefinition.FERRYMAN;
     }
 
     private BossConfig bossConfigForEnemy(String moduleKey, String type) {
@@ -3821,7 +3827,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         setAttribute(entity, Attribute.ATTACK_DAMAGE, boss.attackDamage());
         setAttribute(entity, Attribute.MOVEMENT_SPEED, boss.movementSpeed());
         setAttribute(entity, Attribute.FOLLOW_RANGE, boss.followRange());
-        if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(boss.type()))) {
+        if (isFerrymanType(boss.type())) {
             setAttribute(entity, Attribute.KNOCKBACK_RESISTANCE, FERRYMAN_KNOCKBACK_RESISTANCE);
         }
         if (heal) {
@@ -5948,17 +5954,17 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             String bossPath = "modules." + module.key() + ".boss";
             BossConfig boss = module.bossConfig();
             BossConfig normalizedBoss = boss.withMaxHealth(Math.min(BOSS_ENTITY_MAX_HEALTH, boss.maxHealth()));
-            if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(boss.type()))
+            if (isFerrymanType(boss.type())
                     && !FERRYMAN_HARD_MODULE_KEY.equals(module.key())
                     && Math.abs(normalizedBoss.allDamageReduction() - FERRYMAN_ALL_DAMAGE_REDUCTION) > 0.0001D) {
                 normalizedBoss = normalizedBoss.withAllDamageReduction(FERRYMAN_ALL_DAMAGE_REDUCTION);
             }
-            if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(boss.type()))
+            if (isFerrymanType(boss.type())
                     && FERRYMAN_HARD_MODULE_KEY.equals(module.key())
                     && Math.abs(normalizedBoss.allDamageReduction() - FERRYMAN_HARD_ALL_DAMAGE_REDUCTION) > 0.0001D) {
                 normalizedBoss = normalizedBoss.withAllDamageReduction(FERRYMAN_HARD_ALL_DAMAGE_REDUCTION);
             }
-            if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(boss.type()))
+            if (isFerrymanType(boss.type())
                     && FERRYMAN_HARD_MODULE_KEY.equals(module.key())
                     && Math.abs(normalizedBoss.attackDamage() - FERRYMAN_HARD_ATTACK_DAMAGE) > 0.0001D) {
                 normalizedBoss = normalizedBoss.withAttackDamage(FERRYMAN_HARD_ATTACK_DAMAGE);
@@ -6201,7 +6207,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (configuredMaxHealth > BOSS_ENTITY_MAX_HEALTH) {
             return 1.0D - BOSS_ENTITY_MAX_HEALTH / configuredMaxHealth;
         }
-        if (FERRYMAN_TYPE.equals(normalizeCustomMonsterType(type))) {
+        if (isFerrymanType(type)) {
             return DEFAULT_DUNGEON_BOSS_ALL_DAMAGE_REDUCTION;
         }
         return 0.0D;
@@ -7097,7 +7103,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             spawned.setRemoveWhenFarAway(false);
             spawned.setBaby(false);
             applyRottenGuardStats(spawned, true);
-            applyRottenGuardVisualBase(spawned);
+            applyCustomMonsterVisualBase(spawned);
         });
         removeRottenGuardChickenJockeyMount(zombie);
         Bukkit.getScheduler().runTask(this, () -> removeRottenGuardChickenJockeyMount(zombie));
@@ -7116,16 +7122,17 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private Entity spawnCustomMonster(String type, Location location) {
-        if (FERRYMAN_TYPE.equals(type)) {
+        CustomMonsterDefinition definition = customMonsterDefinitionByType(type);
+        if (definition == CustomMonsterDefinition.FERRYMAN) {
             return spawnFerryman(location);
         }
-        if (GULPER_TYPE.equals(type)) {
+        if (definition == CustomMonsterDefinition.GULPER) {
             return spawnGulper(location);
         }
-        if (PUS_BUG_TYPE.equals(type)) {
+        if (definition == CustomMonsterDefinition.PUS_BUG) {
             return spawnPusBug(location);
         }
-        if (TRAINING_DUMMY_TYPE.equals(type)) {
+        if (definition == CustomMonsterDefinition.TRAINING_DUMMY) {
             return spawnTrainingDummy(location);
         }
         return spawnRottenGuard(location);
@@ -7141,8 +7148,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             spawned.setBaby(false);
             spawned.setSilent(true);
             applyGulperStats(spawned, true);
-            applyGulperVisualBase(spawned);
-            syncGulperDisplay(spawned);
+            applyCustomMonsterVisualBase(spawned);
+            syncCustomMonsterVisual(spawned);
         });
         removeRottenGuardChickenJockeyMount(zombie);
         Bukkit.getScheduler().runTask(this, () -> removeRottenGuardChickenJockeyMount(zombie));
@@ -7162,8 +7169,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             spawned.setSilent(true);
             spawned.setAI(true);
             applyFerrymanStats(spawned, true);
-            applyFerrymanVisualBase(spawned);
-            syncFerrymanDisplay(spawned);
+            applyCustomMonsterVisualBase(spawned);
+            syncCustomMonsterVisual(spawned);
         });
         removeRottenGuardChickenJockeyMount(zombie);
         Bukkit.getScheduler().runTask(this, () -> removeRottenGuardChickenJockeyMount(zombie));
@@ -7182,8 +7189,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             endermite.setSilent(true);
             endermite.setAI(true);
             applyPusBugStats(endermite, true);
-            applyPusBugVisualBase(endermite);
-            syncPusBugDisplay(endermite);
+            applyCustomMonsterVisualBase(endermite);
+            syncCustomMonsterVisual(endermite);
         });
     }
 
@@ -7201,8 +7208,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             slime.setAI(false);
             slime.setSilent(true);
             applyTrainingDummyStats(slime, true);
-            applyTrainingDummyVisualBase(slime);
-            syncTrainingDummyDisplay(slime);
+            applyCustomMonsterVisualBase(slime);
+            syncCustomMonsterVisual(slime);
         });
     }
 
@@ -7220,9 +7227,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 if (isGulper(zombie) && !zombie.isDead() && zombie.isValid()) {
                     liveGulpers.add(zombie.getUniqueId());
                     liveCustomMonsters.add(zombie.getUniqueId());
-                    removeRottenGuardChickenJockeyMount(zombie);
-                    applyGulperVisualBase(zombie);
-                    syncGulperDisplay(zombie);
+                    tickCustomMonsterVisual(zombie);
                     syncCustomMonsterHealthDisplay(zombie);
                     if (updateCombatLogic) {
                         applyGulperStats(zombie, false);
@@ -7230,28 +7235,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                         if (zombie.isDead() || !zombie.isValid()) {
                             continue;
                         }
-                        if (zombie.getTarget() instanceof Player target && isValidMonsterTarget(zombie, target)) {
-                            continue;
-                        }
-                        zombie.setTarget(nearestMonsterTarget(zombie));
+                        maintainMonsterTarget(zombie);
                     }
                     continue;
                 }
                 if (isFerryman(zombie) && !zombie.isDead() && zombie.isValid()) {
                     liveFerrymen.add(zombie.getUniqueId());
                     liveCustomMonsters.add(zombie.getUniqueId());
-                    removeRottenGuardChickenJockeyMount(zombie);
-                    applyFerrymanVisualBase(zombie);
-                    syncFerrymanDisplay(zombie);
+                    tickCustomMonsterVisual(zombie);
                     if (dungeonRunByBoss(zombie.getUniqueId()) == null) {
                         syncCustomMonsterHealthDisplay(zombie);
                     }
                     if (updateCombatLogic) {
                         applyFerrymanStats(zombie, false);
-                        if (zombie.getTarget() instanceof Player target && isValidMonsterTarget(zombie, target)) {
-                            continue;
-                        }
-                        zombie.setTarget(nearestMonsterTarget(zombie));
+                        maintainMonsterTarget(zombie);
                     }
                     continue;
                 }
@@ -7260,18 +7257,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 }
                 liveRottenGuards.add(zombie.getUniqueId());
                 liveCustomMonsters.add(zombie.getUniqueId());
-                removeRottenGuardChickenJockeyMount(zombie);
-                applyRottenGuardVisualBase(zombie);
-                syncRottenGuardDisplay(zombie);
+                tickCustomMonsterVisual(zombie);
                 syncCustomMonsterHealthDisplay(zombie);
                 if (!updateCombatLogic) {
                     continue;
                 }
                 applyRottenGuardStats(zombie, false);
-                if (zombie.getTarget() instanceof Player target && isValidMonsterTarget(zombie, target)) {
-                    continue;
-                }
-                zombie.setTarget(nearestMonsterTarget(zombie));
+                maintainMonsterTarget(zombie);
             }
             for (Endermite endermite : world.getEntitiesByClass(Endermite.class)) {
                 if (!isPusBug(endermite) || endermite.isDead() || !endermite.isValid()) {
@@ -7279,18 +7271,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 }
                 livePusBugs.add(endermite.getUniqueId());
                 liveCustomMonsters.add(endermite.getUniqueId());
-                endermite.setSilent(true);
-                endermite.setAI(true);
-                endermite.setLifetimeTicks(0);
-                applyPusBugVisualBase(endermite);
-                syncPusBugDisplay(endermite);
+                tickCustomMonsterVisual(endermite);
                 syncCustomMonsterHealthDisplay(endermite);
                 if (updateCombatLogic) {
                     applyPusBugStats(endermite, false);
-                    if (endermite.getTarget() instanceof Player target && isValidMonsterTarget(endermite, target)) {
-                        continue;
-                    }
-                    endermite.setTarget(nearestMonsterTarget(endermite));
+                    maintainMonsterTarget(endermite);
                 }
             }
             for (Slime slime : world.getEntitiesByClass(Slime.class)) {
@@ -7300,8 +7285,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 liveTrainingDummies.add(slime.getUniqueId());
                 liveCustomMonsters.add(slime.getUniqueId());
                 liveSplitDamageTargets.add(slime.getUniqueId());
-                applyTrainingDummyVisualBase(slime);
-                syncTrainingDummyDisplay(slime);
+                tickCustomMonsterVisual(slime);
                 if (updateCombatLogic) {
                     pruneTrainingDummyDamageSamples(slime.getUniqueId());
                     applyTrainingDummyStats(slime, false);
@@ -7318,11 +7302,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             }
         }
         tickPusPools();
-        removeMissingRottenGuardDisplays(liveRottenGuards);
-        removeMissingGulperDisplays(liveGulpers);
-        removeMissingFerrymanDisplays(liveFerrymen);
-        removeMissingPusBugDisplays(livePusBugs);
-        removeMissingTrainingDummyDisplays(liveTrainingDummies);
+        removeMissingCustomMonsterVisuals(CustomMonsterDefinition.ROTTEN_GUARD, liveRottenGuards);
+        removeMissingCustomMonsterVisuals(CustomMonsterDefinition.GULPER, liveGulpers);
+        removeMissingCustomMonsterVisuals(CustomMonsterDefinition.FERRYMAN, liveFerrymen);
+        removeMissingCustomMonsterVisuals(CustomMonsterDefinition.PUS_BUG, livePusBugs);
+        removeMissingCustomMonsterVisuals(CustomMonsterDefinition.TRAINING_DUMMY, liveTrainingDummies);
         for (DungeonRun run : dungeonRunsByWorld.values()) {
             liveCustomMonsters.addAll(run.siphonPhantoms.keySet());
         }
@@ -7372,6 +7356,62 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         applySplitDamageTargetBase(slime);
         slime.setVelocity(new Vector(0.0D, slime.getVelocity().getY(), 0.0D));
         slime.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, PotionEffect.INFINITE_DURATION, 0, false, false, false));
+    }
+
+    private void applyCustomMonsterVisualBase(LivingEntity entity) {
+        CustomMonsterDefinition definition = customMonsterDefinition(entity);
+        if (definition == CustomMonsterDefinition.ROTTEN_GUARD && entity instanceof Zombie zombie) {
+            applyRottenGuardVisualBase(zombie);
+        } else if (definition == CustomMonsterDefinition.GULPER && entity instanceof Zombie zombie) {
+            applyGulperVisualBase(zombie);
+        } else if (definition == CustomMonsterDefinition.FERRYMAN && entity instanceof Zombie zombie) {
+            applyFerrymanVisualBase(zombie);
+        } else if (definition == CustomMonsterDefinition.PUS_BUG && entity instanceof Endermite endermite) {
+            applyPusBugVisualBase(endermite);
+        } else if (definition == CustomMonsterDefinition.TRAINING_DUMMY && entity instanceof Slime slime) {
+            applyTrainingDummyVisualBase(slime);
+        }
+    }
+
+    private void tickCustomMonsterVisual(LivingEntity entity) {
+        if (entity instanceof Zombie zombie) {
+            removeRottenGuardChickenJockeyMount(zombie);
+        } else if (entity instanceof Endermite endermite && customMonsterDefinition(entity) == CustomMonsterDefinition.PUS_BUG) {
+            endermite.setAI(true);
+            endermite.setSilent(true);
+            endermite.setLifetimeTicks(0);
+        }
+        applyCustomMonsterVisualBase(entity);
+        syncCustomMonsterVisual(entity);
+    }
+
+    private void syncCustomMonsterVisual(LivingEntity entity) {
+        CustomMonsterDefinition definition = customMonsterDefinition(entity);
+        if (definition == CustomMonsterDefinition.ROTTEN_GUARD && entity instanceof Zombie zombie) {
+            syncRottenGuardDisplay(zombie);
+        } else if (definition == CustomMonsterDefinition.GULPER && entity instanceof Zombie zombie) {
+            syncGulperDisplay(zombie);
+        } else if (definition == CustomMonsterDefinition.FERRYMAN && entity instanceof Zombie zombie) {
+            syncFerrymanDisplay(zombie);
+        } else if (definition == CustomMonsterDefinition.PUS_BUG && entity instanceof Endermite endermite) {
+            syncPusBugDisplay(endermite);
+        } else if (definition == CustomMonsterDefinition.TRAINING_DUMMY && entity instanceof Slime slime) {
+            syncTrainingDummyDisplay(slime);
+        }
+    }
+
+    private void removeMissingCustomMonsterVisuals(CustomMonsterDefinition definition, Set<UUID> liveMonsters) {
+        if (definition == CustomMonsterDefinition.ROTTEN_GUARD) {
+            removeMissingRottenGuardDisplays(liveMonsters);
+        } else if (definition == CustomMonsterDefinition.GULPER) {
+            removeMissingGulperDisplays(liveMonsters);
+        } else if (definition == CustomMonsterDefinition.FERRYMAN) {
+            removeMissingFerrymanDisplays(liveMonsters);
+        } else if (definition == CustomMonsterDefinition.PUS_BUG) {
+            removeMissingPusBugDisplays(liveMonsters);
+        } else if (definition == CustomMonsterDefinition.TRAINING_DUMMY) {
+            removeMissingTrainingDummyDisplays(liveMonsters);
+        }
     }
 
     private void clearRottenGuardEquipment(Zombie zombie) {
@@ -8260,11 +8300,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private Location customMonsterHealthDisplayLocation(LivingEntity monster) {
-        double height = isTrainingDummy(monster)
-                ? TRAINING_DUMMY_HEALTH_DISPLAY_HEIGHT
-                : (isPusBug(monster) ? PUS_BUG_HEALTH_DISPLAY_HEIGHT : (isGulper(monster) ? GULPER_HEALTH_DISPLAY_HEIGHT
-                : (isFerryman(monster) ? FERRYMAN_HEALTH_DISPLAY_HEIGHT
-                : (isFerrymanSiphonPhantom(monster) ? FERRYMAN_SIPHON_PHANTOM_HEALTH_DISPLAY_HEIGHT : ROTTEN_GUARD_HEALTH_DISPLAY_HEIGHT))));
+        CustomMonsterDefinition definition = customMonsterDefinition(monster);
+        double height = definition == null
+                ? FERRYMAN_SIPHON_PHANTOM_HEALTH_DISPLAY_HEIGHT
+                : definition.healthDisplayHeight();
         Location location = monster.getLocation().clone().add(0.0D, height, 0.0D);
         location.setPitch(0.0F);
         return location;
@@ -8490,31 +8529,14 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private void applyPusBugStats(Endermite endermite, boolean heal) {
         endermite.setAI(true);
         endermite.setLifetimeTicks(0);
-        setAttribute(endermite, Attribute.MAX_HEALTH, PUS_BUG_MAX_HEALTH);
-        setAttribute(endermite, Attribute.ARMOR, PUS_BUG_ARMOR);
-        setAttribute(endermite, Attribute.ATTACK_DAMAGE, PUS_BUG_ATTACK_DAMAGE);
-        setAttribute(endermite, Attribute.FOLLOW_RANGE, PUS_BUG_FOLLOW_RANGE);
-        setAttribute(endermite, Attribute.MOVEMENT_SPEED, PUS_BUG_MOVEMENT_SPEED);
-        setAttribute(endermite, Attribute.KNOCKBACK_RESISTANCE, PUS_BUG_KNOCKBACK_RESISTANCE);
-        setAttribute(endermite, Attribute.JUMP_STRENGTH, PUS_BUG_JUMP_STRENGTH);
-        if (heal) {
-            endermite.setHealth(PUS_BUG_MAX_HEALTH);
-        }
+        applyMobStats(endermite, CustomMonsterDefinition.PUS_BUG.stats(), heal);
     }
 
     private void applyGulperStats(Zombie zombie, boolean heal) {
         zombie.setAI(true);
         zombie.setSilent(true);
         zombie.setAdult();
-        setAttribute(zombie, Attribute.MAX_HEALTH, GULPER_MAX_HEALTH);
-        setAttribute(zombie, Attribute.ARMOR, GULPER_ARMOR);
-        setAttribute(zombie, Attribute.ATTACK_DAMAGE, GULPER_ATTACK_DAMAGE);
-        setAttribute(zombie, Attribute.FOLLOW_RANGE, GULPER_FOLLOW_RANGE);
-        setAttribute(zombie, Attribute.MOVEMENT_SPEED, GULPER_MOVEMENT_SPEED);
-        setAttribute(zombie, Attribute.KNOCKBACK_RESISTANCE, GULPER_KNOCKBACK_RESISTANCE);
-        if (heal) {
-            zombie.setHealth(GULPER_MAX_HEALTH);
-        }
+        applyMobStats(zombie, CustomMonsterDefinition.GULPER.stats(), heal);
     }
 
     private void applyFerrymanStats(Zombie zombie, boolean heal) {
@@ -8522,15 +8544,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         zombie.setSilent(true);
         zombie.setAdult();
         zombie.setShouldBurnInDay(false);
-        setAttribute(zombie, Attribute.MAX_HEALTH, FERRYMAN_MAX_HEALTH);
-        setAttribute(zombie, Attribute.ARMOR, FERRYMAN_ARMOR);
-        setAttribute(zombie, Attribute.ATTACK_DAMAGE, FERRYMAN_ATTACK_DAMAGE);
-        setAttribute(zombie, Attribute.FOLLOW_RANGE, FERRYMAN_FOLLOW_RANGE);
-        setAttribute(zombie, Attribute.MOVEMENT_SPEED, FERRYMAN_MOVEMENT_SPEED);
-        setAttribute(zombie, Attribute.KNOCKBACK_RESISTANCE, FERRYMAN_KNOCKBACK_RESISTANCE);
-        if (heal) {
-            zombie.setHealth(FERRYMAN_MAX_HEALTH);
-        }
+        applyMobStats(zombie, CustomMonsterDefinition.FERRYMAN.stats(), heal);
     }
 
     private void decayGulperHealth(Zombie zombie) {
@@ -8564,21 +8578,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private void killCustomMonsterSilently(LivingEntity entity) {
         UUID uuid = entity.getUniqueId();
         entity.setSilent(true);
-        if (isRottenGuard(entity)) {
-            removeRottenGuardDisplay(uuid);
-            spawnExperience(entity.getLocation(), 10);
-        } else if (isGulper(entity)) {
-            removeGulperDisplay(uuid);
-            spawnExperience(entity.getLocation(), 15);
-        } else if (isFerryman(entity)) {
-            removeFerrymanDisplay(uuid);
-            spawnExperience(entity.getLocation(), FERRYMAN_EXPERIENCE);
-        } else if (isPusBug(entity)) {
-            removePusBugDisplay(uuid);
+        CustomMonsterDefinition definition = customMonsterDefinition(entity);
+        removeCustomMonsterVisual(entity);
+        if (definition == CustomMonsterDefinition.PUS_BUG) {
             triggerPusBugDeath(entity);
-            spawnExperience(entity.getLocation(), 6);
-        } else if (isTrainingDummy(entity)) {
-            removeTrainingDummyDisplay(uuid);
+        }
+        if (definition != null) {
+            spawnExperience(entity.getLocation(), definition.experience());
         }
         markDungeonMobRemoved(uuid);
         entity.remove();
@@ -8700,13 +8706,23 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private void applyRottenGuardStats(Zombie zombie, boolean heal) {
-        setAttribute(zombie, Attribute.MAX_HEALTH, ROTTEN_GUARD_MAX_HEALTH);
-        setAttribute(zombie, Attribute.ARMOR, ROTTEN_GUARD_ARMOR);
-        setAttribute(zombie, Attribute.ATTACK_DAMAGE, ROTTEN_GUARD_ATTACK_DAMAGE);
-        setAttribute(zombie, Attribute.FOLLOW_RANGE, ROTTEN_GUARD_FOLLOW_RANGE);
-        setAttribute(zombie, Attribute.MOVEMENT_SPEED, ROTTEN_GUARD_MOVEMENT_SPEED);
+        applyMobStats(zombie, CustomMonsterDefinition.ROTTEN_GUARD.stats(), heal);
+    }
+
+    private void applyMobStats(LivingEntity entity, MobStats stats, boolean heal) {
+        setAttribute(entity, Attribute.MAX_HEALTH, stats.maxHealth());
+        setAttribute(entity, Attribute.ARMOR, stats.armor());
+        setAttribute(entity, Attribute.ATTACK_DAMAGE, stats.attackDamage());
+        setAttribute(entity, Attribute.FOLLOW_RANGE, stats.followRange());
+        setAttribute(entity, Attribute.MOVEMENT_SPEED, stats.movementSpeed());
+        setAttribute(entity, Attribute.KNOCKBACK_RESISTANCE, stats.knockbackResistance());
+        if (stats.jumpStrength() != null) {
+            setAttribute(entity, Attribute.JUMP_STRENGTH, stats.jumpStrength());
+        }
         if (heal) {
-            zombie.setHealth(ROTTEN_GUARD_MAX_HEALTH);
+            entity.setHealth(stats.maxHealth());
+        } else if (entity.getHealth() > stats.maxHealth()) {
+            entity.setHealth(stats.maxHealth());
         }
     }
 
@@ -8723,20 +8739,14 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         Vector origin = eye.toVector();
         LivingEntity best = null;
         double bestDistance = Double.MAX_VALUE;
-        double searchRadius = range + Math.max(TRAINING_DUMMY_HITBOX_EXPANSION, Math.max(FERRYMAN_HITBOX_EXPANSION,
-                Math.max(GULPER_HITBOX_EXPANSION, Math.max(ROTTEN_GUARD_HITBOX_EXPANSION, PUS_BUG_HITBOX_EXPANSION)))) + 1.0D;
+        double searchRadius = range + maxCustomMonsterHitboxExpansion() + 1.0D;
         for (Entity entity : player.getWorld().getNearbyEntities(eye, searchRadius, searchRadius, searchRadius, this::isCustomMonster)) {
             if (!(entity instanceof LivingEntity monster) || monster.isDead() || !monster.isValid()) {
                 continue;
             }
-            double horizontalExpansion = isTrainingDummy(monster)
-                    ? TRAINING_DUMMY_HITBOX_EXPANSION
-                    : (isPusBug(monster) ? PUS_BUG_HITBOX_EXPANSION : (isGulper(monster) ? GULPER_HITBOX_EXPANSION
-                    : (isFerryman(monster) ? FERRYMAN_HITBOX_EXPANSION : ROTTEN_GUARD_HITBOX_EXPANSION)));
-            double verticalExpansion = isTrainingDummy(monster)
-                    ? 0.9D
-                    : (isPusBug(monster) ? PUS_BUG_VERTICAL_HITBOX_EXPANSION : (isGulper(monster) ? 0.55D
-                    : (isFerryman(monster) ? 0.75D : 0.08D)));
+            MobHitbox hitbox = customMonsterHitbox(monster);
+            double horizontalExpansion = hitbox.horizontalExpansion();
+            double verticalExpansion = hitbox.verticalExpansion();
             BoundingBox expandedBox = monster.getBoundingBox().expand(horizontalExpansion, verticalExpansion, horizontalExpansion);
             RayTraceResult hit = expandedBox.rayTrace(origin, direction, range);
             if (hit == null) {
@@ -8752,6 +8762,19 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return null;
         }
         return best;
+    }
+
+    private double maxCustomMonsterHitboxExpansion() {
+        double expansion = 0.0D;
+        for (CustomMonsterDefinition definition : CustomMonsterDefinition.values()) {
+            expansion = Math.max(expansion, definition.hitbox().horizontalExpansion());
+        }
+        return Math.max(expansion, 0.5D);
+    }
+
+    private MobHitbox customMonsterHitbox(LivingEntity monster) {
+        CustomMonsterDefinition definition = customMonsterDefinition(monster);
+        return definition == null ? new MobHitbox(0.5D, 0.5D) : definition.hitbox();
     }
 
     private boolean isBlockedBeforeHit(Player player, Location eye, Vector direction, double hitDistance) {
@@ -8825,6 +8848,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         return nearest;
     }
 
+    private void maintainMonsterTarget(Mob entity) {
+        if (entity.getTarget() instanceof Player target && isValidMonsterTarget(entity, target)) {
+            return;
+        }
+        entity.setTarget(nearestMonsterTarget(entity));
+    }
+
     private boolean isValidMonsterTarget(LivingEntity entity, Player player) {
         if (player.isDead() || player.getGameMode() == GameMode.SPECTATOR || player.getGameMode() == GameMode.CREATIVE) {
             return false;
@@ -8838,33 +8868,23 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private boolean isRottenGuard(Entity entity) {
-        return entity instanceof Zombie
-                && entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)
-                && ROTTEN_GUARD_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
+        return isCustomMonsterType(entity, CustomMonsterDefinition.ROTTEN_GUARD);
     }
 
     private boolean isPusBug(Entity entity) {
-        return entity instanceof Endermite
-                && entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)
-                && PUS_BUG_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
+        return isCustomMonsterType(entity, CustomMonsterDefinition.PUS_BUG);
     }
 
     private boolean isGulper(Entity entity) {
-        return entity instanceof Zombie
-                && entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)
-                && GULPER_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
+        return isCustomMonsterType(entity, CustomMonsterDefinition.GULPER);
     }
 
     private boolean isFerryman(Entity entity) {
-        return entity instanceof Zombie
-                && entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)
-                && FERRYMAN_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
+        return isCustomMonsterType(entity, CustomMonsterDefinition.FERRYMAN);
     }
 
     private boolean isTrainingDummy(Entity entity) {
-        return entity instanceof Slime
-                && entity.getPersistentDataContainer().has(monsterTypeKey, PersistentDataType.STRING)
-                && TRAINING_DUMMY_TYPE.equals(entity.getPersistentDataContainer().get(monsterTypeKey, PersistentDataType.STRING));
+        return isCustomMonsterType(entity, CustomMonsterDefinition.TRAINING_DUMMY);
     }
 
     private boolean isFerrymanSiphonPhantom(Entity entity) {
@@ -8873,70 +8893,34 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     }
 
     private boolean isCustomMonster(Entity entity) {
-        return isRottenGuard(entity) || isGulper(entity) || isFerryman(entity) || isPusBug(entity) || isTrainingDummy(entity)
-                || isFerrymanSiphonPhantom(entity);
+        return customMonsterDefinition(entity) != null || isFerrymanSiphonPhantom(entity);
     }
 
-    private boolean isRottenGuardInput(String input) {
-        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT);
-        return ROTTEN_GUARD_TYPE.equals(normalized)
-                || "rotten-guard".equals(normalized)
-                || "朽败的卫兵".equals(input);
-    }
-
-    private boolean isPusBugInput(String input) {
-        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace('-', '_');
-        return PUS_BUG_TYPE.equals(normalized)
-                || "pusbug".equals(normalized)
-                || "脓包虫".equals(input);
-    }
-
-    private boolean isGulperInput(String input) {
-        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace('-', '_');
-        return GULPER_TYPE.equals(normalized)
-                || "sipper".equals(normalized)
-                || "drinker".equals(normalized)
-                || "啜食者".equals(input);
-    }
-
-    private boolean isFerrymanInput(String input) {
-        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace('-', '_');
-        return FERRYMAN_TYPE.equals(normalized)
-                || "ferry_man".equals(normalized)
-                || "guide".equals(normalized)
-                || "boatman".equals(normalized)
-                || "引渡人".equals(input);
-    }
-
-    private boolean isTrainingDummyInput(String input) {
-        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace('-', '_');
-        return TRAINING_DUMMY_TYPE.equals(normalized)
-                || "trainingdummy".equals(normalized)
-                || "dummy".equals(normalized)
-                || "test_dummy".equals(normalized)
-                || "测试木桩".equals(input);
+    private boolean isCustomMonsterType(Entity entity, CustomMonsterDefinition definition) {
+        return entity != null
+                && definition.entityClass().isInstance(entity)
+                && definition.type().equals(customMonsterType(entity));
     }
 
     private boolean isCustomMonsterInput(String input) {
-        return isRottenGuardInput(input) || isGulperInput(input) || isFerrymanInput(input) || isPusBugInput(input) || isTrainingDummyInput(input);
+        return customMonsterDefinitionByInput(input) != null;
     }
 
     private String normalizeCustomMonsterType(String input) {
-        if (isFerrymanInput(input)) {
-            return FERRYMAN_TYPE;
+        CustomMonsterDefinition definition = customMonsterDefinitionByInput(input);
+        return definition == null ? normalizeMonsterInputToken(input) : definition.type();
+    }
+
+    private static CustomMonsterDefinition customMonsterDefinitionByInput(String input) {
+        for (CustomMonsterDefinition definition : CustomMonsterDefinition.values()) {
+            if (definition.matchesInput(input)) {
+                return definition;
+            }
         }
-        if (isTrainingDummyInput(input)) {
-            return TRAINING_DUMMY_TYPE;
-        }
-        if (isGulperInput(input)) {
-            return GULPER_TYPE;
-        }
-        if (isPusBugInput(input)) {
-            return PUS_BUG_TYPE;
-        }
-        if (isRottenGuardInput(input)) {
-            return ROTTEN_GUARD_TYPE;
-        }
+        return null;
+    }
+
+    private static String normalizeMonsterInputToken(String input) {
         return input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace('-', '_');
     }
 
@@ -8951,7 +8935,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             }
             if (args.length == 2 && "spawn".equalsIgnoreCase(args[0])) {
                 String prefix = args[1].toLowerCase(Locale.ROOT);
-                return List.of(ROTTEN_GUARD_TYPE, GULPER_TYPE, PUS_BUG_TYPE, TRAINING_DUMMY_TYPE).stream()
+                return Arrays.stream(CustomMonsterDefinition.values())
+                        .filter(CustomMonsterDefinition::commandSpawnable)
+                        .map(CustomMonsterDefinition::type)
                         .filter(value -> value.startsWith(prefix))
                         .toList();
             }
@@ -9584,40 +9570,87 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
     }
 
-    private enum EnemyEntry {
-        ROTTEN_GUARD(ROTTEN_GUARD_TYPE, "朽败卫兵", Material.ROTTEN_FLESH,
-                ROTTEN_GUARD_MAX_HEALTH, ROTTEN_GUARD_ATTACK_DAMAGE, ROTTEN_GUARD_ARMOR, 0.0D, ROTTEN_GUARD_MOVEMENT_SPEED, true, false),
-        GULPER(GULPER_TYPE, "啜食者", Material.SCULK_SHRIEKER,
-                GULPER_MAX_HEALTH, GULPER_ATTACK_DAMAGE, GULPER_ARMOR, 0.0D, GULPER_MOVEMENT_SPEED, true, false),
-        FERRYMAN(FERRYMAN_TYPE, "引渡人", Material.SOUL_LANTERN,
-                FERRYMAN_MAX_HEALTH, FERRYMAN_ATTACK_DAMAGE, FERRYMAN_ARMOR, FERRYMAN_ALL_DAMAGE_REDUCTION, FERRYMAN_MOVEMENT_SPEED, true, false),
-        PUS_BUG(PUS_BUG_TYPE, "脓包虫", Material.SPIDER_EYE,
-                PUS_BUG_MAX_HEALTH, PUS_BUG_ATTACK_DAMAGE, PUS_BUG_ARMOR, 0.0D, PUS_BUG_MOVEMENT_SPEED, false, true),
-        TRAINING_DUMMY(TRAINING_DUMMY_TYPE, "测试木桩", Material.PLAYER_HEAD,
-                TRAINING_DUMMY_DEFAULT_MAX_HEALTH, 0.0D, TRAINING_DUMMY_DEFAULT_ARMOR, 0.0D, 0.0D, false, false);
+    private record MobStats(double maxHealth, double attackDamage, double armor, double followRange,
+                            double movementSpeed, double knockbackResistance, Double jumpStrength,
+                            double allDamageReduction) {
+    }
+
+    private record MobHitbox(double horizontalExpansion, double verticalExpansion) {
+    }
+
+    private enum CustomMonsterDefinition {
+        ROTTEN_GUARD(ROTTEN_GUARD_TYPE, "朽败卫兵", Material.ROTTEN_FLESH, Zombie.class,
+                new MobStats(ROTTEN_GUARD_MAX_HEALTH, ROTTEN_GUARD_ATTACK_DAMAGE, ROTTEN_GUARD_ARMOR,
+                        ROTTEN_GUARD_FOLLOW_RANGE, ROTTEN_GUARD_MOVEMENT_SPEED, 0.0D, null, 0.0D),
+                ROTTEN_GUARD_HEALTH_DISPLAY_HEIGHT,
+                new MobHitbox(ROTTEN_GUARD_HITBOX_EXPANSION, DEFAULT_CUSTOM_MONSTER_VERTICAL_HITBOX_EXPANSION),
+                10, true, false, true,
+                "rotten-guard", "朽败的卫兵", "朽败卫兵"),
+        GULPER(GULPER_TYPE, "啜食者", Material.SCULK_SHRIEKER, Zombie.class,
+                new MobStats(GULPER_MAX_HEALTH, GULPER_ATTACK_DAMAGE, GULPER_ARMOR,
+                        GULPER_FOLLOW_RANGE, GULPER_MOVEMENT_SPEED, GULPER_KNOCKBACK_RESISTANCE, null, 0.0D),
+                GULPER_HEALTH_DISPLAY_HEIGHT,
+                new MobHitbox(GULPER_HITBOX_EXPANSION, 0.55D),
+                15, true, false, true,
+                "sipper", "drinker", "啜食者"),
+        FERRYMAN(FERRYMAN_TYPE, "引渡人", Material.SOUL_LANTERN, Zombie.class,
+                new MobStats(FERRYMAN_MAX_HEALTH, FERRYMAN_ATTACK_DAMAGE, FERRYMAN_ARMOR,
+                        FERRYMAN_FOLLOW_RANGE, FERRYMAN_MOVEMENT_SPEED, FERRYMAN_KNOCKBACK_RESISTANCE, null,
+                        FERRYMAN_ALL_DAMAGE_REDUCTION),
+                FERRYMAN_HEALTH_DISPLAY_HEIGHT,
+                new MobHitbox(FERRYMAN_HITBOX_EXPANSION, 0.75D),
+                FERRYMAN_EXPERIENCE, true, false, false,
+                "ferry_man", "guide", "boatman", "引渡人"),
+        PUS_BUG(PUS_BUG_TYPE, "脓包虫", Material.SPIDER_EYE, Endermite.class,
+                new MobStats(PUS_BUG_MAX_HEALTH, PUS_BUG_ATTACK_DAMAGE, PUS_BUG_ARMOR,
+                        PUS_BUG_FOLLOW_RANGE, PUS_BUG_MOVEMENT_SPEED, PUS_BUG_KNOCKBACK_RESISTANCE,
+                        PUS_BUG_JUMP_STRENGTH, 0.0D),
+                PUS_BUG_HEALTH_DISPLAY_HEIGHT,
+                new MobHitbox(PUS_BUG_HITBOX_EXPANSION, PUS_BUG_VERTICAL_HITBOX_EXPANSION),
+                6, false, true, true,
+                "pusbug", "脓包虫"),
+        TRAINING_DUMMY(TRAINING_DUMMY_TYPE, "测试木桩", Material.PLAYER_HEAD, Slime.class,
+                new MobStats(TRAINING_DUMMY_DEFAULT_MAX_HEALTH, 0.0D, TRAINING_DUMMY_DEFAULT_ARMOR,
+                        0.0D, 0.0D, 1.0D, null, 0.0D),
+                TRAINING_DUMMY_HEALTH_DISPLAY_HEIGHT,
+                new MobHitbox(TRAINING_DUMMY_HITBOX_EXPANSION, 0.9D),
+                0, false, false, true,
+                "trainingdummy", "dummy", "test_dummy", "测试木桩");
 
         private final String type;
         private final String displayName;
         private final Material icon;
-        private final double maxHealth;
-        private final double attackDamage;
-        private final double armor;
-        private final double allDamageReduction;
-        private final double movementSpeed;
+        private final Class<? extends LivingEntity> entityClass;
+        private final MobStats stats;
+        private final double healthDisplayHeight;
+        private final MobHitbox hitbox;
+        private final int experience;
         private final boolean undead;
         private final boolean arthropod;
+        private final boolean commandSpawnable;
+        private final Set<String> aliases;
 
-        EnemyEntry(String type, String displayName, Material icon, double maxHealth, double attackDamage, double armor, double allDamageReduction, double movementSpeed, boolean undead, boolean arthropod) {
+        CustomMonsterDefinition(String type, String displayName, Material icon, Class<? extends LivingEntity> entityClass,
+                                MobStats stats, double healthDisplayHeight, MobHitbox hitbox, int experience,
+                                boolean undead, boolean arthropod, boolean commandSpawnable, String... aliases) {
             this.type = type;
             this.displayName = displayName;
             this.icon = icon;
-            this.maxHealth = maxHealth;
-            this.attackDamage = attackDamage;
-            this.armor = armor;
-            this.allDamageReduction = allDamageReduction;
-            this.movementSpeed = movementSpeed;
+            this.entityClass = entityClass;
+            this.stats = stats;
+            this.healthDisplayHeight = healthDisplayHeight;
+            this.hitbox = hitbox;
+            this.experience = experience;
             this.undead = undead;
             this.arthropod = arthropod;
+            this.commandSpawnable = commandSpawnable;
+            Set<String> normalizedAliases = new HashSet<>();
+            normalizedAliases.add(normalizeMonsterInputToken(type));
+            normalizedAliases.add(normalizeMonsterInputToken(displayName));
+            for (String alias : aliases) {
+                normalizedAliases.add(normalizeMonsterInputToken(alias));
+            }
+            this.aliases = Set.copyOf(normalizedAliases);
         }
 
         private String type() {
@@ -9632,24 +9665,44 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return icon;
         }
 
+        private Class<? extends LivingEntity> entityClass() {
+            return entityClass;
+        }
+
+        private MobStats stats() {
+            return stats;
+        }
+
         private double maxHealth() {
-            return maxHealth;
+            return stats.maxHealth();
         }
 
         private double attackDamage() {
-            return attackDamage;
+            return stats.attackDamage();
         }
 
         private double armor() {
-            return armor;
+            return stats.armor();
         }
 
         private double allDamageReduction() {
-            return allDamageReduction;
+            return stats.allDamageReduction();
         }
 
         private double movementSpeed() {
-            return movementSpeed;
+            return stats.movementSpeed();
+        }
+
+        private double healthDisplayHeight() {
+            return healthDisplayHeight;
+        }
+
+        private MobHitbox hitbox() {
+            return hitbox;
+        }
+
+        private int experience() {
+            return experience;
         }
 
         private boolean undead() {
@@ -9658,6 +9711,81 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
         private boolean arthropod() {
             return arthropod;
+        }
+
+        private boolean commandSpawnable() {
+            return commandSpawnable;
+        }
+
+        private boolean matchesInput(String input) {
+            return aliases.contains(normalizeMonsterInputToken(input));
+        }
+    }
+
+    private enum EnemyEntry {
+        ROTTEN_GUARD(CustomMonsterDefinition.ROTTEN_GUARD),
+        GULPER(CustomMonsterDefinition.GULPER),
+        FERRYMAN(CustomMonsterDefinition.FERRYMAN),
+        PUS_BUG(CustomMonsterDefinition.PUS_BUG),
+        TRAINING_DUMMY(CustomMonsterDefinition.TRAINING_DUMMY);
+
+        private final CustomMonsterDefinition definition;
+
+        EnemyEntry(CustomMonsterDefinition definition) {
+            this.definition = definition;
+        }
+
+        private static EnemyEntry byDefinition(CustomMonsterDefinition definition) {
+            for (EnemyEntry entry : values()) {
+                if (entry.definition == definition) {
+                    return entry;
+                }
+            }
+            return null;
+        }
+
+        private String type() {
+            return definition.type();
+        }
+
+        private CustomMonsterDefinition definition() {
+            return definition;
+        }
+
+        private String displayName() {
+            return definition.displayName();
+        }
+
+        private Material icon() {
+            return definition.icon();
+        }
+
+        private double maxHealth() {
+            return definition.maxHealth();
+        }
+
+        private double attackDamage() {
+            return definition.attackDamage();
+        }
+
+        private double armor() {
+            return definition.armor();
+        }
+
+        private double allDamageReduction() {
+            return definition.allDamageReduction();
+        }
+
+        private double movementSpeed() {
+            return definition.movementSpeed();
+        }
+
+        private boolean undead() {
+            return definition.undead();
+        }
+
+        private boolean arthropod() {
+            return definition.arthropod();
         }
     }
 
