@@ -68,6 +68,7 @@ import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Silverfish;
 import org.bukkit.entity.Slime;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.entity.Vindicator;
@@ -78,6 +79,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
@@ -283,6 +285,20 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final String TRAINING_DUMMY_TAG_UNDEAD = "undead";
     private static final String TRAINING_DUMMY_TAG_ARTHROPOD = "arthropod";
     private static final String TRAINING_DUMMY_TAG_AQUATIC = "aquatic";
+    private static final String SHADOW_WORM_TYPE = "shadow_worm";
+    private static final int SHADOW_WORM_INITIAL_SEGMENTS = 10;
+    private static final double SHADOW_WORM_SEGMENT_MAX_HEALTH = 25.0D;
+    private static final double SHADOW_WORM_SEGMENT_ARMOR = 10.0D;
+    private static final double SHADOW_WORM_HEAD_ATTACK_DAMAGE = 8.0D;
+    private static final double SHADOW_WORM_FOLLOW_RANGE = 64.0D;
+    private static final double SHADOW_WORM_MOVEMENT_SPEED = 0.27D;
+    private static final double SHADOW_WORM_KNOCKBACK_RESISTANCE = 0.15D;
+    private static final double SHADOW_WORM_HEALTH_DISPLAY_HEIGHT = 0.8D;
+    private static final double SHADOW_WORM_HITBOX_EXPANSION = 0.12D;
+    private static final double SHADOW_WORM_VERTICAL_HITBOX_EXPANSION = 0.18D;
+    private static final double SHADOW_WORM_END_DAMAGE_REDUCTION_PER_SEGMENT = 0.10D;
+    private static final int SHADOW_WORM_TRAIL_SPACING_TICKS = 4;
+    private static final int SHADOW_WORM_TRAIL_EXTRA_TICKS = 16;
     private static final double PUS_POOL_RADIUS = 3.0D;
     private static final double PUS_POOL_DAMAGE = 2.0D;
     private static final long PUS_POOL_DELAY_TICKS = 40L;
@@ -356,6 +372,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private static final int SLOT_WAVE_ADD_GULPER = 31;
     private static final int SLOT_WAVE_ADD_PUS_BUG = 33;
     private static final int SLOT_WAVE_REMOVE_ENEMY = 35;
+    private static final int SLOT_WAVE_ADD_SHADOW_WORM = 37;
     private static final int SLOT_WAVE_DETAIL_BACK = 40;
     private static final Material MAGIC_ANVIL_CARRIER = Material.ANVIL;
     private static final int MAGIC_ANVIL_MENU_SIZE = 27;
@@ -498,6 +515,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private NamespacedKey trainingDummyMaxHealthKey;
     private NamespacedKey trainingDummyArmorKey;
     private NamespacedKey trainingDummyTagsKey;
+    private NamespacedKey shadowWormIdKey;
+    private NamespacedKey shadowWormSegmentIndexKey;
+    private NamespacedKey shadowWormGenerationKey;
     private NamespacedKey moduleReturnLocationKey;
     private NamespacedKey moduleLastLocationKey;
     private NamespacedKey completedModulesKey;
@@ -516,6 +536,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
     private final Map<UUID, EnumMap<TrainingDummyPart, UUID>> trainingDummyDisplays = new HashMap<>();
     private final Map<UUID, List<TrainingDummyDamageSample>> trainingDummyDamageSamples = new HashMap<>();
     private final Map<UUID, Map<String, SplitDamageCooldown>> splitDamageCooldowns = new HashMap<>();
+    private final Map<String, List<Location>> shadowWormTrails = new HashMap<>();
     private final Map<UUID, Long> satietySkillOrbCooldowns = new HashMap<>();
     private final Map<UUID, Integer> dungeonPlayerNoDamageDefaults = new HashMap<>();
     private final Map<UUID, UUID> customMonsterHealthDisplays = new HashMap<>();
@@ -576,6 +597,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         trainingDummyMaxHealthKey = new NamespacedKey(this, "training_dummy_max_health");
         trainingDummyArmorKey = new NamespacedKey(this, "training_dummy_armor");
         trainingDummyTagsKey = new NamespacedKey(this, "training_dummy_tags");
+        shadowWormIdKey = new NamespacedKey(this, "shadow_worm_id");
+        shadowWormSegmentIndexKey = new NamespacedKey(this, "shadow_worm_segment_index");
+        shadowWormGenerationKey = new NamespacedKey(this, "shadow_worm_generation");
         moduleReturnLocationKey = new NamespacedKey(this, "module_return_location");
         moduleLastLocationKey = new NamespacedKey(this, "module_last_location");
         completedModulesKey = new NamespacedKey(this, "completed_modules");
@@ -806,7 +830,7 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return true;
         }
         if (args.length < 2 || !"spawn".equalsIgnoreCase(args[0]) || !isCustomMonsterInput(args[1])) {
-            sender.sendMessage("用法: /" + label + " spawn <rotten_guard|gulper|ferryman|pus_bug|training_dummy> [数量]");
+            sender.sendMessage("用法: /" + label + " spawn <rotten_guard|gulper|ferryman|pus_bug|training_dummy|shadow_worm> [数量]");
             return true;
         }
         String monsterType = normalizeCustomMonsterType(args[1]);
@@ -835,6 +859,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return;
         }
         if (isCustomMonster(event.getEntity()) && !(event.getTarget() instanceof Player)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onCustomMonsterChangeBlock(EntityChangeBlockEvent event) {
+        if (isShadowWorm(event.getEntity())) {
             event.setCancelled(true);
         }
     }
@@ -872,8 +903,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         }
         removeCustomMonsterVisual(event.getEntity());
         prepareCustomMonsterDeath(event, definition.experience());
+        markDungeonMobRemoved(event.getEntity().getUniqueId());
         if (definition == CustomMonsterDefinition.PUS_BUG) {
             triggerPusBugDeath((LivingEntity) event.getEntity());
+        } else if (definition == CustomMonsterDefinition.SHADOW_WORM && event.getEntity() instanceof Silverfish silverfish) {
+            handleShadowWormSegmentDeath(silverfish);
         }
     }
 
@@ -899,6 +933,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             removePusBugDisplay(uuid);
         } else if (definition == CustomMonsterDefinition.TRAINING_DUMMY) {
             removeTrainingDummyDisplay(uuid);
+        } else if (definition == CustomMonsterDefinition.SHADOW_WORM) {
+            removeCustomMonsterHealthDisplay(uuid);
         }
     }
 
@@ -966,6 +1002,19 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             if (event.getFinalDamage() >= endermite.getHealth()) {
                 event.setCancelled(true);
                 killCustomMonsterSilently(endermite);
+                return;
+            }
+        }
+        if (isShadowWorm(event.getEntity())) {
+            Silverfish silverfish = (Silverfish) event.getEntity();
+            silverfish.setSilent(true);
+            applyShadowWormEndDamageReduction(event, silverfish);
+            if (event.isCancelled() || event.getFinalDamage() <= 0.0D) {
+                return;
+            }
+            if (event.getFinalDamage() >= silverfish.getHealth()) {
+                event.setCancelled(true);
+                killCustomMonsterSilently(silverfish);
                 return;
             }
         }
@@ -1806,6 +1855,11 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             saveDungeonWaveAndReopen(player, module, waves, menu.waveIndex, new DungeonWaveConfig(replaceEnemy(enemies, added), wave.waitSeconds()));
             return;
         }
+        if (slot == SLOT_WAVE_ADD_SHADOW_WORM) {
+            DungeonWaveEnemyConfig added = addEnemyToWave(enemies, SHADOW_WORM_TYPE, shiftClick ? 5 : 1);
+            saveDungeonWaveAndReopen(player, module, waves, menu.waveIndex, new DungeonWaveConfig(replaceEnemy(enemies, added), wave.waitSeconds()));
+            return;
+        }
         if (slot == SLOT_WAVE_REMOVE_ENEMY && !enemies.isEmpty()) {
             enemies.removeLast();
             saveDungeonWaveAndReopen(player, module, waves, menu.waveIndex, new DungeonWaveConfig(enemies, wave.waitSeconds()));
@@ -2061,6 +2115,13 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             lore.add("使用普通近战追击玩家。");
             lore.add("斗笠下已无可辨认的面容，只剩留客于塔的执念。");
         }
+        if (enemy.definition() == CustomMonsterDefinition.SHADOW_WORM) {
+            lore.add("初始拥有 " + SHADOW_WORM_INITIAL_SEGMENTS + " 个独立体节。");
+            lore.add("每个体节生命值 " + formatStat(SHADOW_WORM_SEGMENT_MAX_HEALTH) + "，护甲值 " + formatStat(SHADOW_WORM_SEGMENT_ARMOR) + "。");
+            lore.add("每拥有 1 个体节，头部和尾部受到的伤害降低 10%。");
+            lore.add("中间体节死亡会使前后两端分裂成两只暗影蠕虫。");
+            lore.add("啃食魔塔砖墙碎屑生长而来的节肢生物。");
+        }
         inventory.setItem(SLOT_ENEMY_DETAIL_INFO, menuItem(enemy.icon(), enemy.displayName(), NamedTextColor.DARK_GREEN, lore));
         inventory.setItem(SLOT_ENEMY_DETAIL_BACK, menuItem(Material.ARROW, "返回图鉴", NamedTextColor.YELLOW,
                 List.of("返回怪物图鉴。")));
@@ -2160,6 +2221,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 List.of("添加 1 个啜食者。", "按住 Shift 添加 5 个。")));
         inventory.setItem(SLOT_WAVE_ADD_PUS_BUG, menuItem(Material.SPIDER_EYE, "添加脓包虫", NamedTextColor.GREEN,
                 List.of("添加 1 个脓包虫。", "按住 Shift 添加 5 个。")));
+        inventory.setItem(SLOT_WAVE_ADD_SHADOW_WORM, menuItem(Material.INFESTED_STONE_BRICKS, "添加暗影蠕虫", NamedTextColor.GREEN,
+                List.of("添加 1 条暗影蠕虫。", "初始拥有 " + SHADOW_WORM_INITIAL_SEGMENTS + " 个体节。", "按住 Shift 添加 5 条。")));
         inventory.setItem(SLOT_WAVE_REMOVE_ENEMY, menuItem(Material.RED_DYE, "删除末尾敌人", NamedTextColor.RED,
                 List.of("删除当前列表最后一种敌人。")));
         inventory.setItem(SLOT_WAVE_DETAIL_BACK, menuItem(Material.ARROW, "返回波次列表", NamedTextColor.YELLOW,
@@ -3737,8 +3800,9 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 Location spawn = findDungeonMobSpawn(run.center, spawned, totalCount);
                 Entity spawnedEntity = spawnDungeonEnemy(enemy.type(), spawn);
                 if (spawnedEntity != null) {
-                    run.liveMobs.add(spawnedEntity.getUniqueId());
-                    run.currentWaveInitialMobs++;
+                    Set<UUID> trackedMobs = dungeonTrackedMobUuids(spawnedEntity);
+                    run.liveMobs.addAll(trackedMobs);
+                    run.currentWaveInitialMobs += trackedMobs.size();
                 }
                 spawned++;
             }
@@ -3762,6 +3826,17 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             return spawnCustomMonster(normalizeCustomMonsterType(type), spawn);
         }
         return null;
+    }
+
+    private Set<UUID> dungeonTrackedMobUuids(Entity entity) {
+        if (entity instanceof Silverfish silverfish && isShadowWorm(silverfish)) {
+            Set<UUID> uuids = new HashSet<>();
+            for (Silverfish segment : shadowWormGroup(silverfish)) {
+                uuids.add(segment.getUniqueId());
+            }
+            return uuids;
+        }
+        return Set.of(entity.getUniqueId());
     }
 
     private void spawnDungeonBoss(DungeonRun run) {
@@ -7115,7 +7190,249 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         if (definition == CustomMonsterDefinition.TRAINING_DUMMY) {
             return spawnTrainingDummy(location);
         }
+        if (definition == CustomMonsterDefinition.SHADOW_WORM) {
+            return spawnShadowWorm(location, SHADOW_WORM_INITIAL_SEGMENTS, UUID.randomUUID().toString(), 0);
+        }
         return spawnRottenGuard(location);
+    }
+
+    private Silverfish spawnShadowWorm(Location location, int segments, String wormId, int generation) {
+        World world = location.getWorld();
+        if (world == null) {
+            return null;
+        }
+        int count = Math.max(1, segments);
+        Silverfish head = null;
+        Vector backward = location.getDirection().clone().setY(0.0D);
+        if (backward.lengthSquared() < 0.0001D) {
+            backward = new Vector(1.0D, 0.0D, 0.0D);
+        }
+        backward.normalize().multiply(-0.55D);
+        for (int index = 0; index < count; index++) {
+            Location segmentLocation = location.clone().add(backward.clone().multiply(index));
+            Silverfish segment = spawnShadowWormSegment(segmentLocation, wormId, index, generation, index == 0);
+            if (head == null) {
+                head = segment;
+            }
+        }
+        seedShadowWormTrail(wormId, location, count);
+        return head;
+    }
+
+    private Silverfish spawnShadowWormSegment(Location location, String wormId, int index, int generation, boolean head) {
+        return location.getWorld().spawn(location, Silverfish.class, silverfish -> {
+            silverfish.getPersistentDataContainer().set(monsterTypeKey, PersistentDataType.STRING, SHADOW_WORM_TYPE);
+            silverfish.getPersistentDataContainer().set(shadowWormIdKey, PersistentDataType.STRING, wormId);
+            silverfish.getPersistentDataContainer().set(shadowWormSegmentIndexKey, PersistentDataType.INTEGER, index);
+            silverfish.getPersistentDataContainer().set(shadowWormGenerationKey, PersistentDataType.INTEGER, generation);
+            silverfish.customName(Component.text("暗影蠕虫" + (head ? " 头部" : " 体节"), NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
+            silverfish.setCustomNameVisible(true);
+            silverfish.setCanPickupItems(false);
+            silverfish.setRemoveWhenFarAway(false);
+            silverfish.setSilent(true);
+            silverfish.setAI(head);
+            applyShadowWormStats(silverfish, true);
+            applyCustomMonsterVisualBase(silverfish);
+        });
+    }
+
+    private void seedShadowWormTrail(String wormId, Location headLocation, int segments) {
+        int limit = shadowWormTrailLimit(Math.max(1, segments));
+        List<Location> trail = new ArrayList<>(limit);
+        for (int i = 0; i < limit; i++) {
+            trail.add(headLocation.clone());
+        }
+        shadowWormTrails.put(wormId, trail);
+    }
+
+    private int shadowWormTrailLimit(int segments) {
+        return Math.max(8, segments * SHADOW_WORM_TRAIL_SPACING_TICKS + SHADOW_WORM_TRAIL_EXTRA_TICKS);
+    }
+
+    private void tickShadowWormGroups(Map<String, List<Silverfish>> shadowWorms, boolean updateCombatLogic) {
+        for (Map.Entry<String, List<Silverfish>> entry : shadowWorms.entrySet()) {
+            String wormId = entry.getKey();
+            List<Silverfish> segments = sortedLiveShadowWormSegments(entry.getValue());
+            if (segments.isEmpty()) {
+                continue;
+            }
+            assignShadowWormGroup(segments, wormId, shadowWormGeneration(segments.getFirst()));
+            tickShadowWormMovement(wormId, segments);
+            if (updateCombatLogic) {
+                maintainMonsterTarget(segments.getFirst());
+            }
+        }
+    }
+
+    private void tickShadowWormMovement(String wormId, List<Silverfish> segments) {
+        Silverfish head = segments.getFirst();
+        List<Location> trail = shadowWormTrails.computeIfAbsent(wormId, ignored -> new ArrayList<>());
+        trail.addFirst(head.getLocation().clone());
+        int limit = shadowWormTrailLimit(segments.size());
+        while (trail.size() > limit) {
+            trail.removeLast();
+        }
+        for (int index = 1; index < segments.size(); index++) {
+            Silverfish segment = segments.get(index);
+            int trailIndex = Math.min(index * SHADOW_WORM_TRAIL_SPACING_TICKS, trail.size() - 1);
+            Location target = trail.get(trailIndex);
+            if (!target.getWorld().equals(segment.getWorld())) {
+                continue;
+            }
+            Location current = segment.getLocation();
+            Location moved = target.clone();
+            Vector facing = segments.get(index - 1).getLocation().toVector().subtract(current.toVector());
+            if (facing.lengthSquared() > 0.0001D) {
+                moved.setDirection(facing.normalize());
+            }
+            if (current.distanceSquared(moved) > 0.0125D) {
+                segment.teleport(moved);
+            }
+            segment.setVelocity(new Vector(0.0D, segment.getVelocity().getY(), 0.0D));
+        }
+    }
+
+    private List<Silverfish> sortedLiveShadowWormSegments(List<Silverfish> segments) {
+        return segments.stream()
+                .filter(segment -> segment != null && segment.isValid() && !segment.isDead())
+                .sorted(Comparator.comparingInt(this::shadowWormSegmentIndex))
+                .toList();
+    }
+
+    private void assignShadowWormGroup(List<Silverfish> segments, String wormId, int generation) {
+        int last = segments.size() - 1;
+        for (int index = 0; index < segments.size(); index++) {
+            Silverfish segment = segments.get(index);
+            boolean head = index == 0;
+            boolean tail = index == last;
+            segment.getPersistentDataContainer().set(shadowWormIdKey, PersistentDataType.STRING, wormId);
+            segment.getPersistentDataContainer().set(shadowWormSegmentIndexKey, PersistentDataType.INTEGER, index);
+            segment.getPersistentDataContainer().set(shadowWormGenerationKey, PersistentDataType.INTEGER, generation);
+            segment.customName(Component.text(shadowWormSegmentName(head, tail), NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
+            segment.setCustomNameVisible(true);
+            segment.setAI(head);
+            if (!head) {
+                segment.setTarget(null);
+            }
+            applyShadowWormStats(segment, false);
+        }
+    }
+
+    private String shadowWormSegmentName(boolean head, boolean tail) {
+        if (head) {
+            return "暗影蠕虫 头部";
+        }
+        if (tail) {
+            return "暗影蠕虫 尾部";
+        }
+        return "暗影蠕虫 体节";
+    }
+
+    private void applyShadowWormStats(Silverfish silverfish, boolean heal) {
+        silverfish.setSilent(true);
+        silverfish.setRemoveWhenFarAway(false);
+        silverfish.setCanPickupItems(false);
+        applyMobStats(silverfish, CustomMonsterDefinition.SHADOW_WORM.stats(), heal);
+        if (shadowWormSegmentIndex(silverfish) > 0) {
+            setAttribute(silverfish, Attribute.ATTACK_DAMAGE, 0.0D);
+        }
+    }
+
+    private void applyShadowWormVisualBase(Silverfish silverfish) {
+        silverfish.setInvisible(false);
+        silverfish.setSilent(true);
+        silverfish.setRemoveWhenFarAway(false);
+        silverfish.setCanPickupItems(false);
+        silverfish.setPersistent(true);
+    }
+
+    private void syncShadowWormVisual(Silverfish silverfish) {
+        if (customMonsterTick % 8L != 0L) {
+            return;
+        }
+        Location location = silverfish.getLocation().clone().add(0.0D, 0.15D, 0.0D);
+        silverfish.getWorld().spawnParticle(Particle.SMOKE, location, 1, 0.08D, 0.03D, 0.08D, 0.005D);
+    }
+
+    private void applyShadowWormEndDamageReduction(EntityDamageEvent event, Silverfish segment) {
+        List<Silverfish> segments = shadowWormGroup(segment);
+        if (segments.isEmpty()) {
+            return;
+        }
+        int index = shadowWormSegmentIndex(segment);
+        int lastIndex = segments.size() - 1;
+        if (index != 0 && index != lastIndex) {
+            return;
+        }
+        double reduction = Math.min(0.95D, segments.size() * SHADOW_WORM_END_DAMAGE_REDUCTION_PER_SEGMENT);
+        double reducedFinalDamage = event.getFinalDamage() * (1.0D - reduction);
+        if (reducedFinalDamage <= 0.0D) {
+            event.setCancelled(true);
+            return;
+        }
+        scaleEventToFinalDamage(event, reducedFinalDamage);
+    }
+
+    private void handleShadowWormSegmentDeath(Silverfish deadSegment) {
+        String wormId = shadowWormId(deadSegment);
+        if (wormId == null) {
+            return;
+        }
+        List<Silverfish> remaining = shadowWormGroup(deadSegment).stream()
+                .filter(segment -> !segment.getUniqueId().equals(deadSegment.getUniqueId()))
+                .toList();
+        shadowWormTrails.remove(wormId);
+        if (remaining.isEmpty()) {
+            return;
+        }
+        int deadIndex = shadowWormSegmentIndex(deadSegment);
+        int generation = shadowWormGeneration(deadSegment) + 1;
+        List<Silverfish> front = remaining.stream()
+                .filter(segment -> shadowWormSegmentIndex(segment) < deadIndex)
+                .toList();
+        List<Silverfish> back = remaining.stream()
+                .filter(segment -> shadowWormSegmentIndex(segment) > deadIndex)
+                .toList();
+        reassignSplitShadowWorm(front, generation);
+        reassignSplitShadowWorm(back, generation);
+    }
+
+    private void reassignSplitShadowWorm(List<Silverfish> segments, int generation) {
+        if (segments.isEmpty()) {
+            return;
+        }
+        List<Silverfish> sorted = sortedLiveShadowWormSegments(segments);
+        String newWormId = UUID.randomUUID().toString();
+        assignShadowWormGroup(sorted, newWormId, generation);
+        seedShadowWormTrail(newWormId, sorted.getFirst().getLocation(), sorted.size());
+    }
+
+    private List<Silverfish> shadowWormGroup(Silverfish segment) {
+        String wormId = shadowWormId(segment);
+        if (wormId == null) {
+            return List.of();
+        }
+        return segment.getWorld().getEntitiesByClass(Silverfish.class).stream()
+                .filter(candidate -> isShadowWorm(candidate)
+                        && wormId.equals(shadowWormId(candidate))
+                        && candidate.isValid()
+                        && !candidate.isDead())
+                .sorted(Comparator.comparingInt(this::shadowWormSegmentIndex))
+                .toList();
+    }
+
+    private String shadowWormId(Entity entity) {
+        return entity.getPersistentDataContainer().get(shadowWormIdKey, PersistentDataType.STRING);
+    }
+
+    private int shadowWormSegmentIndex(Entity entity) {
+        Integer index = entity.getPersistentDataContainer().get(shadowWormSegmentIndexKey, PersistentDataType.INTEGER);
+        return index == null ? 0 : index;
+    }
+
+    private int shadowWormGeneration(Entity entity) {
+        Integer generation = entity.getPersistentDataContainer().get(shadowWormGenerationKey, PersistentDataType.INTEGER);
+        return generation == null ? 0 : generation;
     }
 
     private Zombie spawnGulper(Location location) {
@@ -7200,9 +7517,12 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         Set<UUID> liveFerrymen = new HashSet<>();
         Set<UUID> livePusBugs = new HashSet<>();
         Set<UUID> liveTrainingDummies = new HashSet<>();
+        Set<UUID> liveShadowWormSegments = new HashSet<>();
+        Set<String> liveShadowWormIds = new HashSet<>();
         Set<UUID> liveCustomMonsters = new HashSet<>();
         Set<UUID> liveSplitDamageTargets = tickDungeonDamageRules();
         for (World world : Bukkit.getWorlds()) {
+            Map<String, List<Silverfish>> shadowWorms = new HashMap<>();
             for (Zombie zombie : world.getEntitiesByClass(Zombie.class)) {
                 if (isGulper(zombie) && !zombie.isDead() && zombie.isValid()) {
                     liveGulpers.add(zombie.getUniqueId());
@@ -7272,6 +7592,25 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                     syncCustomMonsterHealthDisplay(slime);
                 }
             }
+            for (Silverfish silverfish : world.getEntitiesByClass(Silverfish.class)) {
+                if (!isShadowWorm(silverfish) || silverfish.isDead() || !silverfish.isValid()) {
+                    continue;
+                }
+                String wormId = shadowWormId(silverfish);
+                if (wormId == null) {
+                    continue;
+                }
+                liveShadowWormSegments.add(silverfish.getUniqueId());
+                liveShadowWormIds.add(wormId);
+                liveCustomMonsters.add(silverfish.getUniqueId());
+                tickCustomMonsterVisual(silverfish);
+                syncCustomMonsterHealthDisplay(silverfish);
+                if (updateCombatLogic) {
+                    applyShadowWormStats(silverfish, false);
+                }
+                shadowWorms.computeIfAbsent(wormId, ignored -> new ArrayList<>()).add(silverfish);
+            }
+            tickShadowWormGroups(shadowWorms, updateCombatLogic);
             for (LivingEntity phantom : world.getLivingEntities()) {
                 if (!isFerrymanSiphonPhantom(phantom) || phantom.isDead() || !phantom.isValid()) {
                     continue;
@@ -7287,6 +7626,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         removeMissingCustomMonsterVisuals(CustomMonsterDefinition.FERRYMAN, liveFerrymen);
         removeMissingCustomMonsterVisuals(CustomMonsterDefinition.PUS_BUG, livePusBugs);
         removeMissingCustomMonsterVisuals(CustomMonsterDefinition.TRAINING_DUMMY, liveTrainingDummies);
+        removeMissingCustomMonsterVisuals(CustomMonsterDefinition.SHADOW_WORM, liveShadowWormSegments);
+        shadowWormTrails.keySet().removeIf(wormId -> !liveShadowWormIds.contains(wormId));
         for (DungeonRun run : dungeonRunsByWorld.values()) {
             liveCustomMonsters.addAll(run.siphonPhantoms.keySet());
         }
@@ -7350,6 +7691,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             applyPusBugVisualBase(endermite);
         } else if (definition == CustomMonsterDefinition.TRAINING_DUMMY && entity instanceof Slime slime) {
             applyTrainingDummyVisualBase(slime);
+        } else if (definition == CustomMonsterDefinition.SHADOW_WORM && entity instanceof Silverfish silverfish) {
+            applyShadowWormVisualBase(silverfish);
         }
     }
 
@@ -7360,6 +7703,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             endermite.setAI(true);
             endermite.setSilent(true);
             endermite.setLifetimeTicks(0);
+        } else if (entity instanceof Silverfish silverfish && customMonsterDefinition(entity) == CustomMonsterDefinition.SHADOW_WORM) {
+            silverfish.setSilent(true);
         }
         applyCustomMonsterVisualBase(entity);
         syncCustomMonsterVisual(entity);
@@ -7377,6 +7722,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
             syncPusBugDisplay(endermite);
         } else if (definition == CustomMonsterDefinition.TRAINING_DUMMY && entity instanceof Slime slime) {
             syncTrainingDummyDisplay(slime);
+        } else if (definition == CustomMonsterDefinition.SHADOW_WORM && entity instanceof Silverfish silverfish) {
+            syncShadowWormVisual(silverfish);
         }
     }
 
@@ -8562,6 +8909,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         removeCustomMonsterVisual(entity);
         if (definition == CustomMonsterDefinition.PUS_BUG) {
             triggerPusBugDeath(entity);
+        } else if (definition == CustomMonsterDefinition.SHADOW_WORM && entity instanceof Silverfish silverfish) {
+            handleShadowWormSegmentDeath(silverfish);
         }
         if (definition != null) {
             spawnExperience(entity.getLocation(), definition.experience());
@@ -8865,6 +9214,10 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
 
     private boolean isTrainingDummy(Entity entity) {
         return isCustomMonsterType(entity, CustomMonsterDefinition.TRAINING_DUMMY);
+    }
+
+    private boolean isShadowWorm(Entity entity) {
+        return isCustomMonsterType(entity, CustomMonsterDefinition.SHADOW_WORM);
     }
 
     private boolean isFerrymanSiphonPhantom(Entity entity) {
@@ -9603,7 +9956,14 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
                 TRAINING_DUMMY_HEALTH_DISPLAY_HEIGHT,
                 new MobHitbox(TRAINING_DUMMY_HITBOX_EXPANSION, 0.9D),
                 0, false, false, true,
-                "trainingdummy", "dummy", "test_dummy", "测试木桩");
+                "trainingdummy", "dummy", "test_dummy", "测试木桩"),
+        SHADOW_WORM(SHADOW_WORM_TYPE, "暗影蠕虫", Material.INFESTED_STONE_BRICKS, Silverfish.class,
+                new MobStats(SHADOW_WORM_SEGMENT_MAX_HEALTH, SHADOW_WORM_HEAD_ATTACK_DAMAGE, SHADOW_WORM_SEGMENT_ARMOR,
+                        SHADOW_WORM_FOLLOW_RANGE, SHADOW_WORM_MOVEMENT_SPEED, SHADOW_WORM_KNOCKBACK_RESISTANCE, null, 0.0D),
+                SHADOW_WORM_HEALTH_DISPLAY_HEIGHT,
+                new MobHitbox(SHADOW_WORM_HITBOX_EXPANSION, SHADOW_WORM_VERTICAL_HITBOX_EXPANSION),
+                0, false, true, true,
+                "shadow-worm", "worm", "暗影蠕虫");
 
         private final String type;
         private final String displayName;
@@ -9715,7 +10075,8 @@ public final class XiceRPGPlugin extends JavaPlugin implements Listener, TabExec
         GULPER(CustomMonsterDefinition.GULPER),
         FERRYMAN(CustomMonsterDefinition.FERRYMAN),
         PUS_BUG(CustomMonsterDefinition.PUS_BUG),
-        TRAINING_DUMMY(CustomMonsterDefinition.TRAINING_DUMMY);
+        TRAINING_DUMMY(CustomMonsterDefinition.TRAINING_DUMMY),
+        SHADOW_WORM(CustomMonsterDefinition.SHADOW_WORM);
 
         private final CustomMonsterDefinition definition;
 
