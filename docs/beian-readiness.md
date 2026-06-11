@@ -35,6 +35,12 @@ Web 端页脚显示 ICP 与公安联网备案信息。当前 ICP 备案号：
 粤ICP备2026065077号
 ```
 
+当前公安联网备案号：
+
+```text
+粤公网安备44030002013184号
+```
+
 运行时环境变量可覆盖默认值：
 
 ```env
@@ -42,13 +48,13 @@ XICEMC_PUBLIC_SITE_BASE_URL=https://xicemc.site
 XICEMC_PUBLIC_SITE_DOMAIN=xicemc.site
 XICEMC_ICP_RECORD_NO=粤ICP备2026065077号
 XICEMC_ICP_RECORD_URL=https://beian.miit.gov.cn/
-XICEMC_PUBLIC_SECURITY_RECORD_NO=粤公网安备xxxxxxxxxxxxxx号
-XICEMC_PUBLIC_SECURITY_RECORD_URL=https://beian.mps.gov.cn/#/query/webSearch?code=xxxxxxxxxxxxxx
+XICEMC_PUBLIC_SECURITY_RECORD_NO=粤公网安备44030002013184号
+XICEMC_PUBLIC_SECURITY_RECORD_URL=https://beian.mps.gov.cn/#/query/webSearch?code=44030002013184
 ```
 
 ## 公安联网备案
 
-公安联网备案通过后，将公安备案号和查询链接填入运行时环境变量，并重启 Web 服务：
+公安联网备案已通过。若后续备案号、域名或查询链接变更，将公安备案号和查询链接填入运行时环境变量，并重启 Web 服务：
 
 ```bash
 sudo systemctl restart xicemc-whitelist.service
