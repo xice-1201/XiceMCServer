@@ -41,6 +41,12 @@ Web 端页脚显示 ICP 与公安联网备案信息。当前 ICP 备案号：
 粤公网安备44030002013184号
 ```
 
+公安备案图标使用本地静态资源：
+
+```text
+/assets/gongan.png
+```
+
 运行时环境变量可覆盖默认值：
 
 ```env
@@ -50,6 +56,7 @@ XICEMC_ICP_RECORD_NO=粤ICP备2026065077号
 XICEMC_ICP_RECORD_URL=https://beian.miit.gov.cn/
 XICEMC_PUBLIC_SECURITY_RECORD_NO=粤公网安备44030002013184号
 XICEMC_PUBLIC_SECURITY_RECORD_URL=https://beian.mps.gov.cn/#/query/webSearch?code=44030002013184
+XICEMC_PUBLIC_SECURITY_ICON_PATH=/opt/xicemc/repo/server/assets/gongan.png
 ```
 
 ## 公安联网备案

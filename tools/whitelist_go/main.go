@@ -70,6 +70,7 @@ type config struct {
 	RPGConfigPath               string
 	WebIconPath                 string
 	WebFaviconPath              string
+	PublicSecurityIconPath      string
 	ClaimTotemConceptPath       string
 	ResourcePackPath            string
 	ServerDocsPath              string
@@ -267,6 +268,7 @@ func loadConfig() config {
 		RPGConfigPath:               env("XICEMC_RPG_CONFIG_PATH", filepath.Join(runtimeDir, "plugins", "XiceRPG", "config.yml")),
 		WebIconPath:                 env("XICEMC_WEB_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "xicemc-logo.png")),
 		WebFaviconPath:              env("XICEMC_WEB_FAVICON_PATH", filepath.Join(repoRoot, "server", "assets", "favicon.ico")),
+		PublicSecurityIconPath:      env("XICEMC_PUBLIC_SECURITY_ICON_PATH", filepath.Join(repoRoot, "server", "assets", "gongan.png")),
 		ClaimTotemConceptPath:       env("XICEMC_CLAIM_TOTEM_CONCEPT_PATH", filepath.Join(repoRoot, "server", "assets", "xiceclaim-totem-concept.png")),
 		ResourcePackPath:            env("XICEMC_RESOURCE_PACK_PATH", filepath.Join(repoRoot, "server", "resourcepacks", "xiceclaim.zip")),
 		ServerDocsPath:              env("XICEMC_DOCS_HOME_PATH", filepath.Join(runtimeDir, "web", "server-docs.md")),
@@ -334,6 +336,7 @@ func openDB(cfg config) (*sql.DB, error) {
 func (a *app) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /favicon.png", a.fileHandler(a.cfg.WebIconPath, "image/png"))
 	mux.HandleFunc("GET /favicon.ico", a.fileHandler(a.cfg.WebFaviconPath, "image/x-icon"))
+	mux.HandleFunc("GET /assets/gongan.png", a.fileHandler(a.cfg.PublicSecurityIconPath, "image/png"))
 	mux.HandleFunc("GET /assets/xiceclaim-totem-concept.png", a.fileHandler(a.cfg.ClaimTotemConceptPath, "image/png"))
 	mux.HandleFunc("GET /resourcepacks/xiceclaim.zip", a.fileHandler(a.cfg.ResourcePackPath, "application/zip"))
 	mux.HandleFunc("GET /", a.handlePublicHome)
@@ -1701,6 +1704,8 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .register-message,.error { color:var(--danger); font-weight:700; border:1px solid #f1b7b7; background:#fff1f1; border-radius:6px; padding:10px 12px; }
     .field-hint { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
     .compliance-footer { display:flex; flex-wrap:wrap; justify-content:center; gap:8px 16px; margin-top:26px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; line-height:1.5; text-align:center; }
+    .public-security-link { display:inline-flex; align-items:center; gap:5px; }
+    .public-security-link img { width:16px; height:16px; object-fit:contain; }
     .pre { white-space:pre-wrap; overflow-wrap:anywhere; }
     @media (max-width:760px) {
       .app-shell { grid-template-columns:1fr; }
@@ -1744,7 +1749,7 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
 {{define "footer"}}<footer class="compliance-footer" aria-label="备案信息">
   <span>访问入口：{{.Public.SiteBaseURL}}</span>
   <span>ICP：{{if .Public.ICPRecordNo}}<a href="{{.Public.ICPRecordURL}}" target="_blank" rel="noopener noreferrer">{{.Public.ICPRecordNo}}</a>{{else}}ICP备案号待下发{{end}}</span>
-  <span>公安联网备案：{{if and .Public.PublicSecurityRecordNo .Public.PublicSecurityRecordURL}}<a href="{{.Public.PublicSecurityRecordURL}}" target="_blank" rel="noopener noreferrer">{{.Public.PublicSecurityRecordNo}}</a>{{else}}公安联网备案号待下发{{end}}</span>
+  <span>公安联网备案：{{if and .Public.PublicSecurityRecordNo .Public.PublicSecurityRecordURL}}<a class="public-security-link" href="{{.Public.PublicSecurityRecordURL}}" target="_blank" rel="noopener noreferrer"><img src="/assets/gongan.png" alt="" aria-hidden="true">{{.Public.PublicSecurityRecordNo}}</a>{{else}}公安联网备案号待下发{{end}}</span>
   {{if .Public.SiteDomain}}<span>域名通道：{{.Public.SiteDomain}}</span>{{end}}
 </footer>{{end}}
 
@@ -1860,6 +1865,8 @@ var templatesHTML = `{{define "layout"}}<!doctype html>
     .error { color:var(--danger); font-weight:700; border:1px solid #f1b7b7; background:#fff1f1; border-radius:6px; padding:10px 12px; }
     .field-hint { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
     .compliance-footer { display:flex; flex-wrap:wrap; justify-content:center; gap:8px 16px; margin-top:26px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; line-height:1.5; text-align:center; }
+    .public-security-link { display:inline-flex; align-items:center; gap:5px; }
+    .public-security-link img { width:16px; height:16px; object-fit:contain; }
     .pre { white-space:pre-wrap; overflow-wrap:anywhere; }
     @media (max-width:760px) {
       .app-shell { grid-template-columns:1fr; }
